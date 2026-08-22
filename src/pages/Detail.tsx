@@ -414,6 +414,17 @@ function CagrEstimatorCard({
   // highlighted row always matches what the top chip is showing.
   const effectiveChosen = state.chosenYear ?? (h ? h.year - lastYear - 1 : null);
 
+  const yearRows = Array.from({ length: N_EST_YEARS }, (_, i) => {
+    const year = lastYear + i + 1;
+    const eps = model[i]?.eps ?? null;
+    const pe = state.drivers[i]?.pe ?? null;
+    const sharePrice = eps !== null && pe ? eps * pe : null;
+    const upside = sharePrice !== null && stock.current_price ? (sharePrice / stock.current_price - 1) * 100 : null;
+    const cagr = cagrFor(stock.current_price, sharePrice, daysUntil(year));
+    const { range, days } = estDateRange(year);
+    return { i, year, eps, pe, sharePrice, upside, cagr, range, days };
+  });
+
   return (
     <div className="mb-8">
       <div className="card overflow-hidden">
@@ -426,11 +437,15 @@ function CagrEstimatorCard({
               <h3 className="font-semibold text-slate-900">CAGR Estimator</h3>
               <p className="text-xs text-slate-500">{stock.name}</p>
             </div>
-            <div className="text-right text-xs">
-              <div className="text-slate-400">Current Price</div>
-              <div className="font-bold text-slate-900">₹{fmt(stock.current_price)}</div>
-              <div className="text-slate-400 mt-1">Current P/E</div>
-              <div className="font-bold" style={{ color: CASE_COLOR[case_] }}>{fmt(stock.pe_ratio, 1)}</div>
+            <div className="text-right flex gap-6">
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-400">Current Price</div>
+                <div className="text-xl font-bold text-slate-900">₹{fmt(stock.current_price)}</div>
+              </div>
+              <div>
+                <div className="text-[10px] uppercase tracking-wide text-slate-400">Current P/E</div>
+                <div className="text-xl font-bold" style={{ color: CASE_COLOR[case_] }}>{fmt(stock.pe_ratio, 1)}</div>
+              </div>
             </div>
           </div>
 
@@ -476,14 +491,7 @@ function CagrEstimatorCard({
                 </tr>
               </thead>
               <tbody>
-                {Array.from({ length: N_EST_YEARS }, (_, i) => {
-                  const year = lastYear + i + 1;
-                  const eps = model[i]?.eps ?? null;
-                  const pe = state.drivers[i]?.pe ?? null;
-                  const sharePrice = eps !== null && pe ? eps * pe : null;
-                  const upside = sharePrice !== null && stock.current_price ? (sharePrice / stock.current_price - 1) * 100 : null;
-                  const cagr = cagrFor(stock.current_price, sharePrice, daysUntil(year));
-                  const { range, days } = estDateRange(year);
+                {yearRows.map(({ i, year, eps, pe, sharePrice, upside, cagr, range, days }) => {
                   const isChosen = effectiveChosen === i;
                   return (
                     <tr key={i} className={`border-t border-slate-100 ${isChosen ? "bg-emerald-50" : ""}`}>
@@ -533,6 +541,34 @@ function CagrEstimatorCard({
               </tbody>
             </table>
           </div>
+
+          {/* Highlighted summary strip — the year(s) NOT currently the
+              headline, shown as a big quick-pick alongside the chosen
+              row itself, rather than only buried in the small per-row
+              "Use" button. Matches the reference's own highlighted
+              strip below its table. */}
+          {yearRows.some((r) => r.i !== effectiveChosen && r.cagr !== null) && (
+            <div className="mt-3 rounded-lg bg-emerald-50 border border-emerald-100 p-3 flex flex-wrap gap-6">
+              {yearRows
+                .filter((r) => r.i !== effectiveChosen && r.cagr !== null)
+                .map((r) => (
+                  <div key={r.i} className="flex items-center gap-2">
+                    <div>
+                      <div className="text-[11px] text-slate-500">FY{r.year} CAGR</div>
+                      <div className={`text-xl font-bold ${r.cagr! >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtSigned(r.cagr, 1)}</div>
+                      <div className="text-[11px] text-slate-400">₹{fmt(r.sharePrice)}</div>
+                    </div>
+                    <button
+                      onClick={() => onChooseYear(case_, r.i)}
+                      className="text-xs px-3 py-1.5 rounded border border-emerald-300 bg-white text-emerald-700 font-medium hover:bg-emerald-100"
+                    >
+                      ⟳ Use
+                    </button>
+                  </div>
+                ))}
+              <span className="ml-auto self-end text-[11px] text-slate-400">(PE method)</span>
+            </div>
+          )}
 
           <div className="mt-4">
             <div className="text-xs font-semibold text-slate-500 mb-1">Key Assumptions</div>

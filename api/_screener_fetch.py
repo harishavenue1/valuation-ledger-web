@@ -175,6 +175,9 @@ def fetch_pe_history_stats(company_id, headers, last_fy_year):
         series = []
     if not series:
         return None
+    series = _drop_pe_outliers(series)
+    if not series:
+        return None
 
     cutoff = datetime.now() - timedelta(days=PE_HISTORY_STAT_DAYS)
     recent = [(d, v) for d, v in series if _parse_chart_date(d) is not None and _parse_chart_date(d) >= cutoff]
@@ -208,6 +211,33 @@ def _parse_chart_date(s):
         return datetime.strptime(s, "%Y-%m-%d")
     except (ValueError, TypeError):
         return None
+
+
+def _drop_pe_outliers(series, band=5):
+    """Drop points whose PE sits outside [median/band, median*band] of
+    the series' OWN overall median — a magnitude-outlier filter, not an
+    exact-repeat one. First attempt here was exact-consecutive-run
+    detection, but GNG Electronics' actual glitch period (2026-08-22,
+    "PE details wrong for GNG") alternates 0.5/0.6 rather than holding
+    one constant value, so runs of identical values were individually
+    short enough to survive that filter while the whole ~2.5-month
+    block was still garbage (real value ~80-190 range collapsing to
+    0.5-0.6 and back is not a real market move without an actual
+    corporate action, which would show as a real, moderate step, not a
+    two-orders-of-magnitude round trip). A 5x band is generous — real
+    PE re-rating that large within the 2Y window is rare but the goal
+    here is only to catch Screener data artifacts, not to second-guess
+    genuine volatility."""
+    if len(series) < 5:
+        return series
+    vals = sorted(v for _, v in series if v > 0)
+    if not vals:
+        return series
+    med = statistics.median(vals)
+    if med <= 0:
+        return series
+    lo, hi = med / band, med * band
+    return [(d, v) for d, v in series if lo <= v <= hi]
 
 
 def resolve_url(ticker, headers):
