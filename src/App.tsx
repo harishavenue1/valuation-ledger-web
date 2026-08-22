@@ -67,7 +67,7 @@ export default function App() {
     <Ctx.Provider value={{ bundle, setBundle, reload }}>
       <div className="min-h-screen flex flex-col">
         <header className="border-b border-slate-200 sticky top-0 bg-white/90 backdrop-blur z-20">
-          <div className="max-w-[1400px] mx-auto px-4 py-3 flex items-center gap-6">
+          <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-6">
             <span className="font-semibold tracking-tight text-lg text-indigo-600">🧮 Valuation Ledger</span>
             <nav className="flex gap-4 text-sm">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
@@ -94,7 +94,7 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="flex-1 max-w-[1400px] w-full mx-auto px-4 py-6">
+        <main className="flex-1 max-w-[1800px] w-full mx-auto px-4 py-6">
           <Routes>
             <Route path="/" element={<Summary />} />
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />

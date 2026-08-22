@@ -298,15 +298,15 @@ function AnnualTable({
           `w-full` divides the row width evenly among however many
           columns exist, which is exactly what made it feel unstable. */}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="text-sm" style={{ tableLayout: "fixed", width: `${220 + (stock.years.length + N_EST_YEARS) * 92}px` }}>
+        <table className="text-sm" style={{ tableLayout: "fixed", width: `${190 + (stock.years.length + N_EST_YEARS) * 80}px` }}>
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2" style={{ width: 220 }}>Financial Year</th>
+              <th className="text-left px-3 py-2" style={{ width: 190 }}>Financial Year</th>
               {stock.years.map((y) => (
-                <th key={y} className="text-right px-3 py-2" style={{ width: 92 }}>{y}</th>
+                <th key={y} className="text-right px-3 py-2" style={{ width: 80 }}>{y}</th>
               ))}
               {Array.from({ length: N_EST_YEARS }, (_, i) => (
-                <th key={i} className="text-right px-3 py-2 bg-amber-50/80" style={{ width: 92 }}>
+                <th key={i} className="text-right px-3 py-2 bg-amber-50/80" style={{ width: 80 }}>
                   <div>Mar {lastYear + i + 1}</div>
                   <div className="text-amber-600 font-bold text-[10px]">ESTIMATE</div>
                 </th>

@@ -38,7 +38,7 @@ const EMA_COLS: [string, string][] = [
 ];
 
 // Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
-const COL_WIDTHS = [220, 100, 90, 80, 90, 100, 80, 80, 80, 175, 175, 175, 60, 50];
+const COL_WIDTHS = [200, 95, 80, 70, 85, 95, 70, 70, 70, 150, 150, 150, 55, 45];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
