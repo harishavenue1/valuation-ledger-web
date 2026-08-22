@@ -64,6 +64,9 @@ export const api = {
   saveScenario: (ticker: string, case_: Case, state: CaseState) =>
     req("/api/scenario", { method: "POST", body: JSON.stringify({ ticker, case: case_, state }) }),
 
+  clearScenario: (ticker: string, case_: Case) =>
+    req("/api/scenario", { method: "DELETE", body: JSON.stringify({ ticker, case: case_ }) }),
+
   saveGuidance: (ticker: string, data: Guidance) => req("/api/guidance", { method: "POST", body: JSON.stringify({ ticker, data }) }),
 
   saveGuidanceTracker: (tracker: GuidanceTracker) => req("/api/guidance_tracker", { method: "POST", body: JSON.stringify(tracker) }),
