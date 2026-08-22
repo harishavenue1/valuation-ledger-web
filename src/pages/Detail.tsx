@@ -268,6 +268,28 @@ const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> =
   eps: "eps",
 };
 
+const N_HIST_COLS = 6;
+const LABEL_COL_WIDTH = 190;
+const DATA_COL_WIDTH = 80;
+// Header height the table's own sticky thead sits below — matches the
+// app shell's own sticky top nav bar (App.tsx), measured live at 57px.
+const STICKY_TOP_OFFSET = 57;
+
+/** Always exactly N_HIST_COLS entries — trailing (most recent) years
+ * kept, older ones dropped, and left-padded with null when the company
+ * has fewer than N_HIST_COLS years of history. Keeps the Annual
+ * Results table's column COUNT (not just each column's width) fixed
+ * across every company, so a 2-year-old SME listing doesn't leave a
+ * few hundred px of dead space next to the estimate columns, and a
+ * 12-year company like TITAN doesn't force horizontal scrolling just
+ * to reach its own estimate years — both were happening before this
+ * (2026-08-22, "why alot of empty space... define columns across
+ * all... if more set 6+3 estimates columns"). */
+function padTrailing<T>(arr: T[], n: number): (T | null)[] {
+  if (arr.length >= n) return arr.slice(arr.length - n);
+  return [...Array(n - arr.length).fill(null), ...arr];
+}
+
 function AnnualTable({
   stock,
   basis,
@@ -284,29 +306,33 @@ function AnnualTable({
   onUpdateDriver: (case_: Case, i: number, field: keyof Driver, raw: string) => void;
 }) {
   const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
+  const displayYears = padTrailing(stock.years, N_HIST_COLS);
+  const tableWidth = LABEL_COL_WIDTH + (N_HIST_COLS + N_EST_YEARS) * DATA_COL_WIDTH;
   return (
     <div className="mb-6">
       <h2 className="text-base font-semibold mb-1">Annual Results</h2>
       <p className="text-xs text-slate-500 mb-2">
         Screener.in, {basis} — annual Profit &amp; Loss, plus {CASE_LABEL[case_].toLowerCase()} estimates
       </p>
-      {/* table-fixed + an explicit width on every header cell — every
-          column renders at the same px width regardless of how many
-          fiscal years this particular company has (2Y for a recent
-          SME listing vs. 12Y for TITAN), so the layout doesn't visibly
-          jump switching between companies. Without table-fixed, plain
-          `w-full` divides the row width evenly among however many
-          columns exist, which is exactly what made it feel unstable. */}
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="text-sm" style={{ tableLayout: "fixed", width: `${190 + (stock.years.length + N_EST_YEARS) * 80}px` }}>
+      {/* Fixed column COUNT (N_HIST_COLS + N_EST_YEARS, always), not
+          just fixed column WIDTH — every company's table is the exact
+          same total width now. Sticky thead (offset below the app
+          shell's own sticky nav) and a sticky first column keep row/
+          column context visible while scrolling either direction. */}
+      <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[70vh] overflow-y-auto">
+        <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: tableWidth }}>
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2" style={{ width: 190 }}>Financial Year</th>
-              {stock.years.map((y) => (
-                <th key={y} className="text-right px-3 py-2" style={{ width: 80 }}>{y}</th>
+              <th className="text-left px-3 py-2 sticky left-0 top-0 z-20 bg-slate-50" style={{ width: LABEL_COL_WIDTH, position: "sticky", top: STICKY_TOP_OFFSET }}>
+                Financial Year
+              </th>
+              {displayYears.map((y, i) => (
+                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-slate-50" style={{ width: DATA_COL_WIDTH, top: STICKY_TOP_OFFSET }}>
+                  {y ?? ""}
+                </th>
               ))}
               {Array.from({ length: N_EST_YEARS }, (_, i) => (
-                <th key={i} className="text-right px-3 py-2 bg-amber-50/80" style={{ width: 80 }}>
+                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-amber-50" style={{ width: DATA_COL_WIDTH, top: STICKY_TOP_OFFSET }}>
                   <div>Mar {lastYear + i + 1}</div>
                   <div className="text-amber-600 font-bold text-[10px]">ESTIMATE</div>
                 </th>
@@ -316,18 +342,21 @@ function AnnualTable({
           <tbody>
             {ANNUAL_ROWS.map(([label, key, digits, suffix, colorize, bold, driverField]) => {
               const isGrowthRow = GROWTH_ROW_KEYS.has(key);
+              const displayVals = padTrailing(stock[key] as (number | null)[], N_HIST_COLS);
               return (
                 <tr key={key} className="border-t border-slate-100">
                   <td
-                    className={`px-3 py-1.5 whitespace-nowrap ${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${isGrowthRow ? "text-rose-700" : ""}`}
+                    className={`px-3 py-1.5 whitespace-nowrap sticky left-0 z-10 bg-white ${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${isGrowthRow ? "text-rose-700" : ""}`}
                   >
                     {driverField && CRITICAL_FIELDS.includes(driverField) && <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" />}
                     {label}
                   </td>
-                  {(stock[key] as (number | null)[]).map((v, i) => (
+                  {displayVals.map((v, i) => (
                     <td key={i} className={`px-3 py-1.5 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
-                      {colorize ? (
-                        <span className={v === null ? "" : v >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(v, digits, suffix)}</span>
+                      {v === null ? (
+                        <span className="text-slate-300">—</span>
+                      ) : colorize ? (
+                        <span className={v >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(v, digits, suffix)}</span>
                       ) : (
                         fmt(v, digits, suffix)
                       )}
@@ -358,8 +387,8 @@ function AnnualTable({
                 this for the actuals column-by-column), matching the
                 reference's own dashes there. */}
             <tr className="border-t border-slate-100">
-              <td className="px-3 py-1.5 font-semibold text-indigo-700">Forward PE x</td>
-              {stock.years.map((_, i) => (
+              <td className="px-3 py-1.5 font-semibold text-indigo-700 sticky left-0 z-10 bg-white">Forward PE x</td>
+              {displayYears.map((_, i) => (
                 <td key={i} className="px-3 py-1.5 text-right text-slate-300">—</td>
               ))}
               {Array.from({ length: N_EST_YEARS }, (_, i) => (
