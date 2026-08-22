@@ -37,6 +37,9 @@ const EMA_COLS: [string, string][] = [
   ["ema33w", "33W"],
 ];
 
+// Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
+const COL_WIDTHS = [220, 100, 90, 80, 90, 100, 80, 80, 80, 150, 150, 150, 60, 50];
+
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
 interface Row {
@@ -102,16 +105,18 @@ function SortableHeader({
   sortCol,
   sortDir,
   onClick,
+  width,
 }: {
   label: string;
   col: SortCol;
   sortCol: SortCol | null;
   sortDir: "asc" | "desc";
   onClick: (col: SortCol) => void;
+  width?: number;
 }) {
   const active = sortCol === col;
   return (
-    <th className="text-center px-2 py-2 whitespace-nowrap">
+    <th className="text-center px-2 py-2 whitespace-nowrap" style={width ? { width } : undefined}>
       <button onClick={() => onClick(col)} className={`hover:text-slate-800 ${active ? "text-slate-800" : ""}`}>
         {label} {active ? (sortDir === "desc" ? "▼" : "▲") : ""}
       </button>
@@ -203,32 +208,39 @@ function Section({
       {stocks.length === 0 ? (
         <div className="text-slate-500 text-sm py-6 text-center border border-slate-200 rounded">{emptyMsg}</div>
       ) : (
+        // table-layout: fixed + an explicit width on every header cell —
+        // without this, "Stocks I Own" and "Tracking" (two independent
+        // tables) each auto-size their own columns off their own data,
+        // so corresponding columns don't line up in width between the
+        // two sections even though they're meant to read as one
+        // continuous grid. Same fix as the Detail page's Annual Results
+        // table.
         <div className="overflow-x-auto rounded border border-slate-200">
-          <table className="w-full text-sm">
+          <table className="text-sm" style={{ tableLayout: "fixed", width: COL_WIDTHS.reduce((a, b) => a + b, 0) }}>
             <thead className="bg-slate-50 text-slate-500 text-xs">
               <tr>
-                <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
-                <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
-                <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
-                <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
-                <th className="text-center px-2 py-2" title="Current price vs. the Bull case's target price today (not annualized)">
+                <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[0]} />
+                <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
+                <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
+                <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
+                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Current price vs. the Bull case's target price today (not annualized)">
                   <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
                     Upside {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
                 </th>
-                <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
-                {EMA_COLS.map(([key, label]) => (
-                  <SortableHeader key={key} label={label} col={`ema_${key}` as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
+                <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
+                {EMA_COLS.map(([key, label], i) => (
+                  <SortableHeader key={key} label={label} col={`ema_${key}` as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
                 ))}
-                {GRID_CASES.map((c) => (
-                  <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c] }}>
+                {GRID_CASES.map((c, i) => (
+                  <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[9 + i] }}>
                     <button onClick={() => clickHeader(c as SortCol)} className="hover:opacity-80">
                       {CASE_LABEL[c].replace(" Case", "")} {sortCol === c ? (sortDir === "desc" ? "▼" : "▲") : ""}
                     </button>
                   </th>
                 ))}
-                <th className="text-center px-2 py-2 text-[11px]">Own</th>
-                <th className="px-2 py-2"></th>
+                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[12] }}>Own</th>
+                <th className="px-2 py-2" style={{ width: COL_WIDTHS[13] }}></th>
               </tr>
             </thead>
             <tbody>
