@@ -255,8 +255,8 @@ const ANNUAL_ROWS: [string, string, number, string, boolean, boolean, keyof Driv
   ["Tax %", "tax_pct", 1, "%", false, false, "tax"],
   ["PAT Cr", "net_profit", 0, "", false, true, null],
   ["PAT Growth %", "pat_growth_pct", 1, "%", true, false, null],
-  ["Number of Shares Cr", "shares_cr", 3, "", false, false, "shares"],
-  ["EPS ₹", "eps", 2, "", false, true, null],
+  ["Number of Shares Cr", "shares_cr", 2, "", false, false, "shares"],
+  ["EPS ₹", "eps", 1, "", false, true, null],
 ];
 const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> = {
   revenue: "revenue",
@@ -290,16 +290,23 @@ function AnnualTable({
       <p className="text-xs text-slate-500 mb-2">
         Screener.in, {basis} — annual Profit &amp; Loss, plus {CASE_LABEL[case_].toLowerCase()} estimates
       </p>
+      {/* table-fixed + an explicit width on every header cell — every
+          column renders at the same px width regardless of how many
+          fiscal years this particular company has (2Y for a recent
+          SME listing vs. 12Y for TITAN), so the layout doesn't visibly
+          jump switching between companies. Without table-fixed, plain
+          `w-full` divides the row width evenly among however many
+          columns exist, which is exactly what made it feel unstable. */}
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
+        <table className="text-sm" style={{ tableLayout: "fixed", width: `${220 + (stock.years.length + N_EST_YEARS) * 92}px` }}>
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2">Financial Year</th>
+              <th className="text-left px-3 py-2" style={{ width: 220 }}>Financial Year</th>
               {stock.years.map((y) => (
-                <th key={y} className="text-right px-3 py-2">{y}</th>
+                <th key={y} className="text-right px-3 py-2" style={{ width: 92 }}>{y}</th>
               ))}
               {Array.from({ length: N_EST_YEARS }, (_, i) => (
-                <th key={i} className="text-right px-3 py-2 bg-amber-50/80">
+                <th key={i} className="text-right px-3 py-2 bg-amber-50/80" style={{ width: 92 }}>
                   <div>Mar {lastYear + i + 1}</div>
                   <div className="text-amber-600 font-bold text-[10px]">ESTIMATE</div>
                 </th>
@@ -314,7 +321,7 @@ function AnnualTable({
                   <td
                     className={`px-3 py-1.5 whitespace-nowrap ${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${isGrowthRow ? "text-rose-700" : ""}`}
                   >
-                    {driverField && CRITICAL_FIELDS.includes(driverField) && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />}
+                    {driverField && CRITICAL_FIELDS.includes(driverField) && <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500 mr-1.5" />}
                     {label}
                   </td>
                   {(stock[key] as (number | null)[]).map((v, i) => (
@@ -366,10 +373,10 @@ function AnnualTable({
       </div>
       <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> Critical inputs
+          <span className="inline-block w-2 h-2 rounded-full bg-rose-500" /> Critical inputs
         </span>
         <span className="flex items-center gap-1.5">
-          <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" /> Editable estimates
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> Editable estimates
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-2 h-2 rounded-full bg-slate-300" /> Auto-computed
