@@ -5,6 +5,11 @@ keyed by APP_PASSWORD, so any server instance can verify it without a
 session store. Set APP_PASSWORD as a Vercel env var; there is no
 separate signing secret to configure.
 """
+from __future__ import annotations  # `str | None` below needs this on
+# Python <3.10 — Vercel's default Python runtime crashed importing this
+# module without it (every request 500'd with FUNCTION_INVOCATION_FAILED,
+# confirmed live 2026-08-22, not a wrong-password rejection).
+
 import hmac
 import hashlib
 import os
