@@ -70,6 +70,7 @@ export interface Stock {
   ema50d?: number | null;
   ema33w?: number | null;
   rsi_weekly?: number | null;
+  pe_history?: { min: number; median: number; avg: number; max: number; at_last_fy: number | null; last_fy_year: number } | null;
   years: string[];
   revenue: (number | null)[];
   revenue_growth_pct: (number | null)[];

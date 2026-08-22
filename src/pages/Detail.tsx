@@ -111,6 +111,15 @@ export default function Detail() {
   function chooseYear(case_: Case, i: number) {
     scheduleSave(case_, { ...caseStates[case_], chosenYear: i });
   }
+  // "click to apply to all years" (PE History chips) — one state update
+  // for all 3 years, not 3 calls to updateDriver in a row: each of those
+  // would read caseStates[case_] fresh from the same pre-update render,
+  // so the last call would silently clobber the first two.
+  function applyPeToAllYears(case_: Case, pe: number) {
+    const state = caseStates[case_];
+    const drivers = state.drivers.map((d) => ({ ...d, pe }));
+    scheduleSave(case_, { ...state, drivers });
+  }
   async function clearCase(case_: Case) {
     await api.clearScenario(ticker, case_);
     setBundle((b) => {
@@ -216,6 +225,7 @@ export default function Detail() {
         onChooseYear={chooseYear}
         onUpdateAssumptions={updateAssumptions}
         onClear={clearCase}
+        onApplyPeToAllYears={applyPeToAllYears}
       />
 
       <GuidancePanel ticker={ticker} />
@@ -334,6 +344,23 @@ function AnnualTable({
                 </tr>
               );
             })}
+            {/* Forward PE — current price ÷ that year's estimated EPS, a
+                computed read of how cheap/expensive the stock is today
+                against future earnings. Only meaningful for the estimate
+                years (no historical price-at-each-year-end data to do
+                this for the actuals column-by-column), matching the
+                reference's own dashes there. */}
+            <tr className="border-t border-slate-100">
+              <td className="px-3 py-1.5 font-semibold text-indigo-700">Forward PE x</td>
+              {stock.years.map((_, i) => (
+                <td key={i} className="px-3 py-1.5 text-right text-slate-300">—</td>
+              ))}
+              {Array.from({ length: N_EST_YEARS }, (_, i) => (
+                <td key={i} className="px-3 py-1.5 text-right tabular-nums font-semibold text-indigo-700 bg-amber-50/50">
+                  {model[i]?.forward_pe !== null && model[i]?.forward_pe !== undefined ? `${fmt(model[i].forward_pe, 1)}x` : "—"}
+                </td>
+              ))}
+            </tr>
           </tbody>
         </table>
       </div>
@@ -361,6 +388,7 @@ function CagrEstimatorCard({
   onChooseYear,
   onUpdateAssumptions,
   onClear,
+  onApplyPeToAllYears,
 }: {
   stock: Stock;
   case_: Case;
@@ -370,6 +398,7 @@ function CagrEstimatorCard({
   onChooseYear: (case_: Case, i: number) => void;
   onUpdateAssumptions: (case_: Case, text: string) => void;
   onClear: (case_: Case) => void;
+  onApplyPeToAllYears: (case_: Case, pe: number) => void;
 }) {
   const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
   const h = headlineCagr(stock, state);
@@ -398,13 +427,40 @@ function CagrEstimatorCard({
             </div>
           </div>
 
+          {stock.pe_history && (
+            <div className="mb-3 flex items-center flex-wrap gap-2 text-xs">
+              <span className="text-slate-400">PE History · 2Y</span>
+              {(
+                [
+                  ["Min", stock.pe_history.min],
+                  ["Median", stock.pe_history.median],
+                  ["Avg", stock.pe_history.avg],
+                  [`FY${stock.pe_history.last_fy_year}`, stock.pe_history.at_last_fy],
+                  ["Max", stock.pe_history.max],
+                ] as const
+              ).map(([label, value]) =>
+                value === null ? null : (
+                  <button
+                    key={label}
+                    onClick={() => onApplyPeToAllYears(case_, value)}
+                    title="Click to apply to all years"
+                    className="px-2 py-1 rounded border border-amber-200 bg-amber-50 text-amber-700 font-medium hover:border-amber-400"
+                  >
+                    {label} <span className="font-bold">{fmt(value, 1)}x</span>
+                  </button>
+                )
+              )}
+              <span className="text-slate-300">click to apply to all years</span>
+            </div>
+          )}
+
           <div className="overflow-x-auto rounded border border-slate-200">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 text-slate-500 text-xs">
                 <tr>
                   <th className="text-left px-3 py-2">Year</th>
                   <th className="text-right px-3 py-2">EPS (₹)</th>
-                  <th className="text-right px-3 py-2 bg-amber-50/80">PE Multiple</th>
+                  <th className="text-right px-3 py-2 bg-amber-50/80 w-24">PE Multiple</th>
                   <th className="text-right px-3 py-2">Share Price (₹)</th>
                   <th className="text-right px-3 py-2">Upside</th>
                   <th className="text-right px-3 py-2">CAGR</th>

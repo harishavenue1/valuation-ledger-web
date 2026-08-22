@@ -19,8 +19,8 @@ can have gaps (a company skipping/delaying a quarter), where a fixed
 -4 offset silently pairs the wrong periods (confirmed there on Krishna
 Defence & Allied Industries, missing a Jun-2025 column entirely).
 """
-import re, time
-from datetime import datetime
+import re, statistics, time
+from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 
@@ -40,48 +40,51 @@ def parse_number(s):
         return None
 
 
-def fetch_price_series(company_id, headers, days):
-    """Daily-close (date, price) pairs from Screener's own internal chart
-    API — not a public/documented endpoint, found by inspecting the
-    company page's own chart widget (data-company-id + a
-    /api/company/<id>/chart/?q=Price&days=N request), but it's the only
-    source that has price history for EVERY ticker this app supports,
-    including SME/small-caps (verified: yfinance has zero coverage for
-    Yash Highvoltage/544310, ruled out for that reason 2026-08-16).
-    Trade-off accepted along with that choice: this only returns daily
-    Close, not Open/High/Low, so EMAs computed from it are Close-based,
-    not the OHLC4 convention used elsewhere in this user's tools.
+def fetch_metric_series(company_id, headers, metric, days):
+    """(date, value) pairs for any of Screener's own internal chart-widget
+    metrics — not a public/documented endpoint, found by inspecting the
+    company page's own chart (data-company-id + a
+    /api/company/<id>/chart/?q=<metric>&days=N request). "Price" is the
+    only source that has price history for EVERY ticker this app
+    supports, including SME/small-caps (verified: yfinance has zero
+    coverage for Yash Highvoltage/544310, ruled out for that reason
+    2026-08-16) — that trade-off is specific to Price, not this function
+    in general. "Price to Earning" (2026-08-22, "PE history s available
+    on screener" — confirmed live: same endpoint, q="Price to Earning",
+    weekly granularity) backs the CAGR Estimator's PE History chips.
 
-    Screener silently changes granularity based on `days` — empirically
-    daily up to ~400-ish, auto-downsampled to ~weekly (7-day gaps) once
-    you ask for a long enough range. See DAILY_DAYS_FOR_EMA /
-    WEEKLY_DAYS_FOR_EMA below for the specific values this app relies on
-    to get each granularity — if Screener ever changes that threshold,
-    the daily fetch silently becoming weekly (or vice versa) would skew
-    every EMA quietly, so re-verify the gap pattern here if EMA values
-    ever look implausible.
+    Screener silently changes granularity based on `days` for the Price
+    metric specifically — empirically daily up to ~400-ish, auto-
+    downsampled to ~weekly (7-day gaps) once you ask for a long enough
+    range. See DAILY_DAYS_FOR_EMA/WEEKLY_DAYS_FOR_EMA below for the
+    specific values fetch_price_emas() relies on to get each
+    granularity — if Screener ever changes that threshold, the daily
+    fetch silently becoming weekly (or vice versa) would skew every EMA
+    quietly, so re-verify the gap pattern here if EMA values ever look
+    implausible. PE history has always come back weekly regardless of
+    `days` in testing, so no equivalent threshold to track there.
 
     Up to 2 retries with increasing backoff on failure (2026-08-16, "EMA
     distance missing for many companies", then "2 companies still not
     retrieved" after a first pass at just 1 retry wasn't quite enough)
-    — this endpoint is hit twice per company
-    (daily + weekly) with zero pacing between companies in
-    refresh_all_stocks()'s bulk loop, and confirmed live: several
-    companies came back with real quarterly data (parsed from the same
-    already-fetched page, no extra request) but null EMAs (this separate
-    chart-API call specifically failing) after a "Refresh all now",
-    while a standalone re-fetch of the exact same tickers moments later
-    succeeded — consistent with transient rate-limiting/timeouts under
-    that rapid back-to-back load, not a real per-company data problem."""
+    — this endpoint is hit multiple times per company with zero pacing
+    between companies in refresh_all_stocks()'s bulk loop, and confirmed
+    live: several companies came back with real quarterly data (parsed
+    from the same already-fetched page, no extra request) but null EMAs
+    (this separate chart-API call specifically failing) after a
+    "Refresh all now", while a standalone re-fetch of the exact same
+    tickers moments later succeeded — consistent with transient rate-
+    limiting/timeouts under that rapid back-to-back load, not a real
+    per-company data problem."""
     # 3 attempts, not 2 (2026-08-16, "2 companies still not retrieved" —
     # still failing occasionally for a couple of tickers with just one
     # retry; upped to two, with increasing backoff, and paired with the
-    # inter-chart-call delay added in fetch_price_emas()).
+    # inter-chart-call delay added in fetch_price_emas()/fetch_pe_history_stats()).
     backoffs = [1.5, 3.0]
     for attempt in range(3):
         try:
             r = requests.get(f"https://www.screener.in/api/company/{company_id}/chart/",
-                              params={"q": "Price", "days": days}, headers=headers, timeout=15)
+                              params={"q": metric, "days": days}, headers=headers, timeout=15)
         except requests.RequestException:
             r = None
         if r is not None and r.status_code == 200:
@@ -99,6 +102,11 @@ def fetch_price_series(company_id, headers, days):
         if attempt < len(backoffs):
             time.sleep(backoffs[attempt])
     return []
+
+
+def fetch_price_series(company_id, headers, days):
+    """Price metric specifically — see fetch_metric_series()'s docstring."""
+    return fetch_metric_series(company_id, headers, "Price", days)
 
 
 def ema(values, period):
@@ -145,6 +153,61 @@ def fetch_price_emas(company_id, headers):
         "ema50d": ema(daily_closes, 50),
         "ema33w": ema(weekly_closes, 33),
     }
+
+
+PE_HISTORY_FETCH_DAYS = 1095   # 3Y — comfortably covers "last FY" too, not just the 2Y stat window
+PE_HISTORY_STAT_DAYS = 730     # 2Y — matches the "PE HISTORY - 2Y" chip row
+
+
+def fetch_pe_history_stats(company_id, headers, last_fy_year):
+    """Min/Median/Avg/Max PE over the trailing 2Y, plus the PE as of the
+    last actual reported fiscal year-end (31 Mar `last_fy_year`) —
+    backs the CAGR Estimator card's "PE History" quick-apply chips
+    (2026-08-22, "PE history s available on screener"). Fetches a 3Y
+    window so the last-FY point is very likely present even though the
+    stat window itself is only 2Y. Returns None (not a dict of Nones)
+    if Screener has no PE history at all for this company — best-effort
+    add-on, same degrade-gracefully posture as EMAs, never fails the
+    whole fetch."""
+    try:
+        series = fetch_metric_series(company_id, headers, "Price to Earning", PE_HISTORY_FETCH_DAYS)
+    except Exception:
+        series = []
+    if not series:
+        return None
+
+    cutoff = datetime.now() - timedelta(days=PE_HISTORY_STAT_DAYS)
+    recent = [(d, v) for d, v in series if _parse_chart_date(d) is not None and _parse_chart_date(d) >= cutoff]
+    if not recent:
+        recent = series[-1:]  # thin history — at least surface something rather than nothing
+    recent_vals = [v for _, v in recent]
+
+    fy_end = datetime(last_fy_year, 3, 31)
+    at_last_fy = None
+    best_diff = None
+    for d, v in series:
+        dt = _parse_chart_date(d)
+        if dt is None:
+            continue
+        diff = abs((dt - fy_end).days)
+        if best_diff is None or diff < best_diff:
+            best_diff, at_last_fy = diff, v
+
+    return {
+        "min": round(min(recent_vals), 1),
+        "median": round(statistics.median(recent_vals), 1),
+        "avg": round(sum(recent_vals) / len(recent_vals), 1),
+        "max": round(max(recent_vals), 1),
+        "at_last_fy": round(at_last_fy, 1) if at_last_fy is not None else None,
+        "last_fy_year": last_fy_year,
+    }
+
+
+def _parse_chart_date(s):
+    try:
+        return datetime.strptime(s, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return None
 
 
 def resolve_url(ticker, headers):
@@ -419,6 +482,20 @@ def fetch_one(ticker, session_id=None):
     except Exception:
         emas = {"ema20d": None, "ema50d": None, "ema33w": None}
 
+    # PE History stats (min/median/avg/max over 2Y + the value as of the
+    # last actual FY-end) — same best-effort-add-on treatment as EMAs.
+    # pl_years may still have a trailing "TTM" here (clean_stock() runs
+    # AFTER fetch_one() returns, in fetch_company.py) — walk backward for
+    # the last real "Mon YYYY" fiscal label rather than trusting [-1].
+    pe_history = None
+    try:
+        fy_label = next((y for y in reversed(pl_years) if re.match(r"^(Mar|Jun|Sep|Dec)\s+\d{4}$", y)), None)
+        if fy_label:
+            last_fy_year = int(fy_label.split(" ")[1])
+            pe_history = fetch_pe_history_stats(company_id, headers, last_fy_year)
+    except Exception:
+        pe_history = None
+
     # Quarterly Results — same best-effort-add-on treatment as EMAs: a
     # missing/unparseable section (or a company that simply doesn't have
     # one) degrades to an empty "quarters" list rather than failing the
@@ -485,6 +562,7 @@ def fetch_one(ticker, session_id=None):
         "ema20d": emas["ema20d"],
         "ema50d": emas["ema50d"],
         "ema33w": emas["ema33w"],
+        "pe_history": pe_history,
         "years": pl_years,
         "revenue": revenue,
         "revenue_growth_pct": yoy_series(revenue),
