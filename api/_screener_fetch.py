@@ -159,23 +159,70 @@ PE_HISTORY_FETCH_DAYS = 1095   # 3Y — comfortably covers "last FY" too, not ju
 PE_HISTORY_STAT_DAYS = 730     # 2Y — matches the "PE HISTORY - 2Y" chip row
 
 
-def fetch_pe_history_stats(company_id, headers, last_fy_year):
+def _ttm_eps_at(target_date, q_dates, q_eps):
+    """Sum of the 4 most recent quarters' EPS with period-end <=
+    target_date, or None if fewer than 4 prior quarters exist yet or
+    any of those 4 is itself None (already-blanked outlier, or just
+    missing) — a partial-quarter TTM would understate/misrepresent the
+    trailing year, so this only ever returns a real 4-quarter sum or
+    nothing. q_dates/q_eps are the FULL (untrimmed to 8) chronologically
+    ascending quarterly arrays fetch_one() parses."""
+    idxs = [i for i, d in enumerate(q_dates) if d is not None and d <= target_date]
+    if len(idxs) < 4:
+        return None
+    vals = [q_eps[i] for i in idxs[-4:]]
+    if any(v is None for v in vals):
+        return None
+    return sum(vals)
+
+
+def fetch_pe_history_stats(company_id, headers, last_fy_year, q_eps, q_dates):
     """Min/Median/Avg/Max PE over the trailing 2Y, plus the PE as of the
     last actual reported fiscal year-end (31 Mar `last_fy_year`) —
     backs the CAGR Estimator card's "PE History" quick-apply chips
-    (2026-08-22, "PE history s available on screener"). Fetches a 3Y
-    window so the last-FY point is very likely present even though the
-    stat window itself is only 2Y. Returns None (not a dict of Nones)
-    if Screener has no PE history at all for this company — best-effort
-    add-on, same degrade-gracefully posture as EMAs, never fails the
-    whole fetch."""
+    (2026-08-22, "PE history s available on screener").
+
+    Computed as weekly price ÷ trailing-4-quarter EPS sum (a real TTM
+    PE), NOT read off Screener's own internal "Price to Earning" chart
+    metric — that metric turned out to be a materially different (and
+    less reliable) calculation from what Screener's own site displays
+    as "PE Ratio" (2026-08-22: user supplied a screenshot of Screener's
+    own PE Ratio chart for GNG Electronics staying in a ~30-55x range
+    with Median PE=38.0, while the internal chart-API metric gave
+    77-192x for the same period — that metric reacts to each quarter's
+    raw EPS directly, including the same pre-IPO tiny-share-count
+    glitch the annual/quarterly EPS fields needed fixing for, whereas
+    Screener's own chart evidently smooths against a proper TTM figure
+    instead). Uses the Price metric (same one price_series/EMAs already
+    trust) combined with q_eps/q_dates, which by the time this is called
+    already has _blank_eps_outliers() applied — so a glitchy quarter
+    simply makes any TTM window that includes it undefined (None) rather
+    than poisoning the PE with a bad EPS.
+
+    Fetches a 3Y price window so the last-FY point is very likely
+    present even though the stat window itself is only 2Y. Returns None
+    (not a dict of Nones) if there's not enough clean data to compute
+    even one TTM PE point — best-effort add-on, same degrade-gracefully
+    posture as EMAs, never fails the whole fetch."""
     try:
-        series = fetch_metric_series(company_id, headers, "Price to Earning", PE_HISTORY_FETCH_DAYS)
+        price_series = fetch_metric_series(company_id, headers, "Price", PE_HISTORY_FETCH_DAYS)
     except Exception:
-        series = []
+        price_series = []
+    if not price_series:
+        return None
+
+    series = []
+    for d, price in price_series:
+        dt = _parse_chart_date(d)
+        if dt is None or not price or price <= 0:
+            continue
+        ttm = _ttm_eps_at(dt, q_dates, q_eps)
+        if ttm is None or ttm <= 0:
+            continue
+        series.append((d, price / ttm))
     if not series:
         return None
-    series = _drop_pe_outliers(series)
+    series = _drop_pe_outliers(series)  # cheap extra insurance, not the primary fix anymore
     if not series:
         return None
 
@@ -554,26 +601,14 @@ def fetch_one(ticker, session_id=None):
     except Exception:
         emas = {"ema20d": None, "ema50d": None, "ema33w": None}
 
-    # PE History stats (min/median/avg/max over 2Y + the value as of the
-    # last actual FY-end) — same best-effort-add-on treatment as EMAs.
-    # pl_years may still have a trailing "TTM" here (clean_stock() runs
-    # AFTER fetch_one() returns, in fetch_company.py) — walk backward for
-    # the last real "Mon YYYY" fiscal label rather than trusting [-1].
-    pe_history = None
-    try:
-        fy_label = next((y for y in reversed(pl_years) if re.match(r"^(Mar|Jun|Sep|Dec)\s+\d{4}$", y)), None)
-        if fy_label:
-            last_fy_year = int(fy_label.split(" ")[1])
-            pe_history = fetch_pe_history_stats(company_id, headers, last_fy_year)
-    except Exception:
-        pe_history = None
-
-    # Quarterly Results — same best-effort-add-on treatment as EMAs: a
-    # missing/unparseable section (or a company that simply doesn't have
-    # one) degrades to an empty "quarters" list rather than failing the
-    # whole fetch, since this app's core has never depended on it.
+    # Quarterly Results — moved ahead of PE History (which now needs its
+    # cleaned quarterly EPS+dates) but otherwise unchanged: same best-
+    # effort-add-on treatment as EMAs, a missing/unparseable section (or
+    # a company that simply doesn't have one) degrades to an empty
+    # "quarters" list rather than failing the whole fetch.
     # 2026-08-16 request: "can we also pull in quarterly results".
     quarters, q_data = [], {}
+    full_q_eps, full_q_dates = [], []  # untrimmed — PE History's TTM math needs more than the last 8
     try:
         q_labels, q_rows, q_dates = parse_quarterly_section(soup)
         if q_labels and q_rows:
@@ -602,6 +637,7 @@ def fetch_one(ticker, session_id=None):
             # confirmed live on GNG Electronics: Sep-2024 quarter's EPS
             # of 5,943.30 against ~1.5-4 every other quarter).
             q_eps = _blank_eps_outliers(qpad(find_row(q_rows, "eps")))
+            full_q_eps, full_q_dates = q_eps, q_dates
             # YoY (not QoQ) — computed over the FULL fetched history before
             # trimming below, so the earliest kept quarter still gets a
             # real figure instead of losing it to truncation; date-matched
@@ -628,6 +664,31 @@ def fetch_one(ticker, session_id=None):
             }
     except Exception:
         quarters, q_data = [], {}
+
+    # PE History stats (min/median/avg/max over 2Y + the value as of the
+    # last actual FY-end) — same best-effort-add-on treatment as EMAs.
+    # Computed as price ÷ trailing-4-quarter EPS sum, NOT read off
+    # Screener's own internal "Price to Earning" chart metric — that
+    # metric turned out to be a genuinely different (and less reliable)
+    # calculation from what Screener's own site displays as "PE Ratio"
+    # (2026-08-22, user supplied a screenshot of Screener's own PE Ratio
+    # chart for GNG Electronics staying in a ~30-55x range with Median
+    # PE=38.0, while the internal chart-API metric gave 77-192x for the
+    # same period — the metric reacts to each quarter's raw EPS
+    # directly, including the same pre-IPO tiny-share-count glitch
+    # fixed above for the EPS rows, where Screener's own chart evidently
+    # smooths against a proper TTM figure instead). pl_years may still
+    # have a trailing "TTM" here (clean_stock() runs AFTER fetch_one()
+    # returns, in fetch_company.py) — walk backward for the last real
+    # "Mon YYYY" fiscal label rather than trusting [-1].
+    pe_history = None
+    try:
+        fy_label = next((y for y in reversed(pl_years) if re.match(r"^(Mar|Jun|Sep|Dec)\s+\d{4}$", y)), None)
+        if fy_label and full_q_eps and any(v is not None for v in full_q_eps):
+            last_fy_year = int(fy_label.split(" ")[1])
+            pe_history = fetch_pe_history_stats(company_id, headers, last_fy_year, full_q_eps, full_q_dates)
+    except Exception:
+        pe_history = None
 
     return {
         "ticker": canonical_ticker,
