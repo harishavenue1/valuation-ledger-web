@@ -213,6 +213,28 @@ def _parse_chart_date(s):
         return None
 
 
+def _blank_eps_outliers(vals, band=8):
+    """Same magnitude-outlier idea as _drop_pe_outliers(), applied to a
+    plain fixed-length quarterly EPS list instead of a (date, value)
+    chart series — blanks (sets to None) any value outside
+    [median/band, median*band] of the OTHER quarters' median, keeping
+    the list's length/alignment with the `quarters` labels intact
+    (unlike the PE series, this can't just drop points). A wider 8x
+    band than PE's 5x — a genuinely seasonal or one-off-charge business
+    can legitimately swing EPS quarter to quarter more than PE swings
+    year to year, so this is deliberately more permissive; the pre-IPO
+    tiny-share-count artifact this targets is typically off by 1000x+,
+    nowhere near the boundary either band would flag correctly."""
+    present = [v for v in vals if v is not None and v != 0]
+    if len(present) < 3:
+        return vals
+    med = statistics.median(abs(v) for v in present)
+    if med <= 0:
+        return vals
+    lo, hi = med / band, med * band
+    return [v if (v is None or lo <= abs(v) <= hi) else None for v in vals]
+
+
 def _drop_pe_outliers(series, band=5):
     """Drop points whose PE sits outside [median/band, median*band] of
     the series' OWN overall median — a magnitude-outlier filter, not an
@@ -501,6 +523,26 @@ def fetch_one(ticker, session_id=None):
         else:
             shares_cr.append(round(npv / e, 3))
 
+    # A recently-listed company's pre-IPO years often carry a tiny
+    # nominal share count in Screener's own historical table (a handful
+    # of founder shares before the actual public float/bonus-issue/split
+    # that came with listing) — not a real, comparable share base, so
+    # dividing PAT by it produces an EPS in the thousands that looks like
+    # a data error even though it's technically "real" per that stale
+    # count (2026-08-22, "keep left columns empty if not track record" —
+    # confirmed live on GNG Electronics: shares_cr of 0.004 Cr/40,000
+    # shares for 3 straight years produced EPS of 5,213/8,440/13,438
+    # against a normal ~7-12 range either side). 0.05 Cr (500,000
+    # shares) is comfortably below any real listed company's actual
+    # float, so treating both fields as untrustworthy below that and
+    # blanking them to None (rendered as "—") rather than showing either
+    # the inflated EPS or the near-zero share count.
+    MIN_PLAUSIBLE_SHARES_CR = 0.05
+    for i, s in enumerate(shares_cr):
+        if s is None or s < MIN_PLAUSIBLE_SHARES_CR:
+            shares_cr[i] = None
+            eps[i] = None
+
     canonical_ticker = base_url.rstrip("/").split("/")[-1]
 
     # EMAs are a best-effort add-on, not core to what this function has
@@ -552,7 +594,14 @@ def fetch_one(ticker, session_id=None):
             q_pbt = qpad(find_row(q_rows, "profit before tax"))
             q_tax_pct = qpad(find_row(q_rows, "tax %"))
             q_net_profit = qpad(find_row(q_rows, "net profit"))
-            q_eps = qpad(find_row(q_rows, "eps"))
+            # Blanked to None wherever it's a magnitude outlier vs. the
+            # other quarters (2026-08-22, "keep left columns empty if
+            # not track record" — same pre-IPO tiny-share-count artifact
+            # as the annual EPS fix above, just no q_shares field here to
+            # cross-check against directly, so a magnitude filter instead;
+            # confirmed live on GNG Electronics: Sep-2024 quarter's EPS
+            # of 5,943.30 against ~1.5-4 every other quarter).
+            q_eps = _blank_eps_outliers(qpad(find_row(q_rows, "eps")))
             # YoY (not QoQ) — computed over the FULL fetched history before
             # trimming below, so the earliest kept quarter still gets a
             # real figure instead of losing it to truncation; date-matched
