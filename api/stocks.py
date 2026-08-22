@@ -27,7 +27,7 @@ class handler(BaseHTTPRequestHandler):
                 "stocks": get_all_json(conn, "stocks"),
                 "scenarios": get_all_json(conn, "scenarios"),
                 "guidance": get_all_json(conn, "guidance"),
-                "guidance_tracker": get_meta(conn, "guidance_tracker", {}),
+                "guidance_tracker": get_meta(conn, "guidance_tracker", {"quarters": [], "tracked": [], "cells": {}}),
                 "last_refresh": get_meta(conn, "last_refresh", {}),
             }
             send_json(self, 200, payload)

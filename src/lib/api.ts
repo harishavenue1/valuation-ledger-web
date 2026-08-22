@@ -1,10 +1,21 @@
 import type { Case, CaseState, Guidance, Stock } from "./model";
 
+export type GuidanceTag = "" | "Beat" | "Neutral" | "Miss";
+export interface GuidanceTrackerCell {
+  note: string;
+  tag: GuidanceTag;
+}
+export interface GuidanceTracker {
+  quarters: string[];
+  tracked: string[];
+  cells: Record<string, Record<string, GuidanceTrackerCell>>;
+}
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
   guidance: Record<string, Guidance>;
-  guidance_tracker: Record<string, any>;
+  guidance_tracker: GuidanceTracker;
   last_refresh: Record<string, any>;
 }
 
@@ -54,6 +65,8 @@ export const api = {
     req("/api/scenario", { method: "POST", body: JSON.stringify({ ticker, case: case_, state }) }),
 
   saveGuidance: (ticker: string, data: Guidance) => req("/api/guidance", { method: "POST", body: JSON.stringify({ ticker, data }) }),
+
+  saveGuidanceTracker: (tracker: GuidanceTracker) => req("/api/guidance_tracker", { method: "POST", body: JSON.stringify(tracker) }),
 
   toggleOwned: (ticker: string, owned: boolean) =>
     req("/api/fetch_company", { method: "PATCH", body: JSON.stringify({ ticker, owned }) }),

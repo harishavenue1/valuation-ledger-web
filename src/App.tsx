@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import Summary from "./pages/Summary";
 import Companies from "./pages/Companies";
 import Detail from "./pages/Detail";
+import GuidanceTracker from "./pages/GuidanceTracker";
 import Settings from "./pages/Settings";
 
 interface DataCtx {
@@ -19,7 +20,13 @@ export function useData() {
   return ctx;
 }
 
-const EMPTY: Bundle = { stocks: {}, scenarios: {}, guidance: {}, guidance_tracker: {}, last_refresh: {} };
+const EMPTY: Bundle = {
+  stocks: {},
+  scenarios: {},
+  guidance: {},
+  guidance_tracker: { quarters: [], tracked: [], cells: {} },
+  last_refresh: {},
+};
 
 export default function App() {
   const [status, setStatus] = useState<"loading" | "authed" | "anon">("loading");
@@ -69,6 +76,9 @@ export default function App() {
               <NavLink to="/companies" className={({ isActive }) => navClass(isActive)}>
                 Companies
               </NavLink>
+              <NavLink to="/guidance-tracker" className={({ isActive }) => navClass(isActive)}>
+                📋 Guidance Tracker
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -89,6 +99,7 @@ export default function App() {
             <Route path="/" element={<Summary />} />
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
+            <Route path="/guidance-tracker" element={<GuidanceTracker />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

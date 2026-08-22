@@ -1,11 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useData } from "../App";
-import { api, ApiError } from "../lib/api";
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { api } from "../lib/api";
+import { bulkAddCompanies } from "../lib/bulkAdd";
 
 export default function Companies({ onAdded }: { onAdded: (ticker: string) => void }) {
   const { bundle, setBundle } = useData();
@@ -13,34 +10,14 @@ export default function Companies({ onAdded }: { onAdded: (ticker: string) => vo
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<{ kind: "error" | "info"; text: string } | null>(null);
 
-  // Comma-separated multi-ticker add — "MTAR, WINDLAS, MCX" fetches all
-  // three in one go, same as the old app's retrieve_companies(): looped
-  // one at a time (small pacing delay between calls, same rate-limit
-  // reasoning), each success merged into the ledger as it lands rather
-  // than batched at the end, failures collected and reported alongside
-  // successes rather than aborting the whole input on one bad ticker.
   async function addCompany(e: React.FormEvent) {
     e.preventDefault();
-    const inputTickers = ticker
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-    if (inputTickers.length === 0) return;
+    if (!ticker.trim()) return;
     setBusy(true);
     setStatus(null);
-    const successes: { ticker: string; name: string }[] = [];
-    const failures: { ticker: string; error: string }[] = [];
-    for (let i = 0; i < inputTickers.length; i++) {
-      if (i > 0) await sleep(400);
-      const t = inputTickers[i];
-      try {
-        const { stock } = await api.fetchCompany(t);
-        setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
-        successes.push({ ticker: stock.ticker, name: stock.name });
-      } catch (e) {
-        failures.push({ ticker: t, error: e instanceof ApiError ? e.message : "fetch failed" });
-      }
-    }
+    const { successes, failures } = await bulkAddCompanies(ticker, (stock) => {
+      setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
+    });
     setBusy(false);
     if (successes.length === 0) {
       setStatus({ kind: "error", text: `Couldn't fetch: ${failures.map((f) => `${f.ticker}: ${f.error}`).join("; ")}` });

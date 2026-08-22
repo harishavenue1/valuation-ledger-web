@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _clean import clean_stock
-from _db import delete_json, get_conn, get_json, upsert_json
+from _db import delete_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
 from _screener_fetch import fetch_one
 
@@ -36,6 +36,16 @@ class handler(BaseHTTPRequestHandler):
             existing = get_json(conn, "stocks", data["ticker"]) or {}
             data["owned"] = existing.get("owned", False)
             upsert_json(conn, "stocks", data["ticker"], data)
+            # Any fetch (Summary's Retrieve or the Guidance Tracker's own
+            # Add form) also adds to the tracker's "tracked" list — ported
+            # from the old app's retrieve_companies(), which both callers
+            # shared. One-directional: removing from the tracker doesn't
+            # touch the main company list.
+            tracker = get_meta(conn, "guidance_tracker", {"quarters": [], "tracked": [], "cells": {}})
+            tracked = tracker.setdefault("tracked", [])
+            if data["ticker"] not in tracked:
+                tracked.append(data["ticker"])
+                set_meta(conn, "guidance_tracker", tracker)
             send_json(self, 200, {"stock": data})
         finally:
             conn.close()
