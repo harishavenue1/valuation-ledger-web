@@ -8,9 +8,9 @@ import { bulkAddCompanies } from "../lib/bulkAdd";
 const GUIDANCE_TAGS: GuidanceTag[] = ["", "Beat", "Neutral", "Miss"];
 const TAG_CLASS: Record<GuidanceTag, string> = {
   "": "",
-  Beat: "bg-emerald-950 text-emerald-400 border-emerald-800",
-  Neutral: "bg-neutral-800 text-neutral-300 border-neutral-700",
-  Miss: "bg-red-950 text-red-400 border-red-800",
+  Beat: "bg-emerald-50 text-emerald-700 border-emerald-300",
+  Neutral: "bg-slate-100 text-slate-700 border-slate-300",
+  Miss: "bg-red-50 text-red-700 border-red-300",
 };
 
 export default function GuidanceTracker() {
@@ -102,47 +102,47 @@ export default function GuidanceTracker() {
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">📋 Management Guidance Tracker</h1>
       </div>
-      <p className="text-sm text-neutral-500 mb-4">Company (left) × Quarter (grows rightward — + at the end adds another).</p>
+      <p className="text-sm text-slate-500 mb-4">Company (left) × Quarter (grows rightward — + at the end adds another).</p>
 
       <form onSubmit={addCompany} className="flex gap-2 mb-2 max-w-xl">
         <input
           placeholder="e.g. TITAN, or MTAR, WINDLAS, MCX for several at once"
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
-          className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-neutral-500"
+          className="flex-1 bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-slate-400"
         />
         <button
           type="submit"
           disabled={busy}
-          className="px-4 py-2 rounded bg-neutral-100 text-neutral-900 text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+          className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap"
         >
           {busy ? "Fetching…" : "Add"}
         </button>
       </form>
       {status && (
-        <p className={`text-sm mb-4 ${status.kind === "error" ? "text-red-400" : "text-emerald-400"}`}>{status.text}</p>
+        <p className={`text-sm mb-4 ${status.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{status.text}</p>
       )}
 
       {tracker.tracked.length === 0 ? (
-        <div className="text-neutral-500 text-sm py-8 text-center border border-neutral-800 rounded">
+        <div className="text-slate-500 text-sm py-8 text-center border border-slate-200 rounded">
           No companies tracked here yet — add one above.
         </div>
       ) : (
-        <div className="overflow-x-auto rounded border border-neutral-800">
+        <div className="overflow-x-auto rounded border border-slate-200">
           <table className="text-sm border-collapse">
             <thead>
-              <tr className="bg-neutral-900 text-neutral-400 text-xs">
-                <th className="text-left px-3 py-2 align-top sticky left-0 bg-neutral-900 w-56 min-w-56">Company</th>
+              <tr className="bg-slate-50 text-slate-500 text-xs">
+                <th className="text-left px-3 py-2 align-top sticky left-0 bg-slate-50 w-56 min-w-56">Company</th>
                 {tracker.quarters.map((q) => (
                   <th key={q} className="px-2 py-2 align-top w-48 min-w-48">
                     <input
                       defaultValue={q}
                       onBlur={(e) => renameQuarter(q, e.target.value)}
-                      className="w-full bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs font-medium text-center"
+                      className="w-full bg-slate-100 border border-slate-300 rounded px-2 py-1 text-xs font-medium text-center"
                     />
                     <button
                       onClick={() => removeQuarter(q)}
-                      className="block mx-auto mt-1 text-[10px] text-neutral-500 hover:text-red-400"
+                      className="block mx-auto mt-1 text-[10px] text-slate-500 hover:text-red-600"
                       title={`Remove the "${q}" column (all companies)`}
                     >
                       ✕ remove
@@ -152,7 +152,7 @@ export default function GuidanceTracker() {
                 <th className="px-2 py-2 align-top w-12">
                   <button
                     onClick={addQuarter}
-                    className="w-8 h-8 rounded border border-neutral-700 hover:border-neutral-500 text-lg leading-none"
+                    className="w-8 h-8 rounded border border-slate-300 hover:border-slate-400 text-lg leading-none"
                     title="Add a new quarter column"
                   >
                     +
@@ -164,15 +164,15 @@ export default function GuidanceTracker() {
               {tracker.tracked.map((t) => {
                 const stock = bundle.stocks[t];
                 return (
-                  <tr key={t} className="border-t border-neutral-800 align-top">
-                    <td className="px-3 py-2 sticky left-0 bg-neutral-950">
+                  <tr key={t} className="border-t border-slate-200 align-top">
+                    <td className="px-3 py-2 sticky left-0 bg-slate-50">
                       <Link to={`/company/${t}`} className="font-medium hover:underline block">
                         {stock ? stock.name : t}
                       </Link>
-                      <span className="text-neutral-500 text-xs">{t}</span>
+                      <span className="text-slate-500 text-xs">{t}</span>
                       <button
                         onClick={() => removeCompany(t)}
-                        className="block mt-1 text-[11px] text-neutral-500 hover:text-red-400"
+                        className="block mt-1 text-[11px] text-slate-500 hover:text-red-600"
                         title={`Remove ${t} from this tracker only (doesn't touch the main company list)`}
                       >
                         🗑️ remove
@@ -185,7 +185,7 @@ export default function GuidanceTracker() {
                           <select
                             value={cell.tag}
                             onChange={(e) => setCell(t, q, { tag: e.target.value as GuidanceTag }, true)}
-                            className={`w-full mb-1 rounded border px-2 py-1 text-xs ${TAG_CLASS[cell.tag] || "bg-neutral-900 border-neutral-800"}`}
+                            className={`w-full mb-1 rounded border px-2 py-1 text-xs ${TAG_CLASS[cell.tag] || "bg-slate-50 border-slate-200"}`}
                           >
                             {GUIDANCE_TAGS.map((tag) => (
                               <option key={tag} value={tag}>
@@ -198,7 +198,7 @@ export default function GuidanceTracker() {
                             onChange={(e) => setCell(t, q, { note: e.target.value })}
                             placeholder="Guidance / commentary…"
                             rows={5}
-                            className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1 text-xs focus:outline-none focus:border-neutral-500"
+                            className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-slate-400"
                           />
                         </td>
                       );

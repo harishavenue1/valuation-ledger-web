@@ -54,7 +54,7 @@ export default function App() {
 
   if (status === "loading") {
     return (
-      <div className="min-h-screen flex items-center justify-center text-neutral-500 text-sm">
+      <div className="min-h-screen flex items-center justify-center text-slate-400 text-sm">
         Loading Valuation Ledger…
       </div>
     );
@@ -66,9 +66,9 @@ export default function App() {
   return (
     <Ctx.Provider value={{ bundle, setBundle, reload }}>
       <div className="min-h-screen flex flex-col">
-        <header className="border-b border-neutral-800 sticky top-0 bg-neutral-950/90 backdrop-blur z-20">
+        <header className="border-b border-slate-200 sticky top-0 bg-white/90 backdrop-blur z-20">
           <div className="max-w-[1400px] mx-auto px-4 py-3 flex items-center gap-6">
-            <span className="font-semibold tracking-tight text-lg">🧮 Valuation Ledger</span>
+            <span className="font-semibold tracking-tight text-lg text-indigo-600">🧮 Valuation Ledger</span>
             <nav className="flex gap-4 text-sm">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
                 Summary
@@ -84,7 +84,7 @@ export default function App() {
               </NavLink>
             </nav>
             <button
-              className="ml-auto text-xs text-neutral-500 hover:text-neutral-300"
+              className="ml-auto text-xs text-slate-400 hover:text-slate-700"
               onClick={async () => {
                 await api.logout();
                 setStatus("anon");
@@ -109,5 +109,5 @@ export default function App() {
 }
 
 function navClass(active: boolean) {
-  return active ? "text-neutral-100 font-medium" : "text-neutral-500 hover:text-neutral-300";
+  return active ? "text-slate-900 font-medium" : "text-slate-500 hover:text-slate-800";
 }

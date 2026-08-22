@@ -57,34 +57,34 @@ export default function Companies({ onAdded }: { onAdded: (ticker: string) => vo
           placeholder="e.g. TITAN, or MTAR, WINDLAS, MCX for several at once"
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
-          className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-neutral-500"
+          className="flex-1 bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-slate-400"
         />
         <button
           type="submit"
           disabled={busy}
-          className="px-4 py-2 rounded bg-neutral-100 text-neutral-900 text-sm font-medium disabled:opacity-50"
+          className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50"
         >
           {busy ? "Fetching…" : "Fetch & Add"}
         </button>
       </form>
       {status && (
-        <p className={`text-sm mb-4 ${status.kind === "error" ? "text-red-400" : "text-emerald-400"}`}>{status.text}</p>
+        <p className={`text-sm mb-4 ${status.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{status.text}</p>
       )}
 
-      <h2 className="text-sm text-neutral-400 mb-2">In the ledger ({tickers.length})</h2>
-      <ul className="divide-y divide-neutral-800 border border-neutral-800 rounded">
+      <h2 className="text-sm text-slate-500 mb-2">In the ledger ({tickers.length})</h2>
+      <ul className="divide-y divide-neutral-800 border border-slate-200 rounded">
         {tickers.map((t) => (
           <li key={t} className="flex items-center gap-3 px-3 py-2 text-sm">
             <Link to={`/company/${t}`} className="hover:underline flex-1">
               <span className="font-medium">{bundle.stocks[t].name}</span>{" "}
-              <span className="text-neutral-500 text-xs">{t}</span>
+              <span className="text-slate-500 text-xs">{t}</span>
             </Link>
-            <button onClick={() => remove(t)} className="text-xs text-neutral-500 hover:text-red-400">
+            <button onClick={() => remove(t)} className="text-xs text-slate-500 hover:text-red-600">
               Remove
             </button>
           </li>
         ))}
-        {tickers.length === 0 && <li className="px-3 py-8 text-center text-neutral-500">No companies yet.</li>}
+        {tickers.length === 0 && <li className="px-3 py-8 text-center text-slate-500">No companies yet.</li>}
       </ul>
     </div>
   );

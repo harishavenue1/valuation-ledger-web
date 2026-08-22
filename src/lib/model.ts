@@ -15,11 +15,14 @@ export const CASE_LABEL: Record<Case, string> = {
   bear: "Bear Case",
   mgmt: "Management Case",
 };
+// Light-theme palette (2026-08-22 redesign) — the original pastel set
+// was tuned for a dark background and reads as washed-out/low-contrast
+// on white. Base = indigo (matches the reference "BASE CASE" badge).
 export const CASE_COLOR: Record<Case, string> = {
-  base: "#B7C0BB",
-  bull: "#63C46E",
-  bear: "#E3776A",
-  mgmt: "#C4A8E8",
+  base: "#4f46e5",
+  bull: "#16a34a",
+  bear: "#dc2626",
+  mgmt: "#9333ea",
 };
 export const N_EST_YEARS = 3;
 export const DEFAULT_REV_GROWTH: Record<string, number> = { base: 20.0, bull: 25.0, bear: 15.0 };
@@ -38,6 +41,12 @@ export interface Driver {
 export interface CaseState {
   drivers: Driver[];
   assumptions: string;
+  // Which estimate year (0/1/2) this case's headline CAGR should use —
+  // an explicit "Use this year" pick (CAGR Estimator card), not
+  // auto-derived. null/undefined falls back to the old forward-walk
+  // (first year with a PE filled in) for scenarios saved before this
+  // existed.
+  chosenYear?: number | null;
 }
 
 export interface Guidance {
@@ -229,15 +238,26 @@ export interface Headline {
 export function headlineCagr(stock: Stock, state: CaseState): Headline | null {
   const model = computeModel(stock, state);
   const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
-  for (let i = 0; i < N_EST_YEARS; i++) {
+  function forYear(i: number): Headline | null {
     const dr = state.drivers[i];
-    const eps = model[i].eps;
-    if (dr?.pe && eps !== null) {
+    const eps = model[i]?.eps;
+    if (dr?.pe && eps !== undefined && eps !== null) {
       const year = lastYear + i + 1;
       const sharePrice = eps * dr.pe;
       const cagr = cagrFor(stock.current_price, sharePrice, daysUntil(year));
       return { cagr, sharePrice, year, growth: dr.revGrowth, pe: dr.pe };
     }
+    return null;
+  }
+  // An explicit "Use this year" pick (CAGR Estimator card) wins over the
+  // auto forward-walk, as long as that year is actually computable.
+  if (state.chosenYear !== null && state.chosenYear !== undefined) {
+    const chosen = forYear(state.chosenYear);
+    if (chosen) return chosen;
+  }
+  for (let i = 0; i < N_EST_YEARS; i++) {
+    const h = forYear(i);
+    if (h) return h;
   }
   return null;
 }

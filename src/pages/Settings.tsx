@@ -17,18 +17,18 @@ export default function Settings() {
   return (
     <div className="max-w-xl space-y-6">
       <div>
-        <h2 className="text-sm font-medium text-neutral-300 mb-2">Data</h2>
-        <p className="text-sm text-neutral-500 mb-3">
+        <h2 className="text-sm font-medium text-slate-700 mb-2">Data</h2>
+        <p className="text-sm text-slate-500 mb-3">
           {count} companies tracked. All data (stocks, scenarios, guidance) lives in Postgres — no GitHub sync, no export/import
           dance needed to persist edits.
         </p>
-        <button onClick={downloadBackup} className="text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500">
+        <button onClick={downloadBackup} className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400">
           Download JSON backup
         </button>
       </div>
       <div>
-        <h2 className="text-sm font-medium text-neutral-300 mb-2">Fetching</h2>
-        <p className="text-sm text-neutral-500">
+        <h2 className="text-sm font-medium text-slate-700 mb-2">Fetching</h2>
+        <p className="text-sm text-slate-500">
           Screener.in fundamentals/price fetch works fully anonymously — no session cookie needed.
         </p>
       </div>

@@ -79,18 +79,18 @@ function sortValue(row: Row, col: SortCol): number | string | null {
 }
 
 function PctCell({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-neutral-600">—</span>;
-  return <span className={value >= 0 ? "text-emerald-400 font-semibold" : "text-red-400 font-semibold"}>{fmtSigned(value)}</span>;
+  if (value === null) return <span className="text-slate-400">—</span>;
+  return <span className={value >= 0 ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{fmtSigned(value)}</span>;
 }
 
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
-  if (!h || h.cagr === null) return <span className="text-neutral-600 text-xs">fill PE</span>;
+  if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
   return (
     <div>
-      <div className="text-[10px] font-semibold text-neutral-500">FY{h.year}</div>
+      <div className="text-[10px] font-semibold text-slate-500">FY{h.year}</div>
       <div className="text-xs whitespace-nowrap">
         {fmtSigned(h.growth, 1)} | {fmt(h.pe, 1)}x |{" "}
-        <span className={h.cagr >= 0 ? "text-emerald-400 font-bold" : "text-red-400 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
+        <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
       </div>
     </div>
   );
@@ -112,7 +112,7 @@ function SortableHeader({
   const active = sortCol === col;
   return (
     <th className="text-center px-2 py-2 whitespace-nowrap">
-      <button onClick={() => onClick(col)} className={`hover:text-neutral-200 ${active ? "text-neutral-200" : ""}`}>
+      <button onClick={() => onClick(col)} className={`hover:text-slate-800 ${active ? "text-slate-800" : ""}`}>
         {label} {active ? (sortDir === "desc" ? "▼" : "▲") : ""}
       </button>
     </th>
@@ -197,22 +197,22 @@ function Section({
 
   return (
     <div className="mb-8">
-      <h2 className="text-sm font-medium text-neutral-300 mb-2">
+      <h2 className="text-sm font-medium text-slate-700 mb-2">
         {emoji} {title} ({stocks.length})
       </h2>
       {stocks.length === 0 ? (
-        <div className="text-neutral-500 text-sm py-6 text-center border border-neutral-800 rounded">{emptyMsg}</div>
+        <div className="text-slate-500 text-sm py-6 text-center border border-slate-200 rounded">{emptyMsg}</div>
       ) : (
-        <div className="overflow-x-auto rounded border border-neutral-800">
+        <div className="overflow-x-auto rounded border border-slate-200">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-900 text-neutral-400 text-xs">
+            <thead className="bg-slate-50 text-slate-500 text-xs">
               <tr>
                 <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
                 <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
                 <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
                 <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} />
                 <th className="text-center px-2 py-2" title="Current price vs. the Bull case's target price today (not annualized)">
-                  <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-neutral-200" : "hover:text-neutral-200"}>
+                  <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
                     Upside {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
                 </th>
@@ -233,13 +233,13 @@ function Section({
             </thead>
             <tbody>
               {sortedRows.map((row) => (
-                <tr key={row.ticker} className="border-t border-neutral-800 hover:bg-neutral-900/60">
+                <tr key={row.ticker} className="border-t border-slate-200 hover:bg-slate-50">
                   <td className="px-3 py-2">
                     <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left">
                       {row.stock.name}
                     </button>
-                    <div className="text-neutral-500 text-xs">{row.ticker}</div>
-                    {row.stale && <div className="text-amber-500 text-[10px]">⚠️ {row.stale}</div>}
+                    <div className="text-slate-500 text-xs">{row.ticker}</div>
+                    {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
                   </td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.mktcap)} Cr</td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
@@ -250,11 +250,11 @@ function Section({
                   <td className="px-2 py-2 text-center">
                     {row.qtrSalesLabel && row.qtrSalesG !== null ? (
                       <div>
-                        <div className="text-[10px] font-semibold text-neutral-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</div>
+                        <div className="text-[10px] font-semibold text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</div>
                         <PctCell value={row.qtrSalesG} />
                       </div>
                     ) : (
-                      <span className="text-neutral-600">—</span>
+                      <span className="text-slate-400">—</span>
                     )}
                   </td>
                   {EMA_COLS.map(([key]) => (
@@ -385,7 +385,7 @@ export default function Summary() {
           placeholder="🔍 Filter by name/ticker"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          className="bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm w-64 focus:outline-none focus:border-neutral-500"
+          className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm w-64 focus:outline-none focus:border-slate-400"
         />
         <div className="ml-auto w-full max-w-sm space-y-2">
           <form onSubmit={addCompany} className="flex gap-2">
@@ -393,25 +393,25 @@ export default function Summary() {
               placeholder="e.g. TITAN, or MTAR, WINDLAS, MCX"
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
-              className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-neutral-500"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-slate-400"
             />
             <button
               type="submit"
               disabled={addBusy}
-              className="px-3 py-1.5 rounded bg-neutral-100 text-neutral-900 text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+              className="px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap"
             >
               {addBusy ? "…" : "Retrieve"}
             </button>
           </form>
           {addStatus && (
-            <p className={`text-xs ${addStatus.kind === "error" ? "text-red-400" : "text-emerald-400"}`}>{addStatus.text}</p>
+            <p className={`text-xs ${addStatus.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{addStatus.text}</p>
           )}
           <div className="flex gap-2">
             <button
               onClick={() => runRefresh("prices")}
               disabled={!!refreshing}
               title="Fast — price/PE/market cap/52W high only, no P&L/quarterly/EMA"
-              className="flex-1 text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 disabled:opacity-50"
+              className="flex-1 text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
             >
               {refreshing === "prices" ? `Refreshing ${progress.done}/${progress.total}…` : "💹 Refresh prices only"}
             </button>
@@ -419,7 +419,7 @@ export default function Summary() {
               onClick={() => runRefresh("full")}
               disabled={!!refreshing}
               title="Full refresh — re-fetches P&L, Quarterly Results, and EMAs too (slower)"
-              className="flex-1 text-xs px-3 py-1.5 rounded border border-neutral-700 hover:border-neutral-500 disabled:opacity-50"
+              className="flex-1 text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
             >
               {refreshing === "full" ? `Refreshing ${progress.done}/${progress.total}…` : "🔄 Refresh all now"}
             </button>
@@ -428,7 +428,7 @@ export default function Summary() {
       </div>
 
       {totalCount === 0 ? (
-        <div className="text-neutral-500 text-sm py-8 text-center border border-neutral-800 rounded">
+        <div className="text-slate-500 text-sm py-8 text-center border border-slate-200 rounded">
           No companies yet — retrieve one from Screener.in above.
         </div>
       ) : (

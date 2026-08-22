@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useData } from "../App";
 import { api, ApiError } from "../lib/api";
@@ -14,8 +14,6 @@ import {
   cagrFor,
   computeModel,
   daysUntil,
-  estYearLabel,
-  fiscalQuarterLabel,
   fmt,
   fmtSigned,
   getCaseState,
@@ -42,25 +40,19 @@ const FIELD_STEP: Record<string, number> = {
   shares: 0.01,
   pe: 0.5,
 };
-const FIELD_DIGITS: Record<string, number> = {
-  revGrowth: 1,
-  opm: 1,
-  tax: 1,
-  other_income: 1,
-  interest: 1,
-  depreciation: 1,
-  shares: 3,
-  pe: 1,
-};
-const EDITABLE_FIELDS: (keyof Driver)[] = ["revGrowth", "opm", "tax", "other_income", "interest", "depreciation", "shares"];
+// Legend categories (2026-08-22 "Financially Free"-style redesign) —
+// Revenue Growth %/OPM %/Tax % swing the model the most, so they're
+// flagged "critical"; the rest are still editable estimates but lower-
+// leverage; the P&L rows below them are never directly edited at all.
+const CRITICAL_FIELDS: (keyof Driver)[] = ["revGrowth", "opm", "tax"];
+const GROWTH_ROW_KEYS = new Set(["revenue_growth_pct", "opm_pct", "pat_growth_pct"]);
 
-/** Same as Python's `arr[-1] if arr else fallback` — returns the last
- * element AS-IS (even if it's null), only using fallback when the array
- * itself is empty/missing. Deliberately not lastActual() (which skips
- * nulls) — this seeds the Playaround column exactly like the old app's
- * pg_seed did. */
-function lastOr(arr: (number | null)[] | undefined, fallback: number): number | null {
-  return arr && arr.length ? arr[arr.length - 1] : fallback;
+function estDateRange(year: number): { range: string; days: number } {
+  const today = new Date();
+  const end = new Date(year, 2, 31); // 31 Mar
+  const fmtShort = (d: Date) => d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
+  const days = Math.max(0, Math.round((end.getTime() - today.getTime()) / 86400000));
+  return { range: `${fmtShort(today)} – ${fmtShort(end)}`, days };
 }
 
 export default function Detail() {
@@ -70,6 +62,7 @@ export default function Detail() {
   const stock = bundle.stocks[ticker];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [selectedCase, setSelectedCase] = useState<Case>("base");
 
   const guidance = bundle.guidance[ticker] ?? null;
   const caseStates: Record<Case, CaseState> = useMemo(() => {
@@ -90,31 +83,9 @@ export default function Detail() {
     }, 500);
   }
 
-  // Playaround column — session-only scratch state, never persisted (see
-  // lastOr's comment above). react-router keeps the same Detail instance
-  // across a ticker change (same route, different param), so this needs
-  // an explicit reset on ticker change rather than relying on remount.
-  function seedPg(s: Stock | undefined) {
-    return {
-      revGrowth: lastOr(s?.revenue_growth_pct, 20),
-      opm: lastOr(s?.opm_pct, 20),
-      tax: lastOr(s?.tax_pct, 25),
-      other_income: lastOr(s?.other_income, 0),
-      interest: lastOr(s?.interest, 0),
-      depreciation: lastOr(s?.depreciation, 0),
-      shares: lastOr(s?.shares_cr, 0),
-      pe: s?.pe_ratio || 20,
-    };
-  }
-  const [pg, setPg] = useState(() => seedPg(stock));
-  useEffect(() => {
-    setPg(seedPg(stock));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ticker]);
-
   if (!stock) {
     return (
-      <div className="text-neutral-500">
+      <div className="text-slate-500">
         Company not found. <button className="underline" onClick={() => navigate("/companies")}>Add it</button>.
       </div>
     );
@@ -128,8 +99,7 @@ export default function Detail() {
       if (idx !== i) return d;
       const nd = { ...d, [field]: parsed };
       // PE mirrors Revenue Growth % live until the user types their own
-      // PE — detected by "pe still equals the OLD revGrowth", same
-      // signal the old app tracked with an explicit pe_auto_key.
+      // PE — detected by "pe still equals the OLD revGrowth".
       if (field === "revGrowth" && d.pe === d.revGrowth) nd.pe = parsed;
       return nd;
     });
@@ -137,6 +107,9 @@ export default function Detail() {
   }
   function updateAssumptions(case_: Case, text: string) {
     scheduleSave(case_, { ...caseStates[case_], assumptions: text });
+  }
+  function chooseYear(case_: Case, i: number) {
+    scheduleSave(case_, { ...caseStates[case_], chosenYear: i });
   }
   async function clearCase(case_: Case) {
     await api.clearScenario(ticker, case_);
@@ -160,32 +133,21 @@ export default function Detail() {
     }
   }
 
-  const models: Record<Case, ReturnType<typeof computeModel>> = useMemo(() => {
-    const out: any = {};
-    for (const c of GRID_CASES) out[c] = computeModel(stock, caseStates[c]);
-    return out;
-  }, [stock, caseStates]);
-
-  const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
   const basis = stock.consolidated ? "consolidated" : "standalone";
-
-  const pgModel = computeModel(stock, { drivers: [{ ...pg, pe: null } as Driver], assumptions: "" })[0];
-  const pgImpliedPrice = pgModel.eps !== null && pg.pe ? pgModel.eps * pg.pe : null;
-  const pgYear = lastYear + 1;
-  const pgCagr = cagrFor(stock.current_price, pgImpliedPrice, daysUntil(pgYear));
+  const selectedModel = computeModel(stock, caseStates[selectedCase]);
 
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">{stock.name}</h1>
-        <span className="text-neutral-500 text-sm">({ticker})</span>
-        <button onClick={refresh} disabled={busy} className="ml-auto text-xs px-2 py-1 rounded border border-neutral-700 hover:border-neutral-500 disabled:opacity-50">
+        <span className="text-slate-500 text-sm">({ticker})</span>
+        <button onClick={refresh} disabled={busy} className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50">
           {busy ? "Refreshing…" : `🔄 Refresh ${ticker} now`}
         </button>
       </div>
-      {error && <p className="text-sm text-red-400 mb-2">{error}</p>}
+      {error && <p className="text-sm text-red-600 mb-2">{error}</p>}
 
-      <div className="flex flex-wrap gap-4 text-sm mb-4 py-3 border-y border-neutral-800">
+      <div className="flex flex-wrap gap-4 text-sm mb-4 py-3 border-y border-slate-200">
         <Stat label="Price" value={`₹${fmt(stock.current_price)}`} />
         <Stat label="P/E" value={`${fmt(stock.pe_ratio, 1)}x`} />
         <Stat label="Mkt Cap" value={`₹${fmt(stock.market_cap_cr)} Cr`} />
@@ -195,157 +157,66 @@ export default function Detail() {
       <div className="grid grid-cols-3 gap-3 mb-6">
         {GRID_CASES.map((c) => {
           const h = headlineCagr(stock, caseStates[c]);
+          const active = c === selectedCase;
           return (
-            <div key={c} className="rounded-lg border border-neutral-800 px-3 py-3" style={{ borderLeftColor: CASE_COLOR[c], borderLeftWidth: 3 }}>
-              <div className="text-xs" style={{ color: CASE_COLOR[c] }}>{CASE_LABEL[c]}</div>
+            <button
+              key={c}
+              onClick={() => setSelectedCase(c)}
+              className={`text-left rounded-lg border px-3 py-3 transition ${active ? "ring-2 ring-offset-1" : "border-slate-200 hover:border-slate-300"}`}
+              style={{ borderLeftColor: CASE_COLOR[c], borderLeftWidth: 3, ...(active ? { borderColor: CASE_COLOR[c], boxShadow: `0 0 0 2px ${CASE_COLOR[c]}22` } : {}) }}
+            >
+              <div className="text-xs font-semibold" style={{ color: CASE_COLOR[c] }}>{CASE_LABEL[c]}</div>
               {h && h.cagr !== null ? (
                 <>
-                  <div className={`text-lg font-semibold ${h.cagr >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtSigned(h.cagr, 1)}</div>
-                  <div className="text-[11px] text-neutral-500">₹{fmt(h.sharePrice)} · FY{h.year}</div>
+                  <div className={`text-lg font-semibold ${h.cagr >= 0 ? "text-emerald-600" : "text-red-600"}`}>{fmtSigned(h.cagr, 1)}</div>
+                  <div className="text-[11px] text-slate-500">₹{fmt(h.sharePrice)} · FY{h.year}</div>
                 </>
               ) : (
-                <div className="text-sm text-neutral-600 mt-1">fill PE to compute</div>
+                <div className="text-sm text-slate-400 mt-1">fill PE to compute</div>
               )}
-            </div>
+            </button>
           );
         })}
       </div>
 
       {stock.quarters && stock.quarters.length > 0 && <QuarterlyTable stock={stock} basis={basis} />}
-      <AnnualTable stock={stock} basis={basis} pg={pg} setPg={setPg} pgModel={pgModel} pgImpliedPrice={pgImpliedPrice} pgCagr={pgCagr} />
 
-      {/* ── Future Projections & CAGR — one combined grid, all cases × all years ── */}
-      <div className="mb-8">
-        <h2 className="text-base font-semibold mb-2">🎯 Future Projections & CAGR — all cases, all years, one grid</h2>
+      {/* ── Case selector for the estimate section below ── */}
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs text-slate-500">Modelling:</span>
+        {GRID_CASES.map((c) => (
+          <button
+            key={c}
+            onClick={() => setSelectedCase(c)}
+            className="text-xs font-semibold px-3 py-1 rounded-full border"
+            style={
+              c === selectedCase
+                ? { backgroundColor: CASE_COLOR[c], borderColor: CASE_COLOR[c], color: "white" }
+                : { borderColor: "#e2e8f0", color: CASE_COLOR[c] }
+            }
+          >
+            {CASE_LABEL[c].toUpperCase()}
+          </button>
+        ))}
         {guidance && (
-          <p className="text-xs bg-blue-950/40 border border-blue-900 text-blue-300 rounded px-3 py-2 mb-3">
-            📋 <b>Guidance-seeded</b> — Base/Bull/Bear Revenue Growth % pre-filled from management guidance research where
-            available (as of {guidance.as_of || "unknown"}). Edit any case freely.
-          </p>
+          <span className="ml-auto text-[11px] text-blue-700 bg-blue-50 border border-blue-200 rounded px-2 py-1">
+            📋 Guidance-seeded (as of {guidance.as_of || "unknown"})
+          </span>
         )}
-        <div className="overflow-x-auto rounded border border-neutral-800">
-          <table className="text-sm border-collapse w-full">
-            <thead>
-              <tr className="bg-neutral-900">
-                <th className="w-40"></th>
-                {Array.from({ length: N_EST_YEARS }, (_, i) =>
-                  GRID_CASES.map((c, ci) => (
-                    <th
-                      key={`${i}-${c}`}
-                      className="px-2 py-2 text-center border-l border-neutral-800 first:border-l-0"
-                      style={i > 0 && ci === 0 ? { borderLeftWidth: 2, borderLeftColor: "#404040" } : undefined}
-                    >
-                      <div className="text-xs font-bold">FY{lastYear + i + 1}</div>
-                      <div className="text-[11px] font-bold" style={{ color: CASE_COLOR[c] }}>
-                        {CASE_LABEL[c].replace(" Case", "")}
-                      </div>
-                    </th>
-                  ))
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {EDITABLE_FIELDS.map((field) => (
-                <tr key={field} className="border-t border-neutral-800">
-                  <td className="px-3 py-1.5 text-neutral-400 text-xs whitespace-nowrap">{FIELD_LABEL[field]}</td>
-                  {Array.from({ length: N_EST_YEARS }, (_, i) =>
-                    GRID_CASES.map((c) => (
-                      <td key={`${i}-${c}`} className="px-1 py-1.5">
-                        <input
-                          type="number"
-                          step={FIELD_STEP[field]}
-                          className="num-input"
-                          value={caseStates[c].drivers[i][field] ?? ""}
-                          onChange={(e) => updateDriver(c, i, field, e.target.value)}
-                        />
-                      </td>
-                    ))
-                  )}
-                </tr>
-              ))}
-              {(
-                [
-                  ["Revenue Cr", "revenue", 0],
-                  ["PAT Cr", "pat", 0],
-                  ["EPS ₹", "eps", 2],
-                ] as const
-              ).map(([label, key, digits]) => (
-                <tr key={key} className="border-t border-neutral-800">
-                  <td className="px-3 py-1.5 text-neutral-500 text-xs italic">{label}</td>
-                  {Array.from({ length: N_EST_YEARS }, (_, i) =>
-                    GRID_CASES.map((c) => (
-                      <td key={`${i}-${c}`} className="px-2 py-1.5 text-center text-neutral-400 italic text-sm">
-                        {fmt((models[c][i] as any)[key], digits)}
-                      </td>
-                    ))
-                  )}
-                </tr>
-              ))}
-              <tr className="border-t border-neutral-800 bg-neutral-900/30">
-                <td className="px-3 py-1.5 font-medium text-xs">PE Multiple</td>
-                {Array.from({ length: N_EST_YEARS }, (_, i) =>
-                  GRID_CASES.map((c) => (
-                    <td key={`${i}-${c}`} className="px-1 py-1.5">
-                      <input
-                        type="number"
-                        step={0.5}
-                        className="num-input font-medium"
-                        value={caseStates[c].drivers[i].pe ?? ""}
-                        onChange={(e) => updateDriver(c, i, "pe", e.target.value)}
-                      />
-                    </td>
-                  ))
-                )}
-              </tr>
-              <tr className="border-t border-neutral-800">
-                <td className="px-3 py-2 font-medium text-xs">CAGR</td>
-                {Array.from({ length: N_EST_YEARS }, (_, i) =>
-                  GRID_CASES.map((c) => {
-                    const eps = models[c][i].eps;
-                    const peVal = caseStates[c].drivers[i].pe;
-                    const sharePrice = eps !== null && peVal ? eps * peVal : null;
-                    const cagr = cagrFor(stock.current_price, sharePrice, daysUntil(lastYear + i + 1));
-                    return (
-                      <td key={`${i}-${c}`} className="px-2 py-2 text-center">
-                        {cagr === null ? (
-                          <span className="text-neutral-600">—</span>
-                        ) : (
-                          <span className={`text-lg font-bold ${cagr >= 0 ? "text-emerald-400" : "text-red-400"}`}>{fmtSigned(cagr, 1)}</span>
-                        )}
-                      </td>
-                    );
-                  })
-                )}
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <p className="text-[11px] text-neutral-500 mt-1.5">plain = editable estimate (carried forward by default) · italic = auto-computed</p>
       </div>
 
-      {/* ── Key Assumptions ── */}
-      <div className="mb-8">
-        <h2 className="text-xs text-neutral-500 mb-2">Key Assumptions</h2>
-        <div className="grid grid-cols-3 gap-3">
-          {GRID_CASES.map((c) => (
-            <div key={c}>
-              <div className="text-xs font-semibold mb-1" style={{ color: CASE_COLOR[c] }}>{CASE_LABEL[c]}</div>
-              <textarea
-                defaultValue={caseStates[c].assumptions}
-                onChange={(e) => updateAssumptions(c, e.target.value)}
-                rows={5}
-                className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-500"
-              />
-              <button
-                onClick={() => clearCase(c)}
-                className="mt-1 w-full text-[11px] px-2 py-1 rounded border border-neutral-700 hover:border-neutral-500 text-neutral-400"
-              >
-                Clear estimates
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
+      <AnnualTable stock={stock} basis={basis} case_={selectedCase} state={caseStates[selectedCase]} model={selectedModel} onUpdateDriver={updateDriver} />
+
+      <CagrEstimatorCard
+        stock={stock}
+        case_={selectedCase}
+        state={caseStates[selectedCase]}
+        model={selectedModel}
+        onUpdateDriver={updateDriver}
+        onChooseYear={chooseYear}
+        onUpdateAssumptions={updateAssumptions}
+        onClear={clearCase}
+      />
 
       <GuidancePanel ticker={ticker} />
     </div>
@@ -355,7 +226,7 @@ export default function Detail() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[11px] text-neutral-500">{label}</div>
+      <div className="text-[11px] text-slate-500">{label}</div>
       <div className="tabular-nums">{value}</div>
     </div>
   );
@@ -377,10 +248,7 @@ const ANNUAL_ROWS: [string, string, number, string, boolean, boolean, keyof Driv
   ["Number of Shares Cr", "shares_cr", 3, "", false, false, "shares"],
   ["EPS ₹", "eps", 2, "", false, true, null],
 ];
-// pg-computed (non-editable Playaround cell) values, keyed by the same
-// stock-field name as ANNUAL_ROWS above, for the rows that don't have
-// their own pgField (mirrors hist_row's pg_value= callers in app.py).
-const PG_COMPUTED_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> = {
+const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> = {
   revenue: "revenue",
   expenses: "expenses",
   operating_profit: "operating_profit",
@@ -393,104 +261,233 @@ const PG_COMPUTED_KEY: Record<string, keyof ReturnType<typeof computeModel>[numb
 function AnnualTable({
   stock,
   basis,
-  pg,
-  setPg,
-  pgModel,
-  pgImpliedPrice,
-  pgCagr,
+  case_,
+  state,
+  model,
+  onUpdateDriver,
 }: {
   stock: Stock;
   basis: string;
-  pg: any;
-  setPg: (fn: (p: any) => any) => void;
-  pgModel: ReturnType<typeof computeModel>[number];
-  pgImpliedPrice: number | null;
-  pgCagr: number | null;
+  case_: Case;
+  state: CaseState;
+  model: ReturnType<typeof computeModel>;
+  onUpdateDriver: (case_: Case, i: number, field: keyof Driver, raw: string) => void;
 }) {
-  function updatePg(field: string, raw: string) {
-    const v = raw === "" ? null : parseFloat(raw);
-    setPg((p: any) => ({ ...p, [field]: v === null || Number.isNaN(v) ? null : v }));
-  }
+  const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
   return (
-    <div className="mb-8">
+    <div className="mb-6">
       <h2 className="text-base font-semibold mb-1">Annual Results</h2>
-      <p className="text-xs text-neutral-500 mb-2">
-        Screener.in, {basis} — annual Profit &amp; Loss
+      <p className="text-xs text-slate-500 mb-2">
+        Screener.in, {basis} — annual Profit &amp; Loss, plus {CASE_LABEL[case_].toLowerCase()} estimates
       </p>
-      <div className="overflow-x-auto rounded border border-neutral-800">
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-900 text-neutral-400 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
               <th className="text-left px-3 py-2">Financial Year</th>
               {stock.years.map((y) => (
                 <th key={y} className="text-right px-3 py-2">{y}</th>
               ))}
-              <th className="text-center px-3 py-2 text-amber-500">🧪 Playaround</th>
+              {Array.from({ length: N_EST_YEARS }, (_, i) => (
+                <th key={i} className="text-right px-3 py-2 bg-amber-50/80">
+                  <div>Mar {lastYear + i + 1}</div>
+                  <div className="text-amber-600 font-bold text-[10px]">ESTIMATE</div>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
-            {ANNUAL_ROWS.map(([label, key, digits, suffix, colorize, bold, pgField]) => (
-              <tr key={key} className="border-t border-neutral-800">
-                <td className={`px-3 py-1.5 ${bold ? "font-semibold" : "text-neutral-400"}`}>{label}</td>
-                {(stock[key] as (number | null)[]).map((v, i) => (
-                  <td key={i} className={`px-3 py-1.5 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
-                    {colorize ? (
-                      <span className={v === null ? "" : v >= 0 ? "text-emerald-400" : "text-red-400"}>{fmtSigned(v, digits, suffix)}</span>
-                    ) : (
-                      fmt(v, digits, suffix)
-                    )}
+            {ANNUAL_ROWS.map(([label, key, digits, suffix, colorize, bold, driverField]) => {
+              const isGrowthRow = GROWTH_ROW_KEYS.has(key);
+              return (
+                <tr key={key} className="border-t border-slate-100">
+                  <td
+                    className={`px-3 py-1.5 whitespace-nowrap ${bold ? "font-semibold text-slate-800" : "text-slate-500"} ${isGrowthRow ? "text-rose-700" : ""}`}
+                  >
+                    {driverField && CRITICAL_FIELDS.includes(driverField) && <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5" />}
+                    {label}
                   </td>
-                ))}
-                <td className="px-2 py-1.5">
-                  {pgField ? (
-                    <input
-                      type="number"
-                      step={FIELD_STEP[pgField]}
-                      className="num-input"
-                      value={(pg as any)[pgField] ?? ""}
-                      onChange={(e) => updatePg(pgField, e.target.value)}
-                    />
-                  ) : (
-                    <div className="text-right tabular-nums text-amber-200/80">
-                      {fmt((pgModel as any)[PG_COMPUTED_KEY[key]], digits, suffix)}
-                    </div>
-                  )}
-                </td>
-              </tr>
-            ))}
-            <tr className="border-t border-neutral-800 bg-neutral-900/30">
-              <td className="px-3 py-1.5 font-semibold">Future PE</td>
-              {stock.years.map((_, i) => (
-                <td key={i} />
-              ))}
-              <td className="px-2 py-1.5">
-                <input
-                  type="number"
-                  step={0.5}
-                  className="num-input font-medium"
-                  value={pg.pe ?? ""}
-                  onChange={(e) => updatePg("pe", e.target.value)}
-                />
-              </td>
-            </tr>
-            <tr className="border-t border-neutral-800">
-              <td className="px-3 py-1.5 font-semibold">Implied Price ₹</td>
-              {stock.years.map((_, i) => (
-                <td key={i} />
-              ))}
-              <td className="px-3 py-1.5 text-right font-bold text-amber-400">{fmt(pgImpliedPrice)}</td>
-            </tr>
-            <tr className="border-t border-neutral-800">
-              <td className="px-3 py-1.5 font-semibold">CAGR</td>
-              {stock.years.map((_, i) => (
-                <td key={i} />
-              ))}
-              <td className={`px-3 py-1.5 text-right font-bold ${pgCagr === null ? "" : pgCagr >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                {fmtSigned(pgCagr, 1)}
-              </td>
-            </tr>
+                  {(stock[key] as (number | null)[]).map((v, i) => (
+                    <td key={i} className={`px-3 py-1.5 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
+                      {colorize ? (
+                        <span className={v === null ? "" : v >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(v, digits, suffix)}</span>
+                      ) : (
+                        fmt(v, digits, suffix)
+                      )}
+                    </td>
+                  ))}
+                  {Array.from({ length: N_EST_YEARS }, (_, i) => (
+                    <td key={i} className="px-2 py-1.5 bg-amber-50/50">
+                      {driverField ? (
+                        <input
+                          type="number"
+                          step={FIELD_STEP[driverField]}
+                          className="num-input"
+                          value={state.drivers[i][driverField] ?? ""}
+                          onChange={(e) => onUpdateDriver(case_, i, driverField, e.target.value)}
+                        />
+                      ) : (
+                        <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
+      </div>
+      <div className="flex items-center gap-4 mt-2 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> Critical inputs
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-indigo-400" /> Editable estimates
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-slate-300" /> Auto-computed
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function CagrEstimatorCard({
+  stock,
+  case_,
+  state,
+  model,
+  onUpdateDriver,
+  onChooseYear,
+  onUpdateAssumptions,
+  onClear,
+}: {
+  stock: Stock;
+  case_: Case;
+  state: CaseState;
+  model: ReturnType<typeof computeModel>;
+  onUpdateDriver: (case_: Case, i: number, field: keyof Driver, raw: string) => void;
+  onChooseYear: (case_: Case, i: number) => void;
+  onUpdateAssumptions: (case_: Case, text: string) => void;
+  onClear: (case_: Case) => void;
+}) {
+  const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
+  const h = headlineCagr(stock, state);
+  // Highlight the explicitly-chosen year if set, else whichever year
+  // headlineCagr() actually resolved to (the auto forward-walk) — so the
+  // highlighted row always matches what the top chip is showing.
+  const effectiveChosen = state.chosenYear ?? (h ? h.year - lastYear - 1 : null);
+
+  return (
+    <div className="mb-8">
+      <div className="card overflow-hidden">
+        <div className="px-4 py-2 text-xs font-bold text-white" style={{ backgroundColor: CASE_COLOR[case_] }}>
+          {CASE_LABEL[case_].toUpperCase()}
+        </div>
+        <div className="p-4">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <h3 className="font-semibold text-slate-900">CAGR Estimator</h3>
+              <p className="text-xs text-slate-500">{stock.name}</p>
+            </div>
+            <div className="text-right text-xs">
+              <div className="text-slate-400">Current Price</div>
+              <div className="font-bold text-slate-900">₹{fmt(stock.current_price)}</div>
+              <div className="text-slate-400 mt-1">Current P/E</div>
+              <div className="font-bold" style={{ color: CASE_COLOR[case_] }}>{fmt(stock.pe_ratio, 1)}</div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500 text-xs">
+                <tr>
+                  <th className="text-left px-3 py-2">Year</th>
+                  <th className="text-right px-3 py-2">EPS (₹)</th>
+                  <th className="text-right px-3 py-2 bg-amber-50/80">PE Multiple</th>
+                  <th className="text-right px-3 py-2">Share Price (₹)</th>
+                  <th className="text-right px-3 py-2">Upside</th>
+                  <th className="text-right px-3 py-2">CAGR</th>
+                  <th className="text-right px-3 py-2">Duration</th>
+                  <th className="px-2 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: N_EST_YEARS }, (_, i) => {
+                  const year = lastYear + i + 1;
+                  const eps = model[i]?.eps ?? null;
+                  const pe = state.drivers[i]?.pe ?? null;
+                  const sharePrice = eps !== null && pe ? eps * pe : null;
+                  const upside = sharePrice !== null && stock.current_price ? (sharePrice / stock.current_price - 1) * 100 : null;
+                  const cagr = cagrFor(stock.current_price, sharePrice, daysUntil(year));
+                  const { range, days } = estDateRange(year);
+                  const isChosen = effectiveChosen === i;
+                  return (
+                    <tr key={i} className={`border-t border-slate-100 ${isChosen ? "bg-emerald-50" : ""}`}>
+                      <td className="px-3 py-2 font-medium">FY{year}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmt(eps, 1)}</td>
+                      <td className="px-2 py-2 bg-amber-50/40">
+                        <input
+                          type="number"
+                          step={0.5}
+                          className="num-input"
+                          value={pe ?? ""}
+                          onChange={(e) => onUpdateDriver(case_, i, "pe", e.target.value)}
+                        />
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-medium">{sharePrice !== null ? `₹${fmt(sharePrice)}` : "—"}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {upside === null ? (
+                          <span className="text-slate-400">—</span>
+                        ) : (
+                          <span className={upside >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(upside)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                        {cagr === null ? (
+                          <span className="text-slate-400">—</span>
+                        ) : (
+                          <span className={cagr >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(cagr, 1)}</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right text-[11px] text-slate-500 whitespace-nowrap">
+                        {range} <span className="inline-block ml-1 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-medium">{days}d</span>
+                      </td>
+                      <td className="px-2 py-2 text-right">
+                        <button
+                          onClick={() => onChooseYear(case_, i)}
+                          disabled={isChosen}
+                          className={`text-[11px] px-2 py-1 rounded border font-medium ${
+                            isChosen ? "border-emerald-300 text-emerald-700 bg-emerald-50" : "border-slate-300 text-slate-600 hover:border-indigo-400 hover:text-indigo-600"
+                          }`}
+                        >
+                          {isChosen ? "✓ Headline" : "Use"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-4">
+            <div className="text-xs font-semibold text-slate-500 mb-1">Key Assumptions</div>
+            <textarea
+              defaultValue={state.assumptions}
+              onChange={(e) => onUpdateAssumptions(case_, e.target.value)}
+              placeholder={`Document your analysis assumptions for ${CASE_LABEL[case_]}…`}
+              rows={4}
+              className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-400"
+            />
+            <button
+              onClick={() => onClear(case_)}
+              className="mt-1.5 text-[11px] px-2 py-1 rounded border border-slate-300 hover:border-slate-400 text-slate-500"
+            >
+              Clear estimates
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -516,12 +513,12 @@ function QuarterlyTable({ stock, basis }: { stock: Stock; basis: string }) {
   return (
     <div className="mb-8">
       <h2 className="text-base font-semibold mb-1">Qtr Results</h2>
-      <p className="text-xs text-neutral-500 mb-2">
+      <p className="text-xs text-slate-500 mb-2">
         Screener.in, {basis} — last {stock.quarters!.length} quarters
       </p>
-      <div className="overflow-x-auto rounded border border-neutral-800">
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full text-sm">
-          <thead className="bg-neutral-900 text-neutral-400 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
               <th className="text-left px-3 py-2">Quarter</th>
               {stock.quarters!.map((q) => (
@@ -531,12 +528,12 @@ function QuarterlyTable({ stock, basis }: { stock: Stock; basis: string }) {
           </thead>
           <tbody>
             {QUARTER_ROWS.map(([label, key, digits, suffix, colorize, bold]) => (
-              <tr key={key} className="border-t border-neutral-800">
-                <td className={`px-3 py-1.5 ${bold ? "font-semibold" : "text-neutral-400"}`}>{label}</td>
+              <tr key={key} className="border-t border-slate-100">
+                <td className={`px-3 py-1.5 ${bold ? "font-semibold text-slate-800" : "text-slate-500"}`}>{label}</td>
                 {((stock[key] as (number | null)[]) ?? []).map((v, i) => (
                   <td key={i} className={`px-3 py-1.5 text-right tabular-nums ${bold ? "font-semibold" : ""}`}>
                     {colorize ? (
-                      <span className={v === null ? "" : v >= 0 ? "text-emerald-400" : "text-red-400"}>{fmtSigned(v, digits, suffix)}</span>
+                      <span className={v === null ? "" : v >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(v, digits, suffix)}</span>
                     ) : (
                       fmt(v, digits, suffix)
                     )}
@@ -589,10 +586,10 @@ function GuidancePanel({ ticker }: { ticker: string }) {
   }
 
   return (
-    <div className="mb-8 rounded border border-neutral-800">
-      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center px-3 py-2 text-sm font-medium text-neutral-300">
+    <div className="mb-8 rounded-lg border border-slate-200 bg-white">
+      <button onClick={() => setOpen((o) => !o)} className="w-full flex items-center px-3 py-2 text-sm font-medium text-slate-700">
         Management Guidance research
-        <span className="ml-auto text-xs text-neutral-500">{open ? "hide" : g.source_text ? "edit" : "add"}</span>
+        <span className="ml-auto text-xs text-slate-500">{open ? "hide" : g.source_text ? "edit" : "add"}</span>
       </button>
       {open && (
         <div className="px-3 pb-3 space-y-2 text-sm">
@@ -605,7 +602,7 @@ function GuidancePanel({ ticker }: { ticker: string }) {
             placeholder="Guidance text (from concall / investor deck)…"
             value={form.source_text}
             onChange={(e) => setForm((f) => ({ ...f, source_text: e.target.value }))}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-xs focus:outline-none focus:border-neutral-500"
+            className="w-full bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs focus:outline-none focus:border-indigo-400"
             rows={3}
           />
           <div className="grid grid-cols-2 gap-2">
@@ -613,25 +610,25 @@ function GuidancePanel({ ticker }: { ticker: string }) {
               placeholder="Confidence (e.g. High / Medium / Low)"
               value={form.confidence}
               onChange={(e) => setForm((f) => ({ ...f, confidence: e.target.value }))}
-              className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-500"
+              className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-400"
             />
             <input
               placeholder="As of (date)"
               value={form.as_of}
               onChange={(e) => setForm((f) => ({ ...f, as_of: e.target.value }))}
-              className="bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-500"
+              className="bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-400"
             />
           </div>
           <input
             placeholder="Source URLs, comma-separated"
             value={form.source_urls}
             onChange={(e) => setForm((f) => ({ ...f, source_urls: e.target.value }))}
-            className="w-full bg-neutral-900 border border-neutral-800 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-neutral-500"
+            className="w-full bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs focus:outline-none focus:border-indigo-400"
           />
-          <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-neutral-100 text-neutral-900 font-medium disabled:opacity-50">
+          <button onClick={save} disabled={saving} className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium disabled:opacity-50">
             {saving ? "Saving…" : "Save guidance"}
           </button>
-          <p className="text-[11px] text-neutral-500">Seeds Base/Bull/Bear Revenue Growth % for any case that hasn't been hand-edited yet.</p>
+          <p className="text-[11px] text-slate-500">Seeds Base/Bull/Bear Revenue Growth % for any case that hasn't been hand-edited yet.</p>
         </div>
       )}
     </div>
@@ -640,7 +637,7 @@ function GuidancePanel({ ticker }: { ticker: string }) {
 
 function Field({ label, value, onChange }: { label: string; value: string | number; onChange: (v: string) => void }) {
   return (
-    <label className="text-xs text-neutral-500">
+    <label className="text-xs text-slate-500">
       {label}
       <input type="number" step={0.5} value={value} onChange={(e) => onChange(e.target.value)} className="num-input mt-1 text-left" />
     </label>
