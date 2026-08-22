@@ -1,4 +1,15 @@
+import os
+import sys
 from http.server import BaseHTTPRequestHandler
+
+# Vercel's Python runtime imports this entrypoint via importlib by
+# absolute path, which — unlike a normal `python script.py` run —
+# doesn't add this file's own directory to sys.path. Without this, the
+# `from _xxx import ...` lines below fail with ModuleNotFoundError even
+# though the sibling files are right here (confirmed live 2026-08-22 —
+# every /api/* endpoint 500'd with exactly that error until this was
+# added to all six of them).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _auth import check_password, clear_cookie_header, set_cookie_header
 from _http import read_json_body, send_json

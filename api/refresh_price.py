@@ -5,7 +5,14 @@ from the frontend with limited concurrency (see Summary.tsx's
 "Refresh all prices") instead of one long server-side loop — keeps each
 call comfortably inside a serverless function's timeout and refreshes
 the whole ledger in parallel rather than one ticker at a time."""
+import os
+import sys
 from http.server import BaseHTTPRequestHandler
+
+# See login.py's comment on this line — Vercel's Python runtime doesn't
+# put this file's own directory on sys.path, so sibling `_xxx` imports
+# fail without it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _db import get_conn, get_json, upsert_json
 from _http import read_json_body, require_auth, send_json

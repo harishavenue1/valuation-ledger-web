@@ -3,7 +3,14 @@ ticker (revenue_growth base/bull/bear seeds + source text/urls/
 confidence/as_of). Read back as part of the /api/stocks bundle; the
 frontend's defaultCaseState() (src/lib/model.ts) uses it to seed
 Revenue Growth % for any case that hasn't been hand-edited yet."""
+import os
+import sys
 from http.server import BaseHTTPRequestHandler
+
+# See login.py's comment on this line — Vercel's Python runtime doesn't
+# put this file's own directory on sys.path, so sibling `_xxx` imports
+# fail without it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _db import get_conn, upsert_json
 from _http import read_json_body, require_auth, send_json

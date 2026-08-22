@@ -2,7 +2,14 @@
 for one ticker via Screener.in, upserted into the stocks table.
 DELETE — remove a company (and its saved scenarios) from the ledger.
 PATCH — toggle the "owned" flag without a full re-fetch."""
+import os
+import sys
 from http.server import BaseHTTPRequestHandler
+
+# See login.py's comment on this line — Vercel's Python runtime doesn't
+# put this file's own directory on sys.path, so sibling `_xxx` imports
+# fail without it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _clean import clean_stock
 from _db import delete_json, get_conn, get_json, upsert_json

@@ -4,7 +4,14 @@ plus last_refresh/guidance_tracker meta. One round trip, then every
 interaction after that is computed client-side (src/lib/model.ts) —
 this is the actual "fast" fix versus the old app's full-page Streamlit
 rerun on every click."""
+import os
+import sys
 from http.server import BaseHTTPRequestHandler
+
+# See login.py's comment on this line — Vercel's Python runtime doesn't
+# put this file's own directory on sys.path, so sibling `_xxx` imports
+# fail without it.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _db import get_all_json, get_conn, get_meta
 from _http import require_auth, send_json
