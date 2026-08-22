@@ -38,7 +38,7 @@ const EMA_COLS: [string, string][] = [
 ];
 
 // Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
-const COL_WIDTHS = [220, 100, 90, 80, 90, 100, 80, 80, 80, 150, 150, 150, 60, 50];
+const COL_WIDTHS = [220, 100, 90, 80, 90, 100, 80, 80, 80, 175, 175, 175, 60, 50];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
@@ -88,11 +88,20 @@ function PctCell({ value }: { value: number | null }) {
 
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
   if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
+  const detail = `${fmtSigned(h.growth, 1)} | ${fmt(h.pe, 1)}x`;
   return (
-    <div>
+    <div className="overflow-hidden">
       <div className="text-[10px] font-semibold text-slate-500">FY{h.year}</div>
-      <div className="text-xs whitespace-nowrap">
-        {fmtSigned(h.growth, 1)} | {fmt(h.pe, 1)}x |{" "}
+      {/* whitespace-nowrap text longer than the column's fixed width
+          bleeds into the neighboring cell instead of wrapping or
+          shrinking (table-layout: fixed doesn't grow the column to
+          fit) — different rows' growth/PE digit counts produce
+          different text lengths, so the bleed varied row to row,
+          which is what looked like inconsistent row/column widths.
+          truncate (overflow-hidden + text-ellipsis) caps it at the
+          real column width instead; title carries the full text. */}
+      <div className="text-xs truncate" title={`${detail} | ${fmtSigned(h.cagr, 1)}`}>
+        <span className="text-slate-500">{detail}</span> |{" "}
         <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
       </div>
     </div>
