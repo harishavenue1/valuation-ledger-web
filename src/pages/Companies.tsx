@@ -3,27 +3,60 @@ import { Link } from "react-router-dom";
 import { useData } from "../App";
 import { api, ApiError } from "../lib/api";
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function Companies({ onAdded }: { onAdded: (ticker: string) => void }) {
   const { bundle, setBundle } = useData();
   const [ticker, setTicker] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [status, setStatus] = useState<{ kind: "error" | "info"; text: string } | null>(null);
 
+  // Comma-separated multi-ticker add — "MTAR, WINDLAS, MCX" fetches all
+  // three in one go, same as the old app's retrieve_companies(): looped
+  // one at a time (small pacing delay between calls, same rate-limit
+  // reasoning), each success merged into the ledger as it lands rather
+  // than batched at the end, failures collected and reported alongside
+  // successes rather than aborting the whole input on one bad ticker.
   async function addCompany(e: React.FormEvent) {
     e.preventDefault();
-    if (!ticker.trim()) return;
+    const inputTickers = ticker
+      .split(",")
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (inputTickers.length === 0) return;
     setBusy(true);
-    setError("");
-    try {
-      const { stock } = await api.fetchCompany(ticker.trim());
-      setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
-      setTicker("");
-      onAdded(stock.ticker);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Fetch failed — try again");
-    } finally {
-      setBusy(false);
+    setStatus(null);
+    const successes: { ticker: string; name: string }[] = [];
+    const failures: { ticker: string; error: string }[] = [];
+    for (let i = 0; i < inputTickers.length; i++) {
+      if (i > 0) await sleep(400);
+      const t = inputTickers[i];
+      try {
+        const { stock } = await api.fetchCompany(t);
+        setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
+        successes.push({ ticker: stock.ticker, name: stock.name });
+      } catch (e) {
+        failures.push({ ticker: t, error: e instanceof ApiError ? e.message : "fetch failed" });
+      }
     }
+    setBusy(false);
+    if (successes.length === 0) {
+      setStatus({ kind: "error", text: `Couldn't fetch: ${failures.map((f) => `${f.ticker}: ${f.error}`).join("; ")}` });
+      return;
+    }
+    setTicker("");
+    // Only jump straight to the Detail page for the single-ticker,
+    // no-failures case — jumping anywhere specific doesn't make sense
+    // once multiple companies just got added at once.
+    if (successes.length === 1 && failures.length === 0) {
+      onAdded(successes[0].ticker);
+      return;
+    }
+    let text = `Added: ${successes.map((s) => `${s.name} (${s.ticker})`).join(", ")}.`;
+    if (failures.length > 0) text += ` Couldn't fetch: ${failures.map((f) => `${f.ticker}: ${f.error}`).join("; ")}`;
+    setStatus({ kind: failures.length > 0 ? "error" : "info", text });
   }
 
   async function remove(t: string) {
@@ -44,7 +77,7 @@ export default function Companies({ onAdded }: { onAdded: (ticker: string) => vo
     <div className="max-w-2xl">
       <form onSubmit={addCompany} className="flex gap-2 mb-6">
         <input
-          placeholder="Ticker or company name (e.g. TITAN, Yash Highvoltage)"
+          placeholder="e.g. TITAN, or MTAR, WINDLAS, MCX for several at once"
           value={ticker}
           onChange={(e) => setTicker(e.target.value)}
           className="flex-1 bg-neutral-900 border border-neutral-800 rounded px-3 py-2 text-sm focus:outline-none focus:border-neutral-500"
@@ -57,7 +90,9 @@ export default function Companies({ onAdded }: { onAdded: (ticker: string) => vo
           {busy ? "Fetching…" : "Fetch & Add"}
         </button>
       </form>
-      {error && <p className="text-sm text-red-400 mb-4">{error}</p>}
+      {status && (
+        <p className={`text-sm mb-4 ${status.kind === "error" ? "text-red-400" : "text-emerald-400"}`}>{status.text}</p>
+      )}
 
       <h2 className="text-sm text-neutral-400 mb-2">In the ledger ({tickers.length})</h2>
       <ul className="divide-y divide-neutral-800 border border-neutral-800 rounded">
