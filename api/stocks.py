@@ -1,0 +1,28 @@
+"""GET /api/stocks — the single bootstrap payload the frontend loads on
+first render: every stock, every saved scenario, every guidance record,
+plus last_refresh/guidance_tracker meta. One round trip, then every
+interaction after that is computed client-side (src/lib/model.ts) —
+this is the actual "fast" fix versus the old app's full-page Streamlit
+rerun on every click."""
+from http.server import BaseHTTPRequestHandler
+
+from _db import get_all_json, get_conn, get_meta
+from _http import require_auth, send_json
+
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if not require_auth(self):
+            return
+        conn = get_conn()
+        try:
+            payload = {
+                "stocks": get_all_json(conn, "stocks"),
+                "scenarios": get_all_json(conn, "scenarios"),
+                "guidance": get_all_json(conn, "guidance"),
+                "guidance_tracker": get_meta(conn, "guidance_tracker", {}),
+                "last_refresh": get_meta(conn, "last_refresh", {}),
+            }
+            send_json(self, 200, payload)
+        finally:
+            conn.close()
