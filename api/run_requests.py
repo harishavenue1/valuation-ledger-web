@@ -35,7 +35,7 @@ from _http import read_json_body, require_auth, send_json
 
 VALID_SCREENERS = {
     "viraj_screen", "myLongTermInvestingStrategy", "weekendInvesting",
-    "quantBollinger", "Nifty500RelativeStrength",
+    "quantBollinger", "Nifty500RelativeStrength", "nseScreener",
 }
 
 

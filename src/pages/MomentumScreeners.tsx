@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import RunButton from "../components/RunButton";
 
-// Each of these 4 screeners now scans NSE 750 (Nifty Total Market) and
+// Each of these 5 screeners now scans NSE 750 (Nifty Total Market) and
 // pushes independently from its own local skill script — see
 // api/momentum_screeners.py. Row shape differs per screener (its own
 // columns), so each tab defines its own small column list rather than
@@ -13,6 +13,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "weekendInvesting", label: "weekendInvesting", emoji: "🏁" },
   { key: "quantBollinger", label: "quantBollinger", emoji: "📊" },
   { key: "Nifty500RelativeStrength", label: "RS (NSE750)", emoji: "💪" },
+  { key: "nseScreener", label: "NSE Screener", emoji: "📈" },
 ];
 
 function fmtNum(v: any, digits = 2): string {
@@ -159,6 +160,21 @@ export default function MomentumScreeners() {
       { key: "rs_6m", label: "RS 6M %", render: (r) => <Signed v={r.rs_6m} digits={1} /> },
       { key: "rs_score", label: "RS Score", render: (r) => <span className="font-semibold">{fmtNum(r.rs_score, 1)}</span> },
       { key: "rs_new_high", label: "New High?", render: (r) => (r.rs_new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
+    nseScreener: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => fmtNum(r.price) },
+      { key: "change_pct", label: "Change %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "weekly_pct", label: "Weekly %", render: (r) => <Signed v={r.weekly_pct} digits={1} /> },
+      { key: "monthly_pct", label: "Monthly %", render: (r) => <Signed v={r.monthly_pct} digits={1} /> },
+      { key: "three_month_pct", label: "3Month %", render: (r) => <Signed v={r.three_month_pct} digits={1} /> },
+      { key: "yearly_pct", label: "Yearly %", render: (r) => <Signed v={r.yearly_pct} digits={1} /> },
+      { key: "rsi_d", label: "RSI(D)", render: (r) => fmtNum(r.rsi_d, 1) },
+      { key: "rsi_w", label: "RSI(W)", render: (r) => fmtNum(r.rsi_w, 1) },
+      { key: "rsi_m", label: "RSI(M)", render: (r) => fmtNum(r.rsi_m, 1) },
+      { key: "three_week_green", label: "3W Green", render: (r) => (r.three_week_green ? <span className="text-emerald-600 font-semibold">Y</span> : "") },
     ],
   };
 
