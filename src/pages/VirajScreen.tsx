@@ -68,10 +68,20 @@ function Th({ label, w, sortKey, active, dir, onClick }: { label: string; w: num
 }
 
 export default function VirajScreen() {
-  const { bundle } = useData();
+  const { bundle, reload } = useData();
   const navigate = useNavigate();
   const { as_of, rows } = bundle.viraj_screen;
   const [q, setQ] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function doRefresh() {
+    setRefreshing(true);
+    try {
+      await reload();
+    } finally {
+      setRefreshing(false);
+    }
+  }
   const [category, setCategory] = useState<(typeof CATEGORY_CHIPS)[number]>("All");
   const [verdict, setVerdict] = useState<(typeof VERDICT_CHIPS)[number]["value"]>("All");
   const [sortKey, setSortKey] = useState<SortKey>("verdict");
@@ -133,6 +143,13 @@ export default function VirajScreen() {
         <span className="text-slate-500 text-sm">
           {rows.length} stocks{as_of ? ` · as of ${as_of}` : ""}
         </span>
+        <button
+          onClick={doRefresh}
+          disabled={refreshing}
+          className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
+        >
+          {refreshing ? "Refreshing…" : "🔄 Refresh"}
+        </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Weekly momentum filter — Viraj's Momentum / T2T Segments / Sharpe Based Momentum, 6-rule validation. Pushed by{" "}

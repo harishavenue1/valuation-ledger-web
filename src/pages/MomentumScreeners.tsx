@@ -98,11 +98,21 @@ function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; c
 }
 
 export default function MomentumScreeners() {
-  const { bundle } = useData();
+  const { bundle, reload } = useData();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
+  const [refreshing, setRefreshing] = useState(false);
   const entry = bundle.momentum_screeners[tab];
   const rows = entry?.rows ?? [];
+
+  async function doRefresh() {
+    setRefreshing(true);
+    try {
+      await reload();
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   const COLS: Record<string, Col[]> = {
     myLongTermInvestingStrategy: [
@@ -156,6 +166,13 @@ export default function MomentumScreeners() {
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">📈 Momentum Screeners</h1>
         <span className="text-slate-500 text-sm">NSE 750 (Nifty Total Market)</span>
+        <button
+          onClick={doRefresh}
+          disabled={refreshing}
+          className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
+        >
+          {refreshing ? "Refreshing…" : "🔄 Refresh"}
+        </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Four independent momentum strategies, each pushed by its own local skill script after every run.
