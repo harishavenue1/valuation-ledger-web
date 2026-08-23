@@ -42,12 +42,25 @@ export interface VirajScreen {
   rows: VirajRow[];
 }
 
+// One entry per NSE750 momentum screener (myLongTermInvestingStrategy,
+// weekendInvesting, quantBollinger, Nifty500RelativeStrength), pushed
+// independently by each local skill script — row shape differs per
+// screener (own columns), so rows are typed loosely and each tab on
+// the MomentumScreeners page renders its own known fields.
+export interface MomentumScreenerEntry {
+  label: string;
+  as_of: string | null;
+  rows: Record<string, any>[];
+}
+export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
   guidance: Record<string, Guidance>;
   guidance_tracker: GuidanceTracker;
   viraj_screen: VirajScreen;
+  momentum_screeners: MomentumScreeners;
   last_refresh: Record<string, any>;
 }
 
