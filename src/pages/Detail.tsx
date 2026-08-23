@@ -151,10 +151,10 @@ export default function Detail() {
     // tables, so left at full shell width it just leaves a wall of
     // dead space to the right of every table (2026-08-23 screenshot
     // of /company/VENUSREM, "still page empty"). Cap it to roughly
-    // what the tables now need (label 150 + 12×78 ≈ 1086px, both
-    // Annual — 9 hist + 3 est — and Quarterly are 12 columns as of
-    // 2026-08-23) plus breathing room, centered in the wider shell.
-    <div className="max-w-[1180px] mx-auto">
+    // what the tables now need (label 225 + 12×117 ≈ 1629px, both
+    // Annual — 9 hist + 3 est — and Quarterly are 12 columns) plus
+    // breathing room, centered in the wider shell.
+    <div className="max-w-[1680px] mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">{stock.name}</h1>
         <span className="text-slate-500 text-sm">({ticker})</span>
@@ -282,12 +282,12 @@ const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> =
 const N_HIST_COLS = 9;
 // Matches Screener.in's own results tables (measured live off
 // screener.in/company/RELIANCE: label ~150-158px, data columns
-// ~76-80px each) rather than stretching to fill this app's wider
-// max-w-[1800px] page — Screener's tables don't fill their page
-// either, they just sit at a comfortable fixed width (2026-08-23,
-// "use screener.in page column width as it looks appealing").
-const LABEL_COL_WIDTH = 150;
-const DATA_COL_WIDTH = 78;
+// ~76-80px each) as a base, then widened 50% (2026-08-23, "page has
+// enough space on left and right... increase column width by another
+// 50%") now that the page itself has room (max-w-[1680px] below) to
+// take it without leaving dead space either.
+const LABEL_COL_WIDTH = 225;
+const DATA_COL_WIDTH = 117;
 
 /** Always exactly N_HIST_COLS entries — trailing (most recent) years
  * kept, older ones dropped, and left-padded with null when the company
