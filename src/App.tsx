@@ -6,6 +6,7 @@ import Summary from "./pages/Summary";
 import Companies from "./pages/Companies";
 import Detail from "./pages/Detail";
 import GuidanceTracker from "./pages/GuidanceTracker";
+import VirajScreen from "./pages/VirajScreen";
 import Settings from "./pages/Settings";
 
 interface DataCtx {
@@ -25,6 +26,7 @@ const EMPTY: Bundle = {
   scenarios: {},
   guidance: {},
   guidance_tracker: { quarters: [], tracked: [], cells: {} },
+  viraj_screen: { as_of: null, rows: [] },
   last_refresh: {},
 };
 
@@ -79,6 +81,9 @@ export default function App() {
               <NavLink to="/guidance-tracker" className={({ isActive }) => navClass(isActive)}>
                 📋 Guidance Tracker
               </NavLink>
+              <NavLink to="/viraj-screen" className={({ isActive }) => navClass(isActive)}>
+                🎯 Viraj Screen
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -100,6 +105,7 @@ export default function App() {
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
+            <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

@@ -11,11 +11,43 @@ export interface GuidanceTracker {
   cells: Record<string, Record<string, GuidanceTrackerCell>>;
 }
 
+// One row per stock from ~/Downloads/viraj_screen.py's "All Stocks"
+// sheet — F1-F3/C1-C3 and most numeric-looking fields arrive as
+// already-formatted strings ("✅"/"❌"/"—", "+90%", "5/6") straight
+// from the script's own build_rows()/render, not raw numbers; render
+// them as-is rather than re-parsing.
+export interface VirajRow {
+  category: string; // "EQ" | "T2T" | "Sharpe", comma-joined when a symbol appears in more than one screen
+  symbol: string;
+  name: string;
+  marketcap: number | string; // momoindiascreener's raw field — type not guaranteed, coerce defensively
+  sales_g: string;
+  ebit_g: string;
+  eps_g: string;
+  dol: string;
+  dfl: string;
+  dcl: string;
+  F1: string;
+  F2: string;
+  F3: string;
+  C1: string;
+  C2: string;
+  C3: string;
+  score: string; // "5/6"
+  verdict: string; // "⭐ ENTRY READY" | "WATCHLIST" | "WATCHLIST — await EMA contraction" | "SKIP" | "SKIP — sales declining" | "NO DATA"
+  about: string;
+}
+export interface VirajScreen {
+  as_of: string | null;
+  rows: VirajRow[];
+}
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
   guidance: Record<string, Guidance>;
   guidance_tracker: GuidanceTracker;
+  viraj_screen: VirajScreen;
   last_refresh: Record<string, any>;
 }
 

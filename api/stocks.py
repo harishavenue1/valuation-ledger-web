@@ -28,6 +28,7 @@ class handler(BaseHTTPRequestHandler):
                 "scenarios": get_all_json(conn, "scenarios"),
                 "guidance": get_all_json(conn, "guidance"),
                 "guidance_tracker": get_meta(conn, "guidance_tracker", {"quarters": [], "tracked": [], "cells": {}}),
+                "viraj_screen": get_meta(conn, "viraj_screen", {"as_of": None, "rows": []}),
                 "last_refresh": get_meta(conn, "last_refresh", {}),
             }
             send_json(self, 200, payload)
