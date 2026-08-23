@@ -388,7 +388,16 @@ function AnnualTable({
                     // actually types over it, matching "defaulted to
                     // current calculation" (2026-08-23). isAutoExpenses
                     // just dims it to signal "not yet overridden".
-                    const isAutoExpenses = driverField === "expenses" && (state.drivers[i].expenses === null || state.drivers[i].expenses === undefined);
+                    const hasExpensesOverride = state.drivers[i].expenses !== null && state.drivers[i].expenses !== undefined;
+                    const isAutoExpenses = driverField === "expenses" && !hasExpensesOverride;
+                    // Once Expenses is overridden for this year, OPM%
+                    // is no longer an independent driver — it's the
+                    // margin Revenue/Expenses now implies — so its box
+                    // switches from an input to a computed read-out
+                    // (2026-08-23, "opm should also calculate based on
+                    // expense") instead of showing a now-stale typed
+                    // value.
+                    const opmIsDerived = driverField === "opm" && hasExpensesOverride;
                     const displayValue = driverField
                       ? isAutoExpenses
                         ? model[i]?.expenses !== null && model[i]?.expenses !== undefined
@@ -398,7 +407,7 @@ function AnnualTable({
                       : "";
                     return (
                       <td key={i} className="px-2 py-1.5 bg-amber-50/50">
-                        {driverField ? (
+                        {driverField && !opmIsDerived ? (
                           <input
                             type="number"
                             step={FIELD_STEP[driverField]}
@@ -407,6 +416,14 @@ function AnnualTable({
                             value={displayValue}
                             onChange={(e) => onUpdateDriver(case_, i, driverField, e.target.value)}
                           />
+                        ) : opmIsDerived ? (
+                          <div className="text-right tabular-nums italic" title="Derived from this year's Expenses override, not directly editable — clear Expenses to hand control back to OPM%">
+                            {model[i]?.opm_pct === null || model[i]?.opm_pct === undefined ? (
+                              <span className="text-slate-300">—</span>
+                            ) : (
+                              <span className={model[i].opm_pct! >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(model[i].opm_pct, 1)}</span>
+                            )}
+                          </div>
                         ) : (
                           <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
                         )}

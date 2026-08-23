@@ -173,6 +173,13 @@ export interface ModelRow {
   revenue: number | null;
   operating_profit: number | null;
   expenses: number | null;
+  // Effective OPM% implied by operating_profit/revenue — matches the
+  // opm driver exactly when that year has no Expenses override (the
+  // normal case), but reflects the real resulting margin once an
+  // override is in play, so the OPM% row can show the true number
+  // instead of a now-stale typed value (2026-08-23, "opm should also
+  // calculate based on expense").
+  opm_pct: number | null;
   other_income: number;
   interest: number;
   depreciation: number;
@@ -211,10 +218,12 @@ export function computeModel(stock: Stock, state: CaseState): ModelRow[] {
     const shares = dr.shares ?? stock.shares_cr[stock.shares_cr.length - 1];
     const eps = pat !== null && shares ? pat / shares : null;
     const fwdPe = eps !== null && eps !== 0 && stock.current_price ? stock.current_price / eps : null;
+    const opmPct = revenue !== null && revenue !== 0 && op !== null ? (op / revenue) * 100 : null;
     rows.push({
       revenue,
       operating_profit: op,
       expenses,
+      opm_pct: opmPct,
       other_income: oi,
       interest,
       depreciation: dep,
