@@ -429,13 +429,36 @@ function AnnualTable({
                           : ""
                         : state.drivers[i][driverField] ?? ""
                       : "";
+                    // Estimate columns now mirror the historical
+                    // columns' own color rules instead of a flat
+                    // gray/italic "it's just an estimate" look for
+                    // every row (2026-08-23 screenshot, "do color
+                    // formatting as on this screenshot"): colorize
+                    // rows (Revenue/OPM/PAT Growth %) go green/red by
+                    // sign — including the two that are editable
+                    // inputs — and bold rows (Revenue/Operating
+                    // Profit/PBT/PAT/EPS) render solid black instead
+                    // of washed out, since they're real computed
+                    // numbers, not placeholders. The dim/italic
+                    // "auto"/"inactive" states above still win over
+                    // colorize where they apply (Expenses on auto,
+                    // OPM while an Expenses override has precedence).
+                    const inputColorClass =
+                      isAutoExpenses || opmInactive
+                        ? "text-slate-400 italic"
+                        : colorize && typeof displayValue === "number"
+                          ? displayValue >= 0
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                          : "";
+                    const computedVal = driverField ? null : ((model[i] as any)[MODEL_KEY[key]] as number | null);
                     return (
                       <td key={i} className="px-2 py-1.5 bg-amber-50/50">
                         {driverField ? (
                           <input
                             type="number"
                             step={FIELD_STEP[driverField]}
-                            className={`num-input ${isAutoExpenses || opmInactive ? "text-slate-400 italic" : ""}`}
+                            className={`num-input ${inputColorClass}`}
                             title={
                               isAutoExpenses
                                 ? "Auto: Revenue × OPM% — type a value to override"
@@ -446,8 +469,14 @@ function AnnualTable({
                             value={displayValue}
                             onChange={(e) => (driverField === "opm" ? onUpdateOpm(case_, i, e.target.value) : onUpdateDriver(case_, i, driverField, e.target.value))}
                           />
+                        ) : computedVal === null || computedVal === undefined ? (
+                          <div className="text-right tabular-nums text-slate-300">—</div>
+                        ) : colorize ? (
+                          <div className="text-right tabular-nums">
+                            <span className={computedVal >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(computedVal, digits, suffix)}</span>
+                          </div>
                         ) : (
-                          <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
+                          <div className={`text-right tabular-nums ${bold ? "font-semibold text-slate-800" : "text-slate-700"}`}>{fmt(computedVal, digits, suffix)}</div>
                         )}
                       </td>
                     );
