@@ -40,13 +40,56 @@ interface Col {
   align?: "left" | "right" | "center";
 }
 
+// Generic cross-type comparator for click-to-sort — rows are
+// Record<string, any> (each screener has its own row shape), so this
+// has to handle numbers, strings, booleans (true-first when
+// descending, since a checkmark-style column like "3W Green" reads
+// naturally that way), and null/undefined (always sorts last,
+// regardless of direction — an unknown value isn't "lowest").
+function compareVals(a: any, b: any): number {
+  const aNil = a === null || a === undefined || a === "";
+  const bNil = b === null || b === undefined || b === "";
+  if (aNil && bNil) return 0;
+  if (aNil) return 1;
+  if (bNil) return -1;
+  if (typeof a === "boolean" || typeof b === "boolean") return (a ? 1 : 0) - (b ? 1 : 0);
+  const an = typeof a === "number" ? a : parseFloat(a);
+  const bn = typeof b === "number" ? b : parseFloat(b);
+  if (!Number.isNaN(an) && !Number.isNaN(bn)) return an - bn;
+  return String(a).localeCompare(String(b));
+}
+
 function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; cols: Col[]; navigate: (t: string) => void }) {
   const [q, setQ] = useState("");
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((r) => String(r.symbol ?? "").toLowerCase().includes(needle) || String(r.name ?? "").toLowerCase().includes(needle));
   }, [rows, q]);
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return filtered;
+    const copy = [...filtered];
+    copy.sort((a, b) => {
+      const cmp = compareVals(a[sortKey], b[sortKey]);
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+    return copy;
+  }, [filtered, sortKey, sortDir]);
+
+  function clickHeader(key: string) {
+    if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      // Symbol/Name/Sector read naturally A-first; every numeric-ish
+      // momentum column (returns, RSI, score...) reads naturally
+      // biggest-first — matches Summary.tsx's per-column default.
+      setSortDir(key === "symbol" || key === "name" || key === "sector" ? "asc" : "desc");
+    }
+  }
 
   if (rows.length === 0) {
     return <div className="text-slate-500 text-sm py-10 text-center border border-slate-200 rounded">No data yet for this screener — run its script to push results.</div>;
@@ -61,7 +104,7 @@ function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; c
           placeholder="🔍 Filter by name/ticker"
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56"
         />
-        <span className="text-xs text-slate-400">{filtered.length} shown</span>
+        <span className="text-xs text-slate-400">{sorted.length} shown</span>
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200">
         <table className="w-full text-sm border-collapse">
@@ -69,13 +112,15 @@ function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; c
             <tr>
               {cols.map((c) => (
                 <th key={c.key} className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}>
-                  {c.label}
+                  <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
+                    {c.label} {sortKey === c.key ? (sortDir === "desc" ? "▼" : "▲") : ""}
+                  </button>
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.map((r, i) => (
+            {sorted.map((r, i) => (
               <tr key={r.symbol ?? i} className="border-t border-slate-100 hover:bg-slate-50">
                 {cols.map((c) => (
                   <td key={c.key} className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"}`}>
