@@ -269,8 +269,14 @@ const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> =
 };
 
 const N_HIST_COLS = 6;
-const LABEL_COL_WIDTH = 190;
-const DATA_COL_WIDTH = 80;
+// Matches Screener.in's own results tables (measured live off
+// screener.in/company/RELIANCE: label ~150-158px, data columns
+// ~76-80px each) rather than stretching to fill this app's wider
+// max-w-[1800px] page — Screener's tables don't fill their page
+// either, they just sit at a comfortable fixed width (2026-08-23,
+// "use screener.in page column width as it looks appealing").
+const LABEL_COL_WIDTH = 150;
+const DATA_COL_WIDTH = 78;
 
 /** Always exactly N_HIST_COLS entries — trailing (most recent) years
  * kept, older ones dropped, and left-padded with null when the company
@@ -313,7 +319,9 @@ function AnnualTable({
       </p>
       {/* Fixed column COUNT (N_HIST_COLS + N_EST_YEARS, always), not
           just fixed column WIDTH — every company's table is the exact
-          same total width now. Sticky thead (offset below the app
+          same total width now (older FY years trim off first, per
+          padTrailing below, so there's always room left for the
+          estimate columns). Sticky thead (offset below the app
           shell's own sticky nav) and a sticky first column keep row/
           column context visible while scrolling either direction. */}
       <div className="overflow-x-auto rounded-lg border border-slate-200 max-h-[70vh] overflow-y-auto">
