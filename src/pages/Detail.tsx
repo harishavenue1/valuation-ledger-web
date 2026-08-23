@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useData } from "../App";
 import { api, ApiError } from "../lib/api";
 import {
@@ -59,7 +59,6 @@ function estDateRange(year: number): { range: string; days: number } {
 
 export default function Detail() {
   const { ticker = "" } = useParams();
-  const navigate = useNavigate();
   const { bundle, setBundle } = useData();
   const stock = bundle.stocks[ticker];
   const [busy, setBusy] = useState(false);
@@ -86,11 +85,7 @@ export default function Detail() {
   }
 
   if (!stock) {
-    return (
-      <div className="text-slate-500">
-        Company not found. <button className="underline" onClick={() => navigate("/companies")}>Add it</button>.
-      </div>
-    );
+    return <AddThisCompany ticker={ticker} />;
   }
 
   function updateDriver(case_: Case, i: number, field: keyof Driver, raw: string) {
@@ -255,6 +250,44 @@ export default function Detail() {
       />
 
       <GuidancePanel ticker={ticker} />
+    </div>
+  );
+}
+
+// Shown when navigating to /company/<ticker> for a ticker not yet in
+// the ledger — reached from the screener pages' Symbol links, which
+// already know the exact ticker. Previously "Add it" just navigated
+// to /companies, leaving the user to re-type the same ticker into its
+// form — from the outside that read as the link silently doing
+// nothing (2026-08-23, "this link to add company is not adding if we
+// clicked through screener page"). Fetches THIS ticker directly
+// instead; once it lands in bundle.stocks, Detail re-renders past the
+// !stock check on its own — no navigation needed.
+function AddThisCompany({ ticker }: { ticker: string }) {
+  const { setBundle } = useData();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function add() {
+    setBusy(true);
+    setError("");
+    try {
+      const { stock } = await api.fetchCompany(ticker);
+      setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Couldn't fetch this ticker.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="text-slate-500">
+      <span className="font-mono">{ticker}</span> isn't in the ledger yet.{" "}
+      <button className="underline disabled:opacity-50" onClick={add} disabled={busy}>
+        {busy ? "Adding…" : "Add it"}
+      </button>
+      {error && <div className="text-red-600 text-sm mt-1">{error}</div>}
     </div>
   );
 }
