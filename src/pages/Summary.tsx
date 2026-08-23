@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
+import { WatchlistStar } from "../components/ScreenerTable";
+import { useWatchlist } from "../lib/useWatchlist";
 import {
   CASE_COLOR,
   CASE_LABEL,
@@ -158,6 +160,7 @@ function Section({
   onRemove: (t: string) => void;
 }) {
   const navigate = useNavigate();
+  const watchlist = useWatchlist();
   const [sortCol, setSortCol] = useState<SortCol | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
 
@@ -277,9 +280,12 @@ function Section({
                         for short 1-line names (2026-08-23, "indent
                         company name to mid of cell"). */}
                     <div className="min-h-[64px] flex flex-col justify-center">
-                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
-                        {row.stock.name}
-                      </button>
+                      <div>
+                        <WatchlistStar active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
+                        <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
+                          {row.stock.name}
+                        </button>
+                      </div>
                       <div className="text-slate-500 text-xs">{row.ticker}</div>
                       {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
                     </div>
