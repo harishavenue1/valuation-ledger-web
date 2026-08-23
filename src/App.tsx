@@ -8,6 +8,7 @@ import Detail from "./pages/Detail";
 import GuidanceTracker from "./pages/GuidanceTracker";
 import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
+import Watchlist from "./pages/Watchlist";
 import Settings from "./pages/Settings";
 
 interface DataCtx {
@@ -30,6 +31,7 @@ const EMPTY: Bundle = {
   viraj_screen: { as_of: null, rows: [] },
   momentum_screeners: {},
   run_requests: {},
+  watchlist: { tickers: [] },
   last_refresh: {},
 };
 
@@ -90,6 +92,9 @@ export default function App() {
               <NavLink to="/momentum-screeners" className={({ isActive }) => navClass(isActive)}>
                 📈 Momentum Screeners
               </NavLink>
+              <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
+                ⭐ Watchlist
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -113,6 +118,7 @@ export default function App() {
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
+            <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

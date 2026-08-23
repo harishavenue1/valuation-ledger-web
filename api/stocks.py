@@ -31,6 +31,7 @@ class handler(BaseHTTPRequestHandler):
                 "viraj_screen": get_meta(conn, "viraj_screen", {"as_of": None, "rows": []}),
                 "momentum_screeners": get_meta(conn, "momentum_screeners", {}),
                 "run_requests": get_meta(conn, "run_requests", {}),
+                "watchlist": get_meta(conn, "watchlist", {"tickers": []}),
                 "last_refresh": get_meta(conn, "last_refresh", {}),
             }
             send_json(self, 200, payload)

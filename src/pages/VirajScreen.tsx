@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
+import { api } from "../lib/api";
 import type { VirajRow } from "../lib/api";
 import RunButton from "../components/RunButton";
 
@@ -95,11 +96,13 @@ function Th({ label, w, sortKey, active, dir, onClick }: { label: string; w: num
 }
 
 export default function VirajScreen() {
-  const { bundle, reload } = useData();
+  const { bundle, setBundle, reload } = useData();
   const navigate = useNavigate();
   const { as_of, rows } = bundle.viraj_screen;
   const [q, setQ] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -109,6 +112,34 @@ export default function VirajScreen() {
       setRefreshing(false);
     }
   }
+
+  function toggleOne(symbol: string) {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (next.has(symbol)) next.delete(symbol);
+      else next.add(symbol);
+      return next;
+    });
+  }
+  function toggleAll(symbols: string[]) {
+    setSelected((s) => {
+      const allSelected = symbols.length > 0 && symbols.every((sym) => s.has(sym));
+      return allSelected ? new Set() : new Set(symbols);
+    });
+  }
+  async function addSelectedToWatchlist() {
+    const toAdd = Array.from(selected);
+    if (toAdd.length === 0) return;
+    setAdding(true);
+    try {
+      const wl = await api.updateWatchlist("add", toAdd);
+      setBundle((b) => ({ ...b, watchlist: wl }));
+      setSelected(new Set());
+    } finally {
+      setAdding(false);
+    }
+  }
+
   const [category, setCategory] = useState<(typeof CATEGORY_CHIPS)[number]>("All");
   const [verdict, setVerdict] = useState<(typeof VERDICT_CHIPS)[number]["value"]>("All");
   const [sortKey, setSortKey] = useState<SortKey>("verdict");
@@ -229,6 +260,15 @@ export default function VirajScreen() {
               ))}
             </div>
             <span className="text-xs text-slate-400 ml-auto">{sorted.length} shown</span>
+            {selected.size > 0 && (
+              <button
+                onClick={addSelectedToWatchlist}
+                disabled={adding}
+                className="text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium disabled:opacity-50"
+              >
+                {adding ? "Adding…" : `⭐ Add ${selected.size} to Watchlist`}
+              </button>
+            )}
           </div>
 
           {/* max-h + overflow-y-auto makes this its own scroll pane
@@ -242,9 +282,16 @@ export default function VirajScreen() {
               actually works). 2026-08-23, "let the header be seen...
               on scroll down". */}
           <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
-            <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: TABLE_WIDTH }}>
+            <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: TABLE_WIDTH + 32 }}>
               <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
                 <tr>
+                  <th className="px-2 py-2 w-8">
+                    <input
+                      type="checkbox"
+                      checked={sorted.length > 0 && sorted.every((r) => selected.has(r.symbol))}
+                      onChange={() => toggleAll(sorted.map((r) => r.symbol))}
+                    />
+                  </th>
                   <Th label="Segment" w={COL_WIDTHS[0]} />
                   <Th label="Symbol" w={COL_WIDTHS[1]} sortKey="symbol" active={sortKey === "symbol"} dir={sortDir} onClick={() => clickHeader("symbol")} />
                   <Th label="Name" w={COL_WIDTHS[2]} />
@@ -268,7 +315,10 @@ export default function VirajScreen() {
               </thead>
               <tbody>
                 {sorted.map((r) => (
-                  <tr key={r.symbol} className="border-t border-slate-100 hover:bg-slate-50">
+                  <tr key={r.symbol} className={`border-t border-slate-100 hover:bg-slate-50 ${selected.has(r.symbol) ? "bg-indigo-50/50" : ""}`}>
+                    <td className="px-2 py-2 text-center">
+                      <input type="checkbox" checked={selected.has(r.symbol)} onChange={() => toggleOne(r.symbol)} />
+                    </td>
                     <td className="px-1.5 py-2 text-center text-[11px] text-slate-500">{r.category}</td>
                     <td className="px-1.5 py-2 text-center whitespace-nowrap">
                       <button onClick={() => navigate(`/company/${r.symbol}`)} className="font-semibold text-indigo-600 hover:underline">

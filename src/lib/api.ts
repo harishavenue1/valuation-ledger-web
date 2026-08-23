@@ -65,6 +65,13 @@ export interface RunRequestEntry {
 }
 export type RunRequests = Record<string, RunRequestEntry>;
 
+// Plain persisted ticker list — see api/watchlist.py. Watchlist.tsx
+// gets each ticker's actual columns from bundle.momentum_screeners
+// .nseScreener, not from a separate fetch.
+export interface Watchlist {
+  tickers: string[];
+}
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
@@ -73,6 +80,7 @@ export interface Bundle {
   viraj_screen: VirajScreen;
   momentum_screeners: MomentumScreeners;
   run_requests: RunRequests;
+  watchlist: Watchlist;
   last_refresh: Record<string, any>;
 }
 
@@ -132,4 +140,7 @@ export const api = {
     req("/api/fetch_company", { method: "PATCH", body: JSON.stringify({ ticker, owned }) }),
 
   requestRun: (screener: string) => req("/api/run_requests", { method: "POST", body: JSON.stringify({ action: "request", screener }) }),
+
+  updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
+    req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
 };
