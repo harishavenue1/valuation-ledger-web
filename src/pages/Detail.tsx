@@ -151,9 +151,10 @@ export default function Detail() {
     // tables, so left at full shell width it just leaves a wall of
     // dead space to the right of every table (2026-08-23 screenshot
     // of /company/VENUSREM, "still page empty"). Cap it to roughly
-    // what the Annual table itself needs (label 150 + 9×78 ≈ 852px)
-    // plus breathing room, centered in the wider shell.
-    <div className="max-w-[1100px] mx-auto">
+    // what the tables now need (label 150 + 12×78 ≈ 1086px, both
+    // Annual — 9 hist + 3 est — and Quarterly are 12 columns as of
+    // 2026-08-23) plus breathing room, centered in the wider shell.
+    <div className="max-w-[1180px] mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">{stock.name}</h1>
         <span className="text-slate-500 text-sm">({ticker})</span>
@@ -275,7 +276,10 @@ const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> =
   eps: "eps",
 };
 
-const N_HIST_COLS = 6;
+// 9 historical + N_EST_YEARS(3) estimate = 12 annual columns, matching
+// the 12-quarter Quarterly table (2026-08-23, "allocate upto 9 or 12
+// quarter or annual results" — widened from 6 hist / 8 quarters).
+const N_HIST_COLS = 9;
 // Matches Screener.in's own results tables (measured live off
 // screener.in/company/RELIANCE: label ~150-158px, data columns
 // ~76-80px each) rather than stretching to fill this app's wider
@@ -651,9 +655,9 @@ const QUARTER_ROWS: [string, string, number, string, boolean, boolean][] = [
 
 function QuarterlyTable({ stock, basis }: { stock: Stock; basis: string }) {
   // Same fixed label/data column widths as AnnualTable (always exactly
-  // 8 quarters, per the "last 8 quarters" trim in _screener_fetch.py),
-  // so the two stacked tables' columns line up vertically instead of
-  // each auto-sizing to its own content width (2026-08-23, "why quarter
+  // 12 quarters, per LAST_N_QUARTERS in _screener_fetch.py), so the
+  // two stacked tables' columns line up vertically instead of each
+  // auto-sizing to its own content width (2026-08-23, "why quarter
   // and annual column width are not same").
   const tableWidth = LABEL_COL_WIDTH + stock.quarters!.length * DATA_COL_WIDTH;
   return (

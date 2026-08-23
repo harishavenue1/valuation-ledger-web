@@ -645,9 +645,10 @@ def fetch_one(ticker, session_id=None):
             q_revenue_growth_pct = yoy_series_by_date(q_revenue, q_dates)
             q_pat_growth_pct = yoy_series_by_date(q_net_profit, q_dates)
 
-            # Last N only (2026-08-16 request: "last 8 quarters") —
-            # trimmed after growth% above, not before.
-            LAST_N_QUARTERS = 8
+            # Last N only (2026-08-16 request: "last 8 quarters";
+            # widened to 12 on 2026-08-23) — trimmed after growth%
+            # above, not before.
+            LAST_N_QUARTERS = 12
 
             def qtrim(vals):
                 return vals[-LAST_N_QUARTERS:]
