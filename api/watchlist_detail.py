@@ -92,6 +92,18 @@ def fetch_closes(tickers, period, interval):
     return out
 
 
+def fetch_name_sector(symbol):
+    """yfinance's .info (a separate, slower call than the bulk .download()
+    used for prices — confirmed live it still works from Vercel, same as
+    .download()) — best-effort: any failure here just means this one
+    ticker's name/sector stay blank, not a request failure."""
+    try:
+        info = yf.Ticker(f"{symbol}.NS").info
+        return info.get("longName") or info.get("shortName"), info.get("sector")
+    except Exception:
+        return None, None
+
+
 def build_row(symbol, cd, cw, cm):
     if cd is None or len(cd) < 20:
         return None
@@ -106,9 +118,12 @@ def build_row(symbol, cd, cw, cm):
         green_3w = bool(all(float(cw.iloc[i]) > float(cw.iloc[i - 1]) for i in [-3, -2, -1]))
 
     rsi_m = wilder_rsi(cm) if (cm is not None and len(cm) >= 15) else None
+    name, sector = fetch_name_sector(symbol)
 
     return {
         "symbol": symbol,
+        "name": name,
+        "sector": sector,
         "price": round(float(cd.iloc[-1]), 2),
         "as_of": last_date.isoformat(),
         "change_pct": pct(cd, -2),

@@ -64,11 +64,17 @@ export default function Watchlist() {
     const vr = virajBySymbol.get(t);
     const stock = bundle.stocks[t];
     const live = liveDetail[t];
+    // `live` spread FIRST, then symbol/name/sector/price explicitly
+    // overridden with a proper fallback chain — spreading it last
+    // would let a null name/sector from a failed yfinance .info call
+    // (api/watchlist_detail.py's fetch_name_sector is best-effort)
+    // silently clobber a perfectly good fallback name with null.
     return {
-      symbol: t,
-      name: vr?.name ?? stock?.name ?? t,
-      price: toNum(vr?.price) ?? stock?.current_price ?? null,
       ...live,
+      symbol: t,
+      name: live?.name || vr?.name || stock?.name || t,
+      sector: live?.sector || undefined,
+      price: toNum(live?.price) ?? toNum(vr?.price) ?? stock?.current_price ?? null,
     };
   });
   // Keyed on the sorted ticker list, not the array reference, so the
