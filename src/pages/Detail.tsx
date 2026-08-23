@@ -521,13 +521,30 @@ function CagrEstimatorCard({
             </div>
           )}
 
+          {/* table-layout: fixed + explicit per-column width — plain
+              w-full/auto layout let the widest cell (Duration's date
+              range + day-count badge) claim disproportionate space,
+              squeezing Upside/CAGR unevenly instead of columns reading
+              as equidistant (2026-08-23 screenshot, "cagr columns are
+              not equidistant"). Same fix as the Annual/Quarterly/
+              Summary tables above. */}
           <div className="overflow-x-auto rounded border border-slate-200">
-            <table className="w-full text-sm">
+            <table className="text-sm" style={{ tableLayout: "fixed", width: "100%" }}>
+              <colgroup>
+                <col style={{ width: 90 }} />
+                <col style={{ width: 90 }} />
+                <col style={{ width: 110 }} />
+                <col style={{ width: 120 }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 100 }} />
+                <col style={{ width: 210 }} />
+                <col style={{ width: 110 }} />
+              </colgroup>
               <thead className="bg-slate-50 text-slate-500 text-xs">
                 <tr>
                   <th className="text-left px-3 py-2">Year</th>
                   <th className="text-right px-3 py-2">EPS (₹)</th>
-                  <th className="text-right px-3 py-2 bg-amber-50/80 w-24">PE Multiple</th>
+                  <th className="text-right px-3 py-2 bg-amber-50/80">PE Multiple</th>
                   <th className="text-right px-3 py-2">Share Price (₹)</th>
                   <th className="text-right px-3 py-2">Upside</th>
                   <th className="text-right px-3 py-2">CAGR</th>
