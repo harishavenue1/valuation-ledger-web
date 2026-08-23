@@ -38,7 +38,7 @@ const FIELD_STEP: Record<string, number> = {
   other_income: 1,
   interest: 1,
   depreciation: 1,
-  shares: 0.001,
+  shares: 0.01,
   pe: 0.5,
   expenses: 1,
 };
@@ -281,14 +281,14 @@ const ANNUAL_ROWS: [string, string, number, string, boolean, boolean, keyof Driv
   ["Tax %", "tax_pct", 1, "%", false, false, "tax"],
   ["PAT Cr", "net_profit", 0, "", false, true, null],
   ["PAT Growth %", "pat_growth_pct", 1, "%", true, false, null],
-  // digits=3 to match the backend's own precision — _screener_fetch.py
-  // stores shares_cr rounded to 3dp specifically so very small-float
-  // companies (e.g. ~0.004 Cr shares) don't round to 0.00 and blow up
-  // EPS. Displaying 2dp here was silently hiding that 3rd decimal in
-  // the historical columns while the (unformatted) estimate-year
-  // inputs revealed it, which read as an inconsistency (2026-08-23,
-  // "why details has 3 decimals for number of shares").
-  ["Number of Shares Cr", "shares_cr", 3, "", false, false, "shares"],
+  // digits=2 is a display-only rounding — the backend still stores
+  // (and the underlying driver still holds) 3dp precision, needed for
+  // very small-float companies so ~0.004 Cr shares doesn't round to
+  // 0.00 and blow up EPS; this only trims what's shown, in both the
+  // historical columns (via fmt below) and the estimate-year input
+  // (see the shares-specific rounding at render time) (2026-08-23,
+  // "number of shares are still 3 digits" -> revert to 2dp display).
+  ["Number of Shares Cr", "shares_cr", 2, "", false, false, "shares"],
   ["EPS ₹", "eps", 1, "", false, true, null],
 ];
 const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> = {
@@ -422,12 +422,20 @@ function AnnualTable({
                     // back (onUpdateOpm clears Expenses in the same
                     // update) rather than being silently ignored.
                     const opmInactive = driverField === "opm" && hasExpensesOverride;
+                    const rawDriverValue = driverField ? state.drivers[i][driverField] : null;
                     const displayValue = driverField
                       ? isAutoExpenses
                         ? model[i]?.expenses !== null && model[i]?.expenses !== undefined
                           ? Math.round(model[i].expenses as number)
                           : ""
-                        : state.drivers[i][driverField] ?? ""
+                        : // Shares is stored/fetched at 3dp precision
+                          // (see the Number of Shares Cr row comment
+                          // above) but displayed at 2dp here — the
+                          // underlying value itself isn't touched,
+                          // this only rounds what's shown in the box.
+                          driverField === "shares" && typeof rawDriverValue === "number"
+                          ? Math.round(rawDriverValue * 100) / 100
+                          : rawDriverValue ?? ""
                       : "";
                     // Estimate columns now mirror the historical
                     // columns' own color rules instead of a flat
