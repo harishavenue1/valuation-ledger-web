@@ -79,14 +79,26 @@ function compareVals(a: any, b: any): number {
 
 function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; cols: Col[]; navigate: (t: string) => void }) {
   const [q, setQ] = useState("");
+  const [sector, setSector] = useState("All");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
+  // Auto-detected — only screeners whose rows carry a sector field
+  // (all of them do, as of 2026-08-23) show this filter at all.
+  const sectors = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of rows) if (r.sector) set.add(String(r.sector));
+    return Array.from(set).sort();
+  }, [rows]);
+
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return rows;
-    return rows.filter((r) => String(r.symbol ?? "").toLowerCase().includes(needle) || String(r.name ?? "").toLowerCase().includes(needle));
-  }, [rows, q]);
+    return rows.filter((r) => {
+      if (sector !== "All" && r.sector !== sector) return false;
+      if (needle && !String(r.symbol ?? "").toLowerCase().includes(needle) && !String(r.name ?? "").toLowerCase().includes(needle)) return false;
+      return true;
+    });
+  }, [rows, q, sector]);
 
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
@@ -122,6 +134,16 @@ function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; c
           placeholder="🔍 Filter by name/ticker"
           className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56"
         />
+        {sectors.length > 0 && (
+          <select value={sector} onChange={(e) => setSector(e.target.value)} className="border border-slate-300 rounded px-2 py-1.5 text-sm text-slate-700">
+            <option value="All">All sectors</option>
+            {sectors.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="text-xs text-slate-400">{sorted.length} shown</span>
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200">
@@ -282,7 +304,10 @@ export default function MomentumScreeners() {
         <RunButton screener={tab} />
       </div>
 
-      <GenericTable rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} />
+      {/* key={tab} — remounts fresh per tab so search/sector/sort
+          state doesn't leak from one screener's filters into the
+          next (e.g. a sector selection that doesn't exist there). */}
+      <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} />
     </div>
   );
 }
