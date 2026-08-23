@@ -82,23 +82,42 @@ function compareVals(a: any, b: any): number {
   return String(a).localeCompare(String(b));
 }
 
-export interface Selection {
-  selected: Set<string>;
-  onToggle: (symbol: string) => void;
-  onToggleAll: (symbols: string[]) => void;
+// Star toggle rendered inline in the Symbol cell — tap to add, tap
+// again to remove (2026-08-23, "instead of checkbox... put a button
+// next [to] company name under symbol col with a tap/untap"). Not a
+// Watchlist-only control: renders wherever `watchlist` is passed to
+// GenericTable, i.e. every screener page.
+export function WatchlistStar({ active, onToggle, symbol }: { active: boolean; onToggle: (symbol: string) => void; symbol: string }) {
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(symbol);
+      }}
+      title={active ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
+      className={`mr-1 leading-none align-middle ${active ? "text-amber-500" : "text-slate-300 hover:text-amber-400"}`}
+    >
+      {active ? "★" : "☆"}
+    </button>
+  );
+}
+
+export interface WatchlistControl {
+  set: Set<string>;
+  toggle: (symbol: string) => void;
 }
 
 export function GenericTable({
   rows,
   cols,
   navigate,
-  selection,
+  watchlist,
   emptyMessage = "No data yet for this screener — run its script to push results.",
 }: {
   rows: Record<string, any>[];
   cols: Col[];
   navigate: (t: string) => void;
-  selection?: Selection;
+  watchlist?: WatchlistControl;
   emptyMessage?: string;
 }) {
   const [q, setQ] = useState("");
@@ -148,9 +167,6 @@ export function GenericTable({
     return <div className="text-slate-500 text-sm py-10 text-center border border-slate-200 rounded">{emptyMessage}</div>;
   }
 
-  const visibleSymbols = sorted.map((r) => String(r.symbol));
-  const allVisibleSelected = selection ? visibleSymbols.length > 0 && visibleSymbols.every((s) => selection.selected.has(s)) : false;
-
   return (
     <>
       <div className="flex items-center gap-3 mb-3">
@@ -181,11 +197,6 @@ export function GenericTable({
         <table className="w-full text-sm border-collapse">
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
-              {selection && (
-                <th className="px-2 py-2 w-8">
-                  <input type="checkbox" checked={allVisibleSelected} onChange={() => selection.onToggleAll(visibleSymbols)} />
-                </th>
-              )}
               {cols.map((c) => (
                 <th key={c.key} className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}>
                   <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
@@ -199,18 +210,16 @@ export function GenericTable({
             {sorted.map((r, i) => {
               const sym = String(r.symbol ?? i);
               return (
-                <tr key={sym} className={`border-t border-slate-100 hover:bg-slate-50 ${selection?.selected.has(sym) ? "bg-indigo-50/50" : ""}`}>
-                  {selection && (
-                    <td className="px-2 py-2 text-center">
-                      <input type="checkbox" checked={selection.selected.has(sym)} onChange={() => selection.onToggle(sym)} />
-                    </td>
-                  )}
+                <tr key={sym} className="border-t border-slate-100 hover:bg-slate-50">
                   {cols.map((c) => (
                     <td key={c.key} className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"}`}>
                       {c.key === "symbol" ? (
-                        <button onClick={() => navigate(String(r.symbol))} className="hover:underline">
-                          {r.symbol}
-                        </button>
+                        <>
+                          {watchlist && <WatchlistStar active={watchlist.set.has(sym)} onToggle={watchlist.toggle} symbol={sym} />}
+                          <button onClick={() => navigate(String(r.symbol))} className="hover:underline">
+                            {r.symbol}
+                          </button>
+                        </>
                       ) : c.render ? (
                         c.render(r)
                       ) : (

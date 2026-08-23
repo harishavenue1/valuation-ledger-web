@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
-import { api } from "../lib/api";
 import RunButton from "../components/RunButton";
 import { Col, fmtNum, GenericTable, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
+import { useWatchlist } from "../lib/useWatchlist";
 
 // Each of these 5 screeners now scans NSE 750 (Nifty Total Market) and
 // pushes independently from its own local skill script — see
@@ -19,15 +19,13 @@ const TABS: { key: string; label: string; emoji: string }[] = [
 ];
 
 export default function MomentumScreeners() {
-  const { bundle, setBundle, reload } = useData();
+  const { bundle, reload } = useData();
   const navigate = useNavigate();
   const [tab, setTab] = useState(TABS[0].key);
   const [refreshing, setRefreshing] = useState(false);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [adding, setAdding] = useState(false);
+  const watchlist = useWatchlist();
   const entry = bundle.momentum_screeners[tab];
   const rows = entry?.rows ?? [];
-  const watchlisted = new Set(bundle.watchlist.tickers);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -35,34 +33,6 @@ export default function MomentumScreeners() {
       await reload();
     } finally {
       setRefreshing(false);
-    }
-  }
-
-  function toggleOne(symbol: string) {
-    setSelected((s) => {
-      const next = new Set(s);
-      if (next.has(symbol)) next.delete(symbol);
-      else next.add(symbol);
-      return next;
-    });
-  }
-  function toggleAll(symbols: string[]) {
-    setSelected((s) => {
-      const allSelected = symbols.length > 0 && symbols.every((sym) => s.has(sym));
-      return allSelected ? new Set() : new Set(symbols);
-    });
-  }
-
-  async function addSelectedToWatchlist() {
-    const toAdd = Array.from(selected);
-    if (toAdd.length === 0) return;
-    setAdding(true);
-    try {
-      const wl = await api.updateWatchlist("add", toAdd);
-      setBundle((b) => ({ ...b, watchlist: wl }));
-      setSelected(new Set());
-    } finally {
-      setAdding(false);
     }
   }
 
@@ -153,28 +123,12 @@ export default function MomentumScreeners() {
       <div className="flex items-center gap-2 mb-3">
         {entry?.as_of && <span className="text-xs text-slate-400">as of {entry.as_of}</span>}
         <RunButton screener={tab} />
-        {selected.size > 0 && (
-          <button
-            onClick={addSelectedToWatchlist}
-            disabled={adding}
-            className="ml-auto text-xs px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-medium disabled:opacity-50"
-          >
-            {adding ? "Adding…" : `⭐ Add ${selected.size} to Watchlist`}
-          </button>
-        )}
       </div>
 
       {/* key={tab} — remounts fresh per tab so search/sector/sort
           state doesn't leak from one screener's filters into the
           next (e.g. a sector selection that doesn't exist there). */}
-      <GenericTable
-        key={tab}
-        rows={rows}
-        cols={COLS[tab]}
-        navigate={(t) => navigate(`/company/${t}`)}
-        selection={{ selected, onToggle: toggleOne, onToggleAll: toggleAll }}
-      />
-      {watchlisted.size > 0 && <p className="text-xs text-slate-400 mt-2">⭐ {watchlisted.size} on your watchlist already.</p>}
+      <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} />
     </div>
   );
 }
