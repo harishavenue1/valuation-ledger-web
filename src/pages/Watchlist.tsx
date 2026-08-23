@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
+import { api } from "../lib/api";
 import { GenericTable, NSE_SCREENER_COLS } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
@@ -45,6 +46,16 @@ export default function Watchlist() {
     return m;
   }, [bundle.viraj_screen.rows]);
 
+  // Live per-ticker fetch (api/watchlist_detail.py) for whichever
+  // watchlisted tickers nseScreener doesn't cover, so they get real
+  // RSI/return-% instead of just name+price (2026-08-23, "build
+  // details for all"). Declared before `rows` below since it reads
+  // liveDetail while building each fallback row.
+  const [liveDetail, setLiveDetail] = useState<Record<string, Record<string, any>>>({});
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
+  const lastFetchedKey = useRef("");
+
   const outsideNse750: string[] = [];
   const rows = tickers.map((t) => {
     const nse = nseBySymbol.get(t);
@@ -52,12 +63,34 @@ export default function Watchlist() {
     outsideNse750.push(t);
     const vr = virajBySymbol.get(t);
     const stock = bundle.stocks[t];
+    const live = liveDetail[t];
     return {
       symbol: t,
       name: vr?.name ?? stock?.name ?? t,
       price: toNum(vr?.price) ?? stock?.current_price ?? null,
+      ...live,
     };
   });
+  // Keyed on the sorted ticker list, not the array reference, so the
+  // effect below only re-fires when the actual SET of off-universe
+  // tickers changes, not on every render.
+  const outsideKey = [...outsideNse750].sort().join(",");
+  const stillPartial = outsideNse750.filter((t) => !liveDetail[t]);
+
+  useEffect(() => {
+    if (!outsideKey || outsideKey === lastFetchedKey.current) return;
+    lastFetchedKey.current = outsideKey;
+    const need = outsideKey.split(",").filter((t) => !liveDetail[t]);
+    if (need.length === 0) return;
+    setDetailLoading(true);
+    setDetailError("");
+    api
+      .fetchWatchlistDetail(need)
+      .then(({ rows: fetched }) => setLiveDetail((prev) => ({ ...prev, ...fetched })))
+      .catch(() => setDetailError("Live fetch failed — showing name/price only for the tickers below."))
+      .finally(() => setDetailLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outsideKey]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -98,10 +131,14 @@ export default function Watchlist() {
             watchlist={watchlist}
             emptyMessage="Nothing to show yet — Refresh, or run the NSE Screener."
           />
-          {outsideNse750.length > 0 && (
+          {detailLoading && (
+            <p className="text-xs text-slate-400 mt-2">⏳ Fetching live details for {outsideNse750.length} off-universe ticker{outsideNse750.length > 1 ? "s" : ""}…</p>
+          )}
+          {detailError && <p className="text-xs text-red-600 mt-2">{detailError}</p>}
+          {!detailLoading && stillPartial.length > 0 && (
             <p className="text-xs text-amber-600 mt-2">
-              ⚠️ {outsideNse750.length} ticker{outsideNse750.length > 1 ? "s" : ""} ({outsideNse750.join(", ")}) {outsideNse750.length > 1 ? "aren't" : "isn't"} in the NSE
-              Screener's NSE 750 universe — showing name/price only (from Viraj Screen or your ledger), other columns are "—".
+              ⚠️ {stillPartial.length} ticker{stillPartial.length > 1 ? "s" : ""} ({stillPartial.join(", ")}) {stillPartial.length > 1 ? "aren't" : "isn't"} in NSE 750, and
+              the live yfinance fetch couldn't find {stillPartial.length > 1 ? "them" : "it"} either — showing name/price only.
             </p>
           )}
         </>

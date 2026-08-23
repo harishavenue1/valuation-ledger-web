@@ -143,4 +143,9 @@ export const api = {
 
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
+
+  // On-demand price/RSI/return-% for watchlisted tickers outside NSE
+  // 750 (nseScreener has no data for them) — see api/watchlist_detail.py.
+  fetchWatchlistDetail: (tickers: string[]): Promise<{ rows: Record<string, Record<string, any>> }> =>
+    req("/api/watchlist_detail", { method: "POST", body: JSON.stringify({ tickers }) }),
 };
