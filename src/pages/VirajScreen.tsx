@@ -231,9 +231,19 @@ export default function VirajScreen() {
             <span className="text-xs text-slate-400 ml-auto">{sorted.length} shown</span>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
+          {/* max-h + overflow-y-auto makes this its own scroll pane
+              (verified live in an isolated test before landing this —
+              overflow-x-auto ALONE still forces the browser to treat
+              this div as the sticky-positioning containing block
+              regardless of whether it has a height cap, so an
+              unbounded wrapper with thead sticky top-[57px] silently
+              overlapped/hid the first row instead of sticking to the
+              page; top:0 relative to this pane's OWN scroll is what
+              actually works). 2026-08-23, "let the header be seen...
+              on scroll down". */}
+          <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
             <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: TABLE_WIDTH }}>
-              <thead className="bg-slate-50 text-slate-500 text-xs">
+              <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
                 <tr>
                   <Th label="Segment" w={COL_WIDTHS[0]} />
                   <Th label="Symbol" w={COL_WIDTHS[1]} sortKey="symbol" active={sortKey === "symbol"} dir={sortDir} onClick={() => clickHeader("symbol")} />

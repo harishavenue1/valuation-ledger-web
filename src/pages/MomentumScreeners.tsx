@@ -146,9 +146,15 @@ function GenericTable({ rows, cols, navigate }: { rows: Record<string, any>[]; c
         )}
         <span className="text-xs text-slate-400">{sorted.length} shown</span>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-slate-200">
+      {/* max-h + overflow-y-auto + thead sticky top-0 — see
+          VirajScreen.tsx's identical header for why a plain
+          overflow-x-auto wrapper (no height cap) doesn't work here:
+          verified live that it still becomes the sticky containing
+          block and overlaps the first row instead of sticking to the
+          page. */}
+      <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
         <table className="w-full text-sm border-collapse">
-          <thead className="bg-slate-50 text-slate-500 text-xs">
+          <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
               {cols.map((c) => (
                 <th key={c.key} className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}>
