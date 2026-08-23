@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import type { VirajRow } from "../lib/api";
+import RunButton from "../components/RunButton";
 
 // F1-F3/C1-C3/score/verdict/about/sales_g/ebit_g/eps_g/dol/dfl/dcl all
 // arrive pre-formatted as strings straight from viraj_screen.py's own
@@ -143,13 +144,16 @@ export default function VirajScreen() {
         <span className="text-slate-500 text-sm">
           {rows.length} stocks{as_of ? ` · as of ${as_of}` : ""}
         </span>
-        <button
-          onClick={doRefresh}
-          disabled={refreshing}
-          className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
-        >
-          {refreshing ? "Refreshing…" : "🔄 Refresh"}
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <RunButton screener="viraj_screen" />
+          <button
+            onClick={doRefresh}
+            disabled={refreshing}
+            className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
+          >
+            {refreshing ? "Refreshing…" : "🔄 Refresh"}
+          </button>
+        </div>
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Weekly momentum filter — Viraj's Momentum / T2T Segments / Sharpe Based Momentum, 6-rule validation. Pushed by{" "}

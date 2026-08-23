@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
+import RunButton from "../components/RunButton";
 
 // Each of these 4 screeners now scans NSE 750 (Nifty Total Market) and
 // pushes independently from its own local skill script — see
@@ -197,7 +198,10 @@ export default function MomentumScreeners() {
         })}
       </div>
 
-      {entry?.as_of && <div className="text-xs text-slate-400 mb-3">as of {entry.as_of}</div>}
+      <div className="flex items-center gap-2 mb-3">
+        {entry?.as_of && <span className="text-xs text-slate-400">as of {entry.as_of}</span>}
+        <RunButton screener={tab} />
+      </div>
 
       <GenericTable rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} />
     </div>

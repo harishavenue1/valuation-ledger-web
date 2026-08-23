@@ -29,6 +29,7 @@ const EMPTY: Bundle = {
   guidance_tracker: { quarters: [], tracked: [], cells: {} },
   viraj_screen: { as_of: null, rows: [] },
   momentum_screeners: {},
+  run_requests: {},
   last_refresh: {},
 };
 

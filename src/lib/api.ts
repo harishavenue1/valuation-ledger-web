@@ -54,6 +54,17 @@ export interface MomentumScreenerEntry {
 }
 export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
 
+// "Run now" queue — see api/run_requests.py for why this is a queue a
+// local poller drains rather than something Vercel executes itself.
+export type RunStatus = "pending" | "running" | "done" | "error";
+export interface RunRequestEntry {
+  status: RunStatus;
+  requested_at: string;
+  updated_at: string;
+  error: string | null;
+}
+export type RunRequests = Record<string, RunRequestEntry>;
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
@@ -61,6 +72,7 @@ export interface Bundle {
   guidance_tracker: GuidanceTracker;
   viraj_screen: VirajScreen;
   momentum_screeners: MomentumScreeners;
+  run_requests: RunRequests;
   last_refresh: Record<string, any>;
 }
 
@@ -118,4 +130,6 @@ export const api = {
 
   toggleOwned: (ticker: string, owned: boolean) =>
     req("/api/fetch_company", { method: "PATCH", body: JSON.stringify({ ticker, owned }) }),
+
+  requestRun: (screener: string) => req("/api/run_requests", { method: "POST", body: JSON.stringify({ action: "request", screener }) }),
 };
