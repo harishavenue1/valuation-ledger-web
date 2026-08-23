@@ -21,6 +21,7 @@ export interface VirajRow {
   symbol: string;
   name: string;
   marketcap: number | string; // momoindiascreener's raw field — type not guaranteed, coerce defensively
+  price: number | string; // same — momoindiascreener's "close"
   sales_g: string;
   ebit_g: string;
   eps_g: string;
@@ -35,7 +36,6 @@ export interface VirajRow {
   C3: string;
   score: string; // "5/6"
   verdict: string; // "⭐ ENTRY READY" | "WATCHLIST" | "WATCHLIST — await EMA contraction" | "SKIP" | "SKIP — sales declining" | "NO DATA"
-  about: string;
 }
 export interface VirajScreen {
   as_of: string | null;

@@ -4,12 +4,34 @@ import { useData } from "../App";
 import type { VirajRow } from "../lib/api";
 import RunButton from "../components/RunButton";
 
-// F1-F3/C1-C3/score/verdict/about/sales_g/ebit_g/eps_g/dol/dfl/dcl all
+// F1-F3/C1-C3/score/verdict/sales_g/ebit_g/eps_g/dol/dfl/dcl all
 // arrive pre-formatted as strings straight from viraj_screen.py's own
 // build_rows() ("✅"/"❌"/"—", "+90%", "5/6") — rendered as-is, not
 // re-parsed, except where sorting needs a numeric read.
-const COL_WIDTHS = [90, 90, 190, 90, 80, 80, 80, 60, 60, 60, 55, 55, 55, 55, 55, 55, 60, 170, 280];
+const COL_WIDTHS = [90, 90, 190, 90, 90, 80, 80, 80, 60, 60, 60, 55, 55, 55, 55, 55, 55, 60, 170];
 const TABLE_WIDTH = COL_WIDTHS.reduce((a, b) => a + b, 0);
+
+function priceNum(v: number | string): number {
+  const n = typeof v === "number" ? v : parseFloat(String(v).replace(/,/g, ""));
+  return Number.isNaN(n) ? -1 : n;
+}
+// Price -> TradingView weekly chart for that symbol, new tab. Same
+// pattern as MomentumScreeners.tsx's PriceLink.
+function PriceLink({ symbol, value }: { symbol: string; value: number | string }) {
+  const n = priceNum(value);
+  return (
+    <a
+      href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(symbol)}&interval=W`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="hover:underline hover:text-indigo-600"
+      title={`Open ${symbol} chart on TradingView`}
+    >
+      {n < 0 ? (value === null || value === undefined || value === "" ? "—" : String(value)) : `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`}
+    </a>
+  );
+}
 
 function verdictRank(v: string): number {
   if (v.includes("ENTRY READY")) return 0;
@@ -40,7 +62,7 @@ function fmtMktCap(v: number | string): string {
   return n < 0 ? String(v) : `₹${n.toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
 }
 
-type SortKey = "symbol" | "marketcap" | "sales_g" | "dol" | "score" | "verdict";
+type SortKey = "symbol" | "marketcap" | "price" | "sales_g" | "dol" | "score" | "verdict";
 const CATEGORY_CHIPS = ["All", "EQ", "T2T", "Sharpe"] as const;
 const VERDICT_CHIPS: { label: string; value: "All" | "entry" | "watch" | "skip" }[] = [
   { label: "All", value: "All" },
@@ -112,6 +134,9 @@ export default function VirajScreen() {
       switch (sortKey) {
         case "marketcap":
           v = mktCapNum(r.marketcap);
+          break;
+        case "price":
+          v = priceNum(r.price);
           break;
         case "sales_g":
           v = parseFloat(r.sales_g) || -Infinity;
@@ -210,21 +235,21 @@ export default function VirajScreen() {
                   <Th label="Symbol" w={COL_WIDTHS[1]} sortKey="symbol" active={sortKey === "symbol"} dir={sortDir} onClick={() => clickHeader("symbol")} />
                   <Th label="Name" w={COL_WIDTHS[2]} />
                   <Th label="Mkt Cap" w={COL_WIDTHS[3]} sortKey="marketcap" active={sortKey === "marketcap"} dir={sortDir} onClick={() => clickHeader("marketcap")} />
-                  <Th label="Sales G%" w={COL_WIDTHS[4]} sortKey="sales_g" active={sortKey === "sales_g"} dir={sortDir} onClick={() => clickHeader("sales_g")} />
-                  <Th label="EBIT G%" w={COL_WIDTHS[5]} />
-                  <Th label="EPS G%" w={COL_WIDTHS[6]} />
-                  <Th label="DOL" w={COL_WIDTHS[7]} sortKey="dol" active={sortKey === "dol"} dir={sortDir} onClick={() => clickHeader("dol")} />
-                  <Th label="DFL" w={COL_WIDTHS[8]} />
-                  <Th label="DCL" w={COL_WIDTHS[9]} />
-                  <Th label="F1" w={COL_WIDTHS[10]} />
-                  <Th label="F2" w={COL_WIDTHS[11]} />
-                  <Th label="F3" w={COL_WIDTHS[12]} />
-                  <Th label="C1" w={COL_WIDTHS[13]} />
-                  <Th label="C2" w={COL_WIDTHS[14]} />
-                  <Th label="C3" w={COL_WIDTHS[15]} />
-                  <Th label="Score" w={COL_WIDTHS[16]} sortKey="score" active={sortKey === "score"} dir={sortDir} onClick={() => clickHeader("score")} />
-                  <Th label="Verdict" w={COL_WIDTHS[17]} sortKey="verdict" active={sortKey === "verdict"} dir={sortDir} onClick={() => clickHeader("verdict")} />
-                  <Th label="Business Model" w={COL_WIDTHS[18]} />
+                  <Th label="Price" w={COL_WIDTHS[4]} sortKey="price" active={sortKey === "price"} dir={sortDir} onClick={() => clickHeader("price")} />
+                  <Th label="Sales G%" w={COL_WIDTHS[5]} sortKey="sales_g" active={sortKey === "sales_g"} dir={sortDir} onClick={() => clickHeader("sales_g")} />
+                  <Th label="EBIT G%" w={COL_WIDTHS[6]} />
+                  <Th label="EPS G%" w={COL_WIDTHS[7]} />
+                  <Th label="DOL" w={COL_WIDTHS[8]} sortKey="dol" active={sortKey === "dol"} dir={sortDir} onClick={() => clickHeader("dol")} />
+                  <Th label="DFL" w={COL_WIDTHS[9]} />
+                  <Th label="DCL" w={COL_WIDTHS[10]} />
+                  <Th label="F1" w={COL_WIDTHS[11]} />
+                  <Th label="F2" w={COL_WIDTHS[12]} />
+                  <Th label="F3" w={COL_WIDTHS[13]} />
+                  <Th label="C1" w={COL_WIDTHS[14]} />
+                  <Th label="C2" w={COL_WIDTHS[15]} />
+                  <Th label="C3" w={COL_WIDTHS[16]} />
+                  <Th label="Score" w={COL_WIDTHS[17]} sortKey="score" active={sortKey === "score"} dir={sortDir} onClick={() => clickHeader("score")} />
+                  <Th label="Verdict" w={COL_WIDTHS[18]} sortKey="verdict" active={sortKey === "verdict"} dir={sortDir} onClick={() => clickHeader("verdict")} />
                 </tr>
               </thead>
               <tbody>
@@ -240,6 +265,9 @@ export default function VirajScreen() {
                       {r.name}
                     </td>
                     <td className="px-1.5 py-2 text-center tabular-nums">{fmtMktCap(r.marketcap)}</td>
+                    <td className="px-1.5 py-2 text-center tabular-nums">
+                      <PriceLink symbol={r.symbol} value={r.price} />
+                    </td>
                     <td className="px-1.5 py-2 text-center tabular-nums">{r.sales_g}</td>
                     <td className="px-1.5 py-2 text-center tabular-nums">{r.ebit_g}</td>
                     <td className="px-1.5 py-2 text-center tabular-nums">{r.eps_g}</td>
@@ -269,9 +297,6 @@ export default function VirajScreen() {
                       <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${VERDICT_CLASS[verdictBucket(r.verdict)]}`}>
                         {r.verdict}
                       </span>
-                    </td>
-                    <td className="px-1.5 py-2 text-slate-500 text-xs truncate" title={r.about}>
-                      {r.about}
                     </td>
                   </tr>
                 ))}
