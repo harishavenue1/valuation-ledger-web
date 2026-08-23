@@ -146,7 +146,14 @@ export default function Detail() {
   const selectedModel = computeModel(stock, caseStates[selectedCase]);
 
   return (
-    <div>
+    // App.tsx's <main> is max-w-[1800px] (sized for the Summary/
+    // Companies card grids) — this page is all narrow, stacked
+    // tables, so left at full shell width it just leaves a wall of
+    // dead space to the right of every table (2026-08-23 screenshot
+    // of /company/VENUSREM, "still page empty"). Cap it to roughly
+    // what the Annual table itself needs (label 150 + 9×78 ≈ 852px)
+    // plus breathing room, centered in the wider shell.
+    <div className="max-w-[1100px] mx-auto">
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">{stock.name}</h1>
         <span className="text-slate-500 text-sm">({ticker})</span>
