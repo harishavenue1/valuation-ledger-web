@@ -38,7 +38,7 @@ const FIELD_STEP: Record<string, number> = {
   other_income: 1,
   interest: 1,
   depreciation: 1,
-  shares: 0.01,
+  shares: 0.001,
   pe: 0.5,
   expenses: 1,
 };
@@ -281,7 +281,14 @@ const ANNUAL_ROWS: [string, string, number, string, boolean, boolean, keyof Driv
   ["Tax %", "tax_pct", 1, "%", false, false, "tax"],
   ["PAT Cr", "net_profit", 0, "", false, true, null],
   ["PAT Growth %", "pat_growth_pct", 1, "%", true, false, null],
-  ["Number of Shares Cr", "shares_cr", 2, "", false, false, "shares"],
+  // digits=3 to match the backend's own precision — _screener_fetch.py
+  // stores shares_cr rounded to 3dp specifically so very small-float
+  // companies (e.g. ~0.004 Cr shares) don't round to 0.00 and blow up
+  // EPS. Displaying 2dp here was silently hiding that 3rd decimal in
+  // the historical columns while the (unformatted) estimate-year
+  // inputs revealed it, which read as an inconsistency (2026-08-23,
+  // "why details has 3 decimals for number of shares").
+  ["Number of Shares Cr", "shares_cr", 3, "", false, false, "shares"],
   ["EPS ₹", "eps", 1, "", false, true, null],
 ];
 const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> = {
