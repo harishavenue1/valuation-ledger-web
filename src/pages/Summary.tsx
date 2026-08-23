@@ -38,7 +38,12 @@ const EMA_COLS: [string, string][] = [
 ];
 
 // Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
-const COL_WIDTHS = [200, 95, 80, 70, 85, 95, 70, 70, 70, 150, 150, 150, 55, 45];
+// Base/Bull/Bear widened 150->210 — at 150 the "+20.0% | 20.0x |
+// -73.4%" line was truncating with an ellipsis (2026-08-23
+// screenshot). Other columns bumped up too so the table fills more
+// of the page's max-w-[1800px] shell generously instead of leaving a
+// wide empty gutter, rather than widening only the 3 cutoff columns.
+const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 60, 50];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
