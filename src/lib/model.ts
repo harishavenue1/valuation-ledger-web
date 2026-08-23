@@ -36,6 +36,18 @@ export interface Driver {
   depreciation: number | null;
   shares: number | null;
   pe: number | null;
+  // Expenses Cr override — null (the default) means "keep deriving
+  // Expenses from Revenue x OPM%" (the original behavior, where
+  // Expenses implicitly grows at exactly Revenue's growth rate since
+  // it's always a fixed (1-OPM%) share of Revenue). A non-null value
+  // overrides that for this year: Operating Profit is then derived
+  // from Revenue - Expenses instead, letting Expenses grow at its own
+  // rate independent of Revenue (2026-08-23, "expense field editable,
+  // defaulted to current calculation"). The OPM% driver/input for
+  // that year is unaffected by this and still saves normally, but is
+  // ignored for computation while an Expenses override is present —
+  // clear this field (blank the input) to hand control back to OPM%.
+  expenses: number | null;
 }
 
 export interface CaseState {
@@ -127,6 +139,7 @@ export function defaultCaseState(stock: Stock, guidance: Guidance | null, case_:
       depreciation: lastActual(stock.depreciation),
       shares: lastActual(stock.shares_cr),
       pe: guidedGrowth,
+      expenses: null,
     });
   }
   let assumptions = "";
@@ -180,8 +193,15 @@ export function computeModel(stock: Stock, state: CaseState): ModelRow[] {
       dr.revGrowth !== null && dr.revGrowth !== undefined && revenuePrev !== null
         ? revenuePrev * (1 + dr.revGrowth / 100)
         : null;
-    const op = revenue !== null && dr.opm !== null && dr.opm !== undefined ? (revenue * dr.opm) / 100 : null;
-    const expenses = revenue !== null && op !== null ? revenue - op : null;
+    const opFromOpm = revenue !== null && dr.opm !== null && dr.opm !== undefined ? (revenue * dr.opm) / 100 : null;
+    // Expenses override (see Driver.expenses) reverses the usual
+    // Revenue+OPM%->Expenses derivation for this year: when set,
+    // Operating Profit comes from Revenue - Expenses instead, so
+    // Expenses can grow at its own rate rather than always being a
+    // fixed share of Revenue.
+    const hasExpensesOverride = dr.expenses !== null && dr.expenses !== undefined;
+    const expenses = hasExpensesOverride ? dr.expenses! : revenue !== null && opFromOpm !== null ? revenue - opFromOpm : null;
+    const op = hasExpensesOverride ? (revenue !== null ? revenue - expenses! : null) : opFromOpm;
     const oi = dr.other_income ?? 0;
     const interest = dr.interest ?? 0;
     const dep = dr.depreciation ?? 0;

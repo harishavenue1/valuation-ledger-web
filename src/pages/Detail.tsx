@@ -29,6 +29,7 @@ const FIELD_LABEL: Record<keyof Driver, string> = {
   depreciation: "Depreciation Cr",
   shares: "Number of Shares Cr",
   pe: "PE Multiple",
+  expenses: "Expenses Cr (override)",
 };
 const FIELD_STEP: Record<string, number> = {
   revGrowth: 0.5,
@@ -39,6 +40,7 @@ const FIELD_STEP: Record<string, number> = {
   depreciation: 1,
   shares: 0.01,
   pe: 0.5,
+  expenses: 1,
 };
 // Legend categories (2026-08-22 "Financially Free"-style redesign) —
 // Revenue Growth %/OPM %/Tax % swing the model the most, so they're
@@ -253,7 +255,7 @@ function Stat({ label, value }: { label: string; value: string }) {
 const ANNUAL_ROWS: [string, string, number, string, boolean, boolean, keyof Driver | null][] = [
   ["Revenue Cr", "revenue", 0, "", false, true, null],
   ["Revenue Growth %", "revenue_growth_pct", 1, "%", true, false, "revGrowth"],
-  ["Expenses Cr", "expenses", 0, "", false, false, null],
+  ["Expenses Cr", "expenses", 0, "", false, false, "expenses"],
   ["Operating Profit Cr", "operating_profit", 0, "", false, true, null],
   ["OPM %", "opm_pct", 1, "%", true, false, "opm"],
   ["Other Income Cr", "other_income", 0, "", false, false, "other_income"],
@@ -378,21 +380,39 @@ function AnnualTable({
                       )}
                     </td>
                   ))}
-                  {Array.from({ length: N_EST_YEARS }, (_, i) => (
-                    <td key={i} className="px-2 py-1.5 bg-amber-50/50">
-                      {driverField ? (
-                        <input
-                          type="number"
-                          step={FIELD_STEP[driverField]}
-                          className="num-input"
-                          value={state.drivers[i][driverField] ?? ""}
-                          onChange={(e) => onUpdateDriver(case_, i, driverField, e.target.value)}
-                        />
-                      ) : (
-                        <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
-                      )}
-                    </td>
-                  ))}
+                  {Array.from({ length: N_EST_YEARS }, (_, i) => {
+                    // Expenses Cr is the one driverField that's an
+                    // override rather than a true input — null means
+                    // "still auto (Revenue x OPM%)", so its box shows
+                    // that computed number (not blank) until the user
+                    // actually types over it, matching "defaulted to
+                    // current calculation" (2026-08-23). isAutoExpenses
+                    // just dims it to signal "not yet overridden".
+                    const isAutoExpenses = driverField === "expenses" && (state.drivers[i].expenses === null || state.drivers[i].expenses === undefined);
+                    const displayValue = driverField
+                      ? isAutoExpenses
+                        ? model[i]?.expenses !== null && model[i]?.expenses !== undefined
+                          ? Math.round(model[i].expenses as number)
+                          : ""
+                        : state.drivers[i][driverField] ?? ""
+                      : "";
+                    return (
+                      <td key={i} className="px-2 py-1.5 bg-amber-50/50">
+                        {driverField ? (
+                          <input
+                            type="number"
+                            step={FIELD_STEP[driverField]}
+                            className={`num-input ${isAutoExpenses ? "text-slate-400 italic" : ""}`}
+                            title={isAutoExpenses ? "Auto: Revenue × OPM% — type a value to override" : undefined}
+                            value={displayValue}
+                            onChange={(e) => onUpdateDriver(case_, i, driverField, e.target.value)}
+                          />
+                        ) : (
+                          <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
