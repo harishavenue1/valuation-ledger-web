@@ -96,9 +96,21 @@ def fetch_name_sector(symbol):
     """yfinance's .info (a separate, slower call than the bulk .download()
     used for prices — confirmed live it still works from Vercel, same as
     .download()) — best-effort: any failure here just means this one
-    ticker's name/sector stay blank, not a request failure."""
+    ticker's name/sector stay blank, not a request failure.
+
+    quoteType check matters: confirmed live that "ANLON.NS" resolves to
+    a MUTUALFUND record in Yahoo's own system (a symbol collision, not
+    our bug) with shortName "ANLON.NS,0P0001QAIM,6000" — an internal
+    fund identifier string, not a company name. Only trust the name/
+    sector when Yahoo itself says this is an equity; otherwise leave
+    both blank so the frontend falls back to Viraj Screen/the ledger's
+    name instead of showing garbage (2026-08-23, "few details missing
+    again in watchlist").
+    """
     try:
         info = yf.Ticker(f"{symbol}.NS").info
+        if info.get("quoteType") != "EQUITY":
+            return None, None
         return info.get("longName") or info.get("shortName"), info.get("sector")
     except Exception:
         return None, None

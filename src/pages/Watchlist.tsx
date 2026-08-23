@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { api } from "../lib/api";
+import { bulkAddCompanies } from "../lib/bulkAdd";
 import { GenericTable, NSE_SCREENER_COLS } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
@@ -28,7 +29,7 @@ function toNum(v: number | string | null | undefined): number | null {
 // since every row on this page is by definition already on the
 // watchlist.
 export default function Watchlist() {
-  const { bundle, reload } = useData();
+  const { bundle, setBundle, reload } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
   const [refreshing, setRefreshing] = useState(false);
@@ -69,19 +70,33 @@ export default function Watchlist() {
     // would let a null name/sector from a failed yfinance .info call
     // (api/watchlist_detail.py's fetch_name_sector is best-effort)
     // silently clobber a perfectly good fallback name with null.
+    // Screener (bundle.stocks, via _screener_fetch.py) leads the
+    // price/name chain, not yfinance — it's this app's authoritative,
+    // already-trusted source everywhere else (Summary/Detail pages),
+    // and yfinance's own symbol resolution has real failure modes
+    // (confirmed live: "ANLON.NS" partially resolving to an unrelated
+    // mutual fund in Yahoo's system) that Screener doesn't share.
+    // yfinance still supplies the RSI/return-window columns Screener
+    // doesn't compute at all (2026-08-23, "is it not possible to get
+    // price from screener??").
     return {
       ...live,
       symbol: t,
-      name: live?.name || vr?.name || stock?.name || t,
+      name: stock?.name || vr?.name || live?.name || t,
       sector: live?.sector || undefined,
-      price: toNum(live?.price) ?? toNum(vr?.price) ?? stock?.current_price ?? null,
+      price: stock?.current_price ?? toNum(vr?.price) ?? toNum(live?.price) ?? null,
     };
   });
   // Keyed on the sorted ticker list, not the array reference, so the
   // effect below only re-fires when the actual SET of off-universe
   // tickers changes, not on every render.
   const outsideKey = [...outsideNse750].sort().join(",");
-  const stillPartial = outsideNse750.filter((t) => !liveDetail[t]);
+  // "no real signal" (rsi_d missing), not just "no response at all" —
+  // some obscure tickers (confirmed live: ANLON) get a 200 with price
+  // but too little trading history on Yahoo for any of the RSI/return
+  // math, which should read the same as "couldn't find it" rather
+  // than silently passing as fully resolved.
+  const stillPartial = outsideNse750.filter((t) => liveDetail[t]?.rsi_d == null);
 
   useEffect(() => {
     if (!outsideKey || outsideKey === lastFetchedKey.current) return;
@@ -95,6 +110,25 @@ export default function Watchlist() {
       .then(({ rows: fetched }) => setLiveDetail((prev) => ({ ...prev, ...fetched })))
       .catch(() => setDetailError("Live fetch failed — showing name/price only for the tickers below."))
       .finally(() => setDetailLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [outsideKey]);
+
+  // Auto-fetch off-universe tickers into the real ledger (Screener.in,
+  // via the same call the Detail page's "Add it" button uses) so they
+  // get an authoritative price/name instead of leaning on yfinance for
+  // that. attemptedScreenerFetch (not state) tracks what's already
+  // been tried, so this fires once per ticker even as bundle.stocks
+  // updates piece-by-piece re-trigger renders — re-running on every
+  // stock landing would otherwise refetch the same shrinking "still
+  // missing" set repeatedly.
+  const attemptedScreenerFetch = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const need = outsideNse750.filter((t) => !bundle.stocks[t] && !attemptedScreenerFetch.current.has(t));
+    if (need.length === 0) return;
+    need.forEach((t) => attemptedScreenerFetch.current.add(t));
+    bulkAddCompanies(need.join(","), (stock) => {
+      setBundle((b) => ({ ...b, stocks: { ...b.stocks, [stock.ticker]: stock } }));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [outsideKey]);
 
@@ -121,7 +155,8 @@ export default function Watchlist() {
         </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        Columns match the NSE Screener tab — data comes from that screener's latest run, not a separate fetch. Tap ★ on any screener page to add a stock; tap it again here (or there) to remove it.
+        Columns match the NSE Screener tab. Tickers outside NSE 750 get their price/name from Screener.in (auto-fetched) and RSI/returns from a live yfinance lookup instead. Tap ★ on any
+        screener page to add a stock; tap it again here (or there) to remove it.
       </p>
 
       {tickers.length === 0 ? (
