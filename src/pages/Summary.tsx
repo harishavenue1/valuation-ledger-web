@@ -270,8 +270,13 @@ function Section({
                       they're all the same static height, and line-
                       clamp-3 caps any name longer than that instead of
                       growing the row further. */}
-                  <td className="px-3 py-2 align-top">
-                    <div className="min-h-[64px]">
+                  <td className="px-3 py-2">
+                    {/* justify-center vertically centers the name/ticker
+                        block within the reserved 64px, instead of it
+                        sitting pinned to the top with dead space below
+                        for short 1-line names (2026-08-23, "indent
+                        company name to mid of cell"). */}
+                    <div className="min-h-[64px] flex flex-col justify-center">
                       <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
                         {row.stock.name}
                       </button>
