@@ -107,6 +107,22 @@ export default function Detail() {
     });
     scheduleSave(case_, { ...state, drivers });
   }
+  // OPM% and Expenses Cr are two ways of setting the same underlying
+  // number (Operating Profit) for a year — whichever one you touch
+  // most recently should win. Editing Expenses already "wins" simply
+  // by being non-null (see model.ts). Editing OPM% needs to also
+  // clear that year's Expenses override in the SAME update (not two
+  // separate updateDriver calls, which would race against each other
+  // off the same stale `state` closure) so OPM% regains control
+  // immediately instead of silently staying inert underneath a still-
+  // set Expenses override (2026-08-23, "make OPM also editable").
+  function updateOpmDriver(case_: Case, i: number, raw: string) {
+    const state = caseStates[case_];
+    const value = raw === "" ? null : parseFloat(raw);
+    const parsed = value === null || Number.isNaN(value) ? null : value;
+    const drivers = state.drivers.map((d, idx) => (idx === i ? { ...d, opm: parsed, expenses: null } : d));
+    scheduleSave(case_, { ...state, drivers });
+  }
   function updateAssumptions(case_: Case, text: string) {
     scheduleSave(case_, { ...caseStates[case_], assumptions: text });
   }
@@ -224,7 +240,7 @@ export default function Detail() {
         )}
       </div>
 
-      <AnnualTable stock={stock} basis={basis} case_={selectedCase} state={caseStates[selectedCase]} model={selectedModel} onUpdateDriver={updateDriver} />
+      <AnnualTable stock={stock} basis={basis} case_={selectedCase} state={caseStates[selectedCase]} model={selectedModel} onUpdateDriver={updateDriver} onUpdateOpm={updateOpmDriver} />
 
       <CagrEstimatorCard
         stock={stock}
@@ -313,6 +329,7 @@ function AnnualTable({
   state,
   model,
   onUpdateDriver,
+  onUpdateOpm,
 }: {
   stock: Stock;
   basis: string;
@@ -320,6 +337,7 @@ function AnnualTable({
   state: CaseState;
   model: ReturnType<typeof computeModel>;
   onUpdateDriver: (case_: Case, i: number, field: keyof Driver, raw: string) => void;
+  onUpdateOpm: (case_: Case, i: number, raw: string) => void;
 }) {
   const lastYear = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
   const displayYears = padTrailing(stock.years, N_HIST_COLS);
@@ -381,23 +399,22 @@ function AnnualTable({
                     </td>
                   ))}
                   {Array.from({ length: N_EST_YEARS }, (_, i) => {
-                    // Expenses Cr is the one driverField that's an
-                    // override rather than a true input — null means
+                    // OPM% and Expenses Cr are two editable ways of
+                    // setting the same underlying number — whichever
+                    // you touched most recently wins (2026-08-23,
+                    // "make OPM also editable" — reverted the earlier
+                    // read-only-lock approach). Expenses null means
                     // "still auto (Revenue x OPM%)", so its box shows
-                    // that computed number (not blank) until the user
-                    // actually types over it, matching "defaulted to
-                    // current calculation" (2026-08-23). isAutoExpenses
-                    // just dims it to signal "not yet overridden".
+                    // that computed number (not blank) rather than
+                    // blank, until the user actually types over it.
                     const hasExpensesOverride = state.drivers[i].expenses !== null && state.drivers[i].expenses !== undefined;
                     const isAutoExpenses = driverField === "expenses" && !hasExpensesOverride;
-                    // Once Expenses is overridden for this year, OPM%
-                    // is no longer an independent driver — it's the
-                    // margin Revenue/Expenses now implies — so its box
-                    // switches from an input to a computed read-out
-                    // (2026-08-23, "opm should also calculate based on
-                    // expense") instead of showing a now-stale typed
-                    // value.
-                    const opmIsDerived = driverField === "opm" && hasExpensesOverride;
+                    // OPM%'s own box stays a real input at all times —
+                    // just dimmed while Expenses currently has control,
+                    // as a hint that typing here will hand control
+                    // back (onUpdateOpm clears Expenses in the same
+                    // update) rather than being silently ignored.
+                    const opmInactive = driverField === "opm" && hasExpensesOverride;
                     const displayValue = driverField
                       ? isAutoExpenses
                         ? model[i]?.expenses !== null && model[i]?.expenses !== undefined
@@ -407,23 +424,21 @@ function AnnualTable({
                       : "";
                     return (
                       <td key={i} className="px-2 py-1.5 bg-amber-50/50">
-                        {driverField && !opmIsDerived ? (
+                        {driverField ? (
                           <input
                             type="number"
                             step={FIELD_STEP[driverField]}
-                            className={`num-input ${isAutoExpenses ? "text-slate-400 italic" : ""}`}
-                            title={isAutoExpenses ? "Auto: Revenue × OPM% — type a value to override" : undefined}
+                            className={`num-input ${isAutoExpenses || opmInactive ? "text-slate-400 italic" : ""}`}
+                            title={
+                              isAutoExpenses
+                                ? "Auto: Revenue × OPM% — type a value to override"
+                                : opmInactive
+                                  ? "This year's Expenses override currently takes precedence — type here to take control back"
+                                  : undefined
+                            }
                             value={displayValue}
-                            onChange={(e) => onUpdateDriver(case_, i, driverField, e.target.value)}
+                            onChange={(e) => (driverField === "opm" ? onUpdateOpm(case_, i, e.target.value) : onUpdateDriver(case_, i, driverField, e.target.value))}
                           />
-                        ) : opmIsDerived ? (
-                          <div className="text-right tabular-nums italic" title="Derived from this year's Expenses override, not directly editable — clear Expenses to hand control back to OPM%">
-                            {model[i]?.opm_pct === null || model[i]?.opm_pct === undefined ? (
-                              <span className="text-slate-300">—</span>
-                            ) : (
-                              <span className={model[i].opm_pct! >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(model[i].opm_pct, 1)}</span>
-                            )}
-                          </div>
                         ) : (
                           <div className="text-right tabular-nums text-slate-600 italic">{fmt((model[i] as any)[MODEL_KEY[key]], digits, suffix)}</div>
                         )}
