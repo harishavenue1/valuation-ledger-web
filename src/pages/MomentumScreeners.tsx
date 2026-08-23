@@ -39,7 +39,7 @@ function Signed({ v, digits = 2 }: { v: any; digits?: number }) {
 function PriceLink({ symbol, value }: { symbol: string; value: any }) {
   return (
     <a
-      href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(symbol)}`}
+      href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(symbol)}&interval=W`}
       target="_blank"
       rel="noopener noreferrer"
       onClick={(e) => e.stopPropagation()}
