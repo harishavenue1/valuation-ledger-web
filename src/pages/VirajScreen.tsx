@@ -8,7 +8,11 @@ import RunButton from "../components/RunButton";
 // arrive pre-formatted as strings straight from viraj_screen.py's own
 // build_rows() ("✅"/"❌"/"—", "+90%", "5/6") — rendered as-is, not
 // re-parsed, except where sorting needs a numeric read.
-const COL_WIDTHS = [90, 90, 190, 90, 90, 80, 80, 80, 60, 60, 60, 55, 55, 55, 55, 55, 55, 60, 170];
+// Symbol/Name widened 90/190 -> 130/260 (2026-08-23, "we have enough
+// space on viraj screen page... increase width of symbol and name, as
+// it overlaps" — long tickers like GRWRHITECH/ATHERENERG were butting
+// up against the Name column with no breathing room).
+const COL_WIDTHS = [90, 130, 260, 90, 90, 80, 80, 80, 60, 60, 60, 55, 55, 55, 55, 55, 55, 60, 170];
 const TABLE_WIDTH = COL_WIDTHS.reduce((a, b) => a + b, 0);
 
 function priceNum(v: number | string): number {
@@ -256,7 +260,7 @@ export default function VirajScreen() {
                 {sorted.map((r) => (
                   <tr key={r.symbol} className="border-t border-slate-100 hover:bg-slate-50">
                     <td className="px-1.5 py-2 text-center text-[11px] text-slate-500">{r.category}</td>
-                    <td className="px-1.5 py-2 text-center">
+                    <td className="px-1.5 py-2 text-center whitespace-nowrap">
                       <button onClick={() => navigate(`/company/${r.symbol}`)} className="font-semibold text-indigo-600 hover:underline">
                         {r.symbol}
                       </button>
