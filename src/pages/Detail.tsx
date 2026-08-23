@@ -271,9 +271,6 @@ const MODEL_KEY: Record<string, keyof ReturnType<typeof computeModel>[number]> =
 const N_HIST_COLS = 6;
 const LABEL_COL_WIDTH = 190;
 const DATA_COL_WIDTH = 80;
-// Header height the table's own sticky thead sits below — matches the
-// app shell's own sticky top nav bar (App.tsx), measured live at 57px.
-const STICKY_TOP_OFFSET = 57;
 
 /** Always exactly N_HIST_COLS entries — trailing (most recent) years
  * kept, older ones dropped, and left-padded with null when the company
@@ -323,16 +320,16 @@ function AnnualTable({
         <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: tableWidth }}>
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2 sticky left-0 top-0 z-20 bg-slate-50" style={{ width: LABEL_COL_WIDTH, position: "sticky", top: STICKY_TOP_OFFSET }}>
+              <th className="text-left px-3 py-2 sticky left-0 top-0 z-20 bg-slate-50" style={{ width: LABEL_COL_WIDTH, position: "sticky", top: 0 }}>
                 Financial Year
               </th>
               {displayYears.map((y, i) => (
-                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-slate-50" style={{ width: DATA_COL_WIDTH, top: STICKY_TOP_OFFSET }}>
+                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-slate-50" style={{ width: DATA_COL_WIDTH, top: 0 }}>
                   {y ?? ""}
                 </th>
               ))}
               {Array.from({ length: N_EST_YEARS }, (_, i) => (
-                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-amber-50" style={{ width: DATA_COL_WIDTH, top: STICKY_TOP_OFFSET }}>
+                <th key={i} className="text-right px-3 py-2 sticky z-10 bg-amber-50" style={{ width: DATA_COL_WIDTH, top: 0 }}>
                   <div>Mar {lastYear + i + 1}</div>
                   <div className="text-amber-600 font-bold text-[10px]">ESTIMATE</div>
                 </th>
@@ -638,6 +635,12 @@ const QUARTER_ROWS: [string, string, number, string, boolean, boolean][] = [
 ];
 
 function QuarterlyTable({ stock, basis }: { stock: Stock; basis: string }) {
+  // Same fixed label/data column widths as AnnualTable (always exactly
+  // 8 quarters, per the "last 8 quarters" trim in _screener_fetch.py),
+  // so the two stacked tables' columns line up vertically instead of
+  // each auto-sizing to its own content width (2026-08-23, "why quarter
+  // and annual column width are not same").
+  const tableWidth = LABEL_COL_WIDTH + stock.quarters!.length * DATA_COL_WIDTH;
   return (
     <div className="mb-8">
       <h2 className="text-base font-semibold mb-1">Qtr Results</h2>
@@ -645,12 +648,12 @@ function QuarterlyTable({ stock, basis }: { stock: Stock; basis: string }) {
         Screener.in, {basis} — last {stock.quarters!.length} quarters
       </p>
       <div className="overflow-x-auto rounded-lg border border-slate-200">
-        <table className="w-full text-sm">
+        <table className="text-sm border-collapse" style={{ tableLayout: "fixed", width: tableWidth }}>
           <thead className="bg-slate-50 text-slate-500 text-xs">
             <tr>
-              <th className="text-left px-3 py-2">Quarter</th>
+              <th className="text-left px-3 py-2" style={{ width: LABEL_COL_WIDTH }}>Quarter</th>
               {stock.quarters!.map((q) => (
-                <th key={q} className="text-right px-3 py-2">{q}</th>
+                <th key={q} className="text-right px-3 py-2" style={{ width: DATA_COL_WIDTH }}>{q}</th>
               ))}
             </tr>
           </thead>
