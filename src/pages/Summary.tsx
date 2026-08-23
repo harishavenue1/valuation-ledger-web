@@ -255,12 +255,24 @@ function Section({
             <tbody>
               {sortedRows.map((row) => (
                 <tr key={row.ticker} className="border-t border-slate-200 hover:bg-slate-50">
-                  <td className="px-3 py-2">
-                    <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left">
-                      {row.stock.name}
-                    </button>
-                    <div className="text-slate-500 text-xs">{row.ticker}</div>
-                    {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
+                  {/* Company column is a fixed 200px (COL_WIDTHS[0]), so
+                      names wrap to however many lines they need — 1 for
+                      short ones, 3 for long ones — and since row height
+                      follows its tallest cell, that made row heights
+                      vary company to company (2026-08-23, "some show in
+                      2 lines, some in 3 lines"). min-h-[64px] reserves
+                      room for the worst case (3 lines) on every row so
+                      they're all the same static height, and line-
+                      clamp-3 caps any name longer than that instead of
+                      growing the row further. */}
+                  <td className="px-3 py-2 align-top">
+                    <div className="min-h-[64px]">
+                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
+                        {row.stock.name}
+                      </button>
+                      <div className="text-slate-500 text-xs">{row.ticker}</div>
+                      {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
+                    </div>
                   </td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.mktcap)} Cr</td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
