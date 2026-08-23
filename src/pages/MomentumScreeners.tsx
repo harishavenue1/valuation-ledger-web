@@ -33,6 +33,24 @@ function Signed({ v, digits = 2 }: { v: any; digits?: number }) {
   return <span className={n >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(n, digits)}</span>;
 }
 
+// Price column -> TradingView chart for that symbol, new tab. NSE is
+// TradingView's exchange prefix for these tickers; stopPropagation
+// keeps a click here from also triggering the row's Symbol nav link.
+function PriceLink({ symbol, value }: { symbol: string; value: any }) {
+  return (
+    <a
+      href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(symbol)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="hover:underline hover:text-indigo-600"
+      title={`Open ${symbol} chart on TradingView`}
+    >
+      {fmtNum(value)}
+    </a>
+  );
+}
+
 interface Col {
   key: string;
   label: string;
@@ -166,7 +184,7 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
-      { key: "close", label: "Close", render: (r) => fmtNum(r.close) },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
       { key: "rsi14", label: "RSI(14)", render: (r) => fmtNum(r.rsi14, 1) },
       { key: "ema12", label: "12W EMA", render: (r) => fmtNum(r.ema12) },
       { key: "ema21", label: "21W EMA", render: (r) => fmtNum(r.ema21) },
@@ -178,7 +196,7 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
-      { key: "close", label: "Close", render: (r) => fmtNum(r.close) },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
       { key: "close_52w_ago", label: "Close 52W Ago", render: (r) => fmtNum(r.close_52w_ago) },
       { key: "roc_1y_pct", label: "1Y Return %", render: (r) => <Signed v={r.roc_1y_pct} digits={1} /> },
     ],
@@ -186,7 +204,7 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
-      { key: "close", label: "Close", render: (r) => fmtNum(r.close) },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
       { key: "upper_band", label: "Upper Band", render: (r) => fmtNum(r.upper_band) },
       { key: "pct_above_band", label: "% Above Band", render: (r) => <Signed v={r.pct_above_band} digits={1} /> },
       { key: "rs55_pct", label: "55W RS %", render: (r) => <Signed v={r.rs55_pct} digits={1} /> },
@@ -197,7 +215,7 @@ export default function MomentumScreeners() {
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
-      { key: "price", label: "Price", render: (r) => fmtNum(r.price) },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "r_1m", label: "1M %", render: (r) => <Signed v={r.r_1m} digits={1} /> },
       { key: "rs_1w", label: "RS 1W %", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
       { key: "rs_1m", label: "RS 1M %", render: (r) => <Signed v={r.rs_1m} digits={1} /> },
@@ -210,7 +228,7 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
-      { key: "price", label: "Price", render: (r) => fmtNum(r.price) },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "change_pct", label: "Change %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
       { key: "weekly_pct", label: "Weekly %", render: (r) => <Signed v={r.weekly_pct} digits={1} /> },
       { key: "monthly_pct", label: "Monthly %", render: (r) => <Signed v={r.monthly_pct} digits={1} /> },
