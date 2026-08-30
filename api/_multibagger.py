@@ -953,7 +953,7 @@ def build_quant_layer(fund, tech):
          "pass": roce_pass, "detail": f"{quant_roce}%" if quant_roce is not None else "—"},
         {"layer": "Layer 3: Valuation", "key": "PE", "name": f"Trailing PE < {QUANT_PE_THRESHOLD:.0f}x (Price ÷ TTM EPS)",
          "pass": pe_pass, "detail": f"{trailing_pe}x" if trailing_pe is not None else "—"},
-        {"layer": "Layer 4: Momentum", "key": "Momentum", "name": "1Y return ÷ stdev(daily returns) — higher = smoother/stronger trend",
+        {"layer": "Layer 4: Momentum", "key": "Momentum", "name": "1Y return ÷ stdev(daily returns)",
          "pass": None, "detail": f"{momentum}" if momentum is not None else "—"},
     ]
     score = sum(1 for c in checks if c["pass"] is True)
