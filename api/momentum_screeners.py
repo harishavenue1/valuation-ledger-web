@@ -814,16 +814,48 @@ def _run_sector_alpha(symbols, name_map, sector_map):
 # SSA_MIN_STOCKS_PER_SECTOR scoreable stocks are used at all) — no ETL
 # ticker, no mapping guesswork, full coverage of every real industry
 # in the universe rather than just the 12 with a liquid ETF proxy.
+#
+# Theme groups (added same day, on request): Defence and Manufacturing
+# are cross-industry THEMES (a defence stock might be tagged Capital
+# Goods or IT by industry; a themed constituent list cuts across
+# several industries at once), so they can't be built the industry-
+# average way at all — there's no single-industry bucket to average
+# into. Instead these use each theme's REAL NSE index constituent list
+# (found live on the archives. subdomain — nseindia.com's main site
+# times out to any fetch here, same as usual, but the static archives
+# host works, same trick this file already uses for the Total Market
+# list) and compare each constituent's own return against that THEME'S
+# ETF return (SECTOR_ETF_TICKERS' GROWWDEFNC.NS/MAKEINDIA.NS — same
+# tickers sectorAlpha already uses, so the two tabs agree on what
+# "Defence" and "Manufacturing" mean). A stock CAN appear twice — once
+# under its industry, once under a theme it also belongs to — that's
+# not a bug, a stock genuinely can be both. MNC/Commodities/
+# Consumption/CPSE/EV & New Age Auto were also asked for but have no
+# discoverable constituent-list filename on the archives host (several
+# naming patterns tried, all 404) — left out rather than guessed at.
 
 SSA_FETCH_YEARS = 2
 SSA_MIN_HISTORY_DAYS = 250  # ~1Y of real data to be scoreable at all
 SSA_MIN_STOCKS_PER_SECTOR = 3  # need at least this many scoreable stocks for a sector average to mean anything
 SSA_WEIGHTS = {"alpha_1m": 0.40, "alpha_3m": 0.30, "alpha_6m": 0.20, "alpha_1y": 0.10}
 
+SSA_THEME_INDEX_URLS = {
+    "Defence": "https://archives.nseindia.com/content/indices/ind_niftyindiadefence_list.csv",
+    "Manufacturing": "https://archives.nseindia.com/content/indices/ind_niftyindiamanufacturing_list.csv",
+}
+
 
 def _ssa_sector_avg(vals):
     vals = [v for v in vals if v is not None]
     return round(sum(vals) / len(vals), 2) if vals else None
+
+
+def _ssa_fetch_theme_symbols(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        text = resp.read().decode("utf-8")
+    rows = list(csv.DictReader(io.StringIO(text)))
+    return {r["Symbol"].strip() for r in rows}
 
 
 def _run_sector_stock_alpha(symbols, name_map, sector_map):
@@ -887,6 +919,52 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
             "alpha_score": alpha_score,
         })
+
+    # Theme groups (Defence/Manufacturing) — see the module comment
+    # above for why these can't be built the industry-average way. A
+    # constituent can be missing from per_stock (delisted, insufficient
+    # history) without failing the whole theme — just skipped like any
+    # other stock.
+    for theme, url in SSA_THEME_INDEX_URLS.items():
+        etf_ticker = SECTOR_ETF_TICKERS.get(theme)
+        if not etf_ticker:
+            continue
+        try:
+            members = _ssa_fetch_theme_symbols(url)
+            theme_df = _sec_fetch_series(etf_ticker, start)
+        except Exception:
+            skipped.append(f"[theme:{theme}] fetch failed")
+            continue
+        if theme_df.empty:
+            skipped.append(f"[theme:{theme}] no ETF data")
+            continue
+        theme_data = sorted(_sec_to_records(theme_df), key=lambda r: r["date"])
+        theme_last_date = datetime.strptime(theme_data[-1]["date"], "%Y-%m-%d").date()
+        theme_ret = _sec_returns_for(theme_data, theme_last_date)
+
+        for sym in members:
+            r = per_stock.get(sym)
+            if r is None:
+                skipped.append(sym)
+                continue
+            alpha_1m = None if r["r_1m"] is None or theme_ret["r_1m"] is None else round(r["r_1m"] - theme_ret["r_1m"], 2)
+            alpha_3m = None if r["r_3m"] is None or theme_ret["r_3m"] is None else round(r["r_3m"] - theme_ret["r_3m"], 2)
+            alpha_6m = None if r["r_6m"] is None or theme_ret["r_6m"] is None else round(r["r_6m"] - theme_ret["r_6m"], 2)
+            alpha_1y = None if r["r_1y"] is None or theme_ret["r_1y"] is None else round(r["r_1y"] - theme_ret["r_1y"], 2)
+            parts = {"alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
+            available = {k: v for k, v in parts.items() if v is not None}
+            if not available:
+                skipped.append(sym)
+                continue
+            wsum = sum(SSA_WEIGHTS[k] for k in available)
+            alpha_score = round(sum(v * SSA_WEIGHTS[k] for k, v in available.items()) / wsum, 2)
+            rows.append({
+                "symbol": sym, "name": name_map.get(sym, sym), "sector": theme,
+                "price": r["last_close"], "as_of": r["last_date"],
+                "r_1m": r["r_1m"], "r_3m": r["r_3m"], "r_6m": r["r_6m"], "r_1y": r["r_1y"],
+                "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
+                "alpha_score": alpha_score,
+            })
 
     rows.sort(key=lambda r: -r["alpha_score"])
     for i, r in enumerate(rows, 1):
