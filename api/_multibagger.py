@@ -798,14 +798,19 @@ def _last_n_periods(labels, series_map, n=3):
 
 def _cagr_pct(vals, min_years=PEG_MIN_YEARS):
     """CAGR% over the last `min_years` non-None values of an annual
-    series (e.g. EPS) — None if there aren't enough clean points or the
-    earliest of them isn't positive (a CAGR off a loss/zero base is
-    undefined, not just a small/negative number)."""
+    series (e.g. EPS) — None if there aren't enough clean points or
+    either endpoint isn't positive (a CAGR off/into a loss is
+    undefined, not just a small/negative number — also a real crash
+    risk otherwise: a negative ratio raised to a fractional power is a
+    COMPLEX number in Python, which round() can't handle at all.
+    Confirmed live 2026-08-30 on Tejas Networks, whose EPS swung
+    positive-to-negative across the 3-year window this looks at —
+    `?guide=TejasNet` 500'd until this guard was added)."""
     clean = [v for v in vals if v is not None]
     if len(clean) < min_years:
         return None
     first, last = clean[-min_years], clean[-1]
-    if first is None or first <= 0:
+    if first is None or first <= 0 or last is None or last <= 0:
         return None
     years = min_years - 1
     return round(((last / first) ** (1 / years) - 1) * 100, 1)
