@@ -209,8 +209,24 @@ export function GenericTable({
           <tbody>
             {sorted.map((r, i) => {
               const sym = String(r.symbol ?? i);
+              // Symbol alone isn't a safe React key here: sectorStockAlpha
+              // (Stocks vs Sector) legitimately pushes the same stock
+              // twice — once under its industry, once under a theme it
+              // also belongs to (e.g. SONACOMS under both "Automobile and
+              // Auto Components" and "Manufacturing") — so two rows can
+              // share a symbol. A duplicate React key breaks
+              // reconciliation: the header's sort state updates fine, but
+              // React can't correctly re-map DOM rows to the new order,
+              // so the visible rows silently stop tracking the sort
+              // (confirmed live 2026-08-30 sorting Stocks vs Sector by
+              // Sector — arrow updated, rows didn't move). r.sector makes
+              // the key unique per (symbol, sector) pair for every
+              // screener that carries one, without needing an index (an
+              // index-based key would be unique but changes every sort/
+              // filter, forcing needless remounts of every row).
+              const rowKey = r.sector !== undefined ? `${sym}-${r.sector}` : sym;
               return (
-                <tr key={sym} className="border-t border-slate-100 hover:bg-slate-50">
+                <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
                   {cols.map((c) => (
                     <td key={c.key} className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"}`}>
                       {c.key === "symbol" ? (
