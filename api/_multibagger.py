@@ -1,0 +1,351 @@
+"""Shared technical-indicator logic for the Guide page's Multibagger
+Checklist (GET /api/fetch_company?guide=<name>, added 2026-08-30).
+
+Single-symbol yfinance pull + the exact same formulas/thresholds as
+four already-verified-live screeners in api/momentum_screeners.py —
+myLongTermInvestingStrategy (weekly RSI>66 + 12/21/33-week EMA
+ribbon), MA Breakout (200D/33W EMA on OHLC4, recent-cross + not-
+overextended), Value RSI Turnaround (monthly RSI crossing 40 and
+progressing), and Grandfather-Father-Son (Monthly+Weekly RSI>60 with a
+daily RSI pullback-and-recovery at support). DUPLICATED here rather
+than imported from momentum_screeners.py, on purpose — same reasoning
+as _val_rsi_series vs nseScreener's _nse_wilder_rsi already being two
+separate implementations in this codebase: a future change to one
+screener's batch logic shouldn't silently change what the Guide page
+reports for the same rule, and vice versa. If a threshold is fixed in
+one place, fix it in both or retire one in favor of the other.
+
+Also adds one check none of the 4 screeners compute: a VCP-style daily
+EMA(10)/EMA(20) contraction, replicating viraj_screen.py's Chartink
+"C3" scan clause (`abs(ema10-ema20) narrowing over the last few days`)
+via plain pandas instead of an extra Chartink network round-trip —
+cheaper and more reliable for a single on-demand lookup than calling
+out to a third-party site (viraj_screen.py's own "Run now" failures
+are a live example of that round-trip being the fragile part)."""
+import pandas as pd
+import yfinance as yf
+from datetime import date, timedelta
+
+FETCH_YEARS = 5
+MIN_DAILY_BARS = 260  # ~1 trading year — below this, none of the below is trustworthy
+
+# myLongTermInvestingStrategy mirror
+LTIS_RSI_PERIOD = 14
+LTIS_RSI_THRESHOLD = 66
+LTIS_EMA_PERIODS = [12, 21, 33]
+
+# MA Breakout mirror (EMA on OHLC4, not Close — feedback_ema_ohlc4_source.md)
+MAB_RECENCY_WEEKS = 8
+MAB_MAX_PCT_ABOVE = 20.0
+MAB_DAILY_EMA_PERIOD = 200
+MAB_WEEKLY_EMA_PERIOD = 33
+
+# Value RSI Turnaround mirror
+VAL_RSI_THRESHOLD = 40
+VAL_RSI_UPPER_CAP = 60
+VAL_RECENCY_MONTHS = 3
+
+# Grandfather-Father-Son mirror
+GFS_HIGHER_TF_RSI_THRESHOLD = 60
+GFS_SUPPORT_LOW = 35
+GFS_SUPPORT_HIGH = 45
+GFS_LOOKBACK_DAYS = 10
+
+# VCP-style daily EMA(10)/EMA(20) contraction — mirrors viraj_screen.py's
+# Chartink C3 clause ("today's gap narrower than 3 days ago AND than
+# 1 day ago") on trading-day offsets, not calendar days.
+VCP_LOOKBACK_1 = 3
+VCP_LOOKBACK_2 = 1
+
+
+def _rsi_series(close, period=14):
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - 100 / (1 + rs)
+    return rsi.where(avg_loss != 0, 100.0)
+
+
+def _mab_analyze(close, ohlc4, ema_period, recency_periods):
+    """Same math as momentum_screeners.py's _mab_analyze, but never
+    returns None outright — the Guide page wants to SHOW where a stock
+    stands even when it doesn't currently qualify as a fresh breakout
+    (e.g. "above the 200D EMA but crossed 40 weeks ago" is still useful
+    context), so booleans (recent_cross/not_extended) carry the
+    pass/fail instead of a None short-circuit."""
+    if len(close) < ema_period + recency_periods + 20:
+        return None
+    ema = ohlc4.ewm(span=ema_period, adjust=False).mean()
+    above = close > ema
+    last_close, last_ema = float(close.iloc[-1]), float(ema.iloc[-1])
+    if not bool(above.iloc[-1]):
+        return {"above": False, "ema": round(last_ema, 2)}
+    i = len(above) - 1
+    while i > 0 and bool(above.iloc[i - 1]):
+        i -= 1
+    periods_since_cross = None if i == 0 else len(above) - 1 - i
+    pct_above = round((last_close / last_ema - 1) * 100, 2)
+    return {
+        "above": True, "ema": round(last_ema, 2), "pct_above": pct_above,
+        "periods_since_cross": periods_since_cross,
+        "recent_cross": periods_since_cross is not None and periods_since_cross <= recency_periods,
+        "not_extended": pct_above <= MAB_MAX_PCT_ABOVE,
+    }
+
+
+def fetch_technicals(symbol):
+    """symbol: bare NSE symbol (no .NS suffix). Returns (dict, None) on
+    success, (None, error_message) on failure — same shape convention
+    as _screener_fetch.fetch_one()."""
+    start = (date.today() - timedelta(days=365 * FETCH_YEARS)).isoformat()
+    try:
+        df = yf.download(f"{symbol}.NS", start=start, interval="1d",
+                          auto_adjust=True, progress=False)
+    except Exception as e:
+        return None, f"yfinance fetch failed: {e}"
+    if df is None or df.empty:
+        return None, f"no yfinance price history for {symbol}.NS"
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.dropna(subset=["Close"])
+    if len(df) < MIN_DAILY_BARS:
+        return None, f"only {len(df)} days of price history — too little to score reliably"
+
+    close_d, open_d, low_d = df["Close"], df["Open"], df["Low"]
+    ohlc4_d = (df["Open"] + df["High"] + df["Low"] + df["Close"]) / 4
+
+    weekly = df.resample("W-FRI").agg(
+        {"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+    close_w = weekly["Close"]
+    ohlc4_w = (weekly["Open"] + weekly["High"] + weekly["Low"] + weekly["Close"]) / 4
+    monthly_close = close_d.resample("ME").last().dropna()
+
+    result = {"price": round(float(close_d.iloc[-1]), 2)}
+
+    # --- myLongTermInvestingStrategy mirror: weekly RSI>66 + 12/21/33W EMA ribbon (Close-based) ---
+    ltis = None
+    rsi_w_series = _rsi_series(close_w, LTIS_RSI_PERIOD).dropna()
+    if len(rsi_w_series) >= 5:
+        ema_w = {p: close_w.ewm(span=p, adjust=False).mean() for p in LTIS_EMA_PERIODS}
+        if all(not pd.isna(ema_w[p].iloc[-1]) for p in LTIS_EMA_PERIODS):
+            rsi_w = float(rsi_w_series.iloc[-1])
+            ribbon_ok = all(float(close_w.iloc[-1]) > float(ema_w[p].iloc[-1]) for p in LTIS_EMA_PERIODS)
+            ltis = {
+                "rsi_w": round(rsi_w, 1), "rsi_w_pass": rsi_w > LTIS_RSI_THRESHOLD,
+                "ema12w": round(float(ema_w[12].iloc[-1]), 2),
+                "ema21w": round(float(ema_w[21].iloc[-1]), 2),
+                "ema33w_close": round(float(ema_w[33].iloc[-1]), 2),
+                "above_ribbon": ribbon_ok,
+            }
+    result["ltis"] = ltis
+
+    # --- MA Breakout mirror: 200D / 33W EMA on OHLC4 ---
+    result["ma_breakout"] = {
+        "d200": _mab_analyze(close_d, ohlc4_d, MAB_DAILY_EMA_PERIOD, MAB_RECENCY_WEEKS * 5),
+        "w33": _mab_analyze(close_w, ohlc4_w, MAB_WEEKLY_EMA_PERIOD, MAB_RECENCY_WEEKS),
+    }
+
+    # --- VCP-style daily EMA(10)/EMA(20) contraction ---
+    contraction = None
+    if len(close_d) >= 25:
+        ema10 = close_d.ewm(span=10, adjust=False).mean()
+        ema20 = close_d.ewm(span=20, adjust=False).mean()
+        diff = (ema10 - ema20).abs()
+        contraction = bool(diff.iloc[-1] < diff.iloc[-1 - VCP_LOOKBACK_1]
+                            and diff.iloc[-1] < diff.iloc[-1 - VCP_LOOKBACK_2])
+    result["vcp_contraction"] = contraction
+
+    # --- Value RSI Turnaround mirror: monthly RSI crossed 40, progressing, capped at 60 ---
+    val = None
+    rsi_m_series = _rsi_series(monthly_close, 14).dropna()
+    if len(rsi_m_series) >= VAL_RECENCY_MONTHS + 5:
+        above = rsi_m_series > VAL_RSI_THRESHOLD
+        current_rsi_m = float(rsi_m_series.iloc[-1])
+        val = {"rsi_m": round(current_rsi_m, 1), "active": False}
+        if bool(above.iloc[-1]):
+            i = len(above) - 1
+            while i > 0 and bool(above.iloc[i - 1]):
+                i -= 1
+            if i > 0:
+                months_since_cross = len(above) - 1 - i
+                rsi_at_cross = float(rsi_m_series.iloc[i])
+                if (months_since_cross <= VAL_RECENCY_MONTHS and current_rsi_m > rsi_at_cross
+                        and current_rsi_m <= VAL_RSI_UPPER_CAP):
+                    val["active"] = True
+                    val["months_since_cross"] = months_since_cross
+                    val["rsi_at_cross"] = round(rsi_at_cross, 1)
+    result["value_rsi_turnaround"] = val
+
+    # --- Grandfather-Father-Son mirror ---
+    gfs = None
+    rsi_d_series = _rsi_series(close_d, 14).dropna()
+    if len(rsi_m_series) and len(rsi_w_series) and len(rsi_d_series) >= GFS_LOOKBACK_DAYS + 5:
+        monthly_rsi, weekly_rsi = float(rsi_m_series.iloc[-1]), float(rsi_w_series.iloc[-1])
+        gfs = {"monthly_rsi": round(monthly_rsi, 1), "weekly_rsi": round(weekly_rsi, 1), "active": False}
+        if monthly_rsi > GFS_HIGHER_TF_RSI_THRESHOLD and weekly_rsi > GFS_HIGHER_TF_RSI_THRESHOLD:
+            recent_idx = rsi_d_series.index[-GFS_LOOKBACK_DAYS:]
+            candidates = [d for d in recent_idx
+                          if GFS_SUPPORT_LOW <= rsi_d_series.loc[d] <= GFS_SUPPORT_HIGH
+                          and close_d.loc[d] > open_d.loc[d]]
+            if candidates:
+                trigger_date = candidates[-1]
+                trigger_rsi = float(rsi_d_series.loc[trigger_date])
+                current_daily_rsi = float(rsi_d_series.iloc[-1])
+                trigger_low = float(low_d.loc[trigger_date])
+                after = low_d.loc[low_d.index > trigger_date]
+                stopped_out = (not after.empty) and float(after.min()) < trigger_low
+                if current_daily_rsi >= trigger_rsi and not stopped_out:
+                    gfs.update({
+                        "active": True, "daily_rsi": round(current_daily_rsi, 1),
+                        "daily_rsi_at_support": round(trigger_rsi, 1),
+                        "stop_loss": round(trigger_low, 2),
+                        "days_since_support": int((close_d.index > trigger_date).sum()),
+                    })
+    result["grandfather_father_son"] = gfs
+
+    return result, None
+
+
+# ── Checklist assembly (merges the fundamentals fetch_one() already
+# returns with fetch_technicals() above into the Guide page's scored
+# checklist) ─────────────────────────────────────────────────────────
+
+# Sector Leader Compare skill's fundamental quality bar — ROE/ROCE/
+# cash-conversion thresholds are this feature's own reasonable-quality
+# bar (not lifted from an existing screener the way the technicals
+# above are), since none of this app's existing screeners score those
+# three. DOL threshold reused verbatim from viraj_screen.py's F1 rule
+# (`dol > 1.5`), computed here on an ANNUAL basis (fetch_one() only
+# returns annual P&L rows in the shape this needs) where viraj_screen's
+# own F1 uses the latest quarter YoY — a deliberate basis difference,
+# not an inconsistency: different screener, different cadence, same
+# already-established threshold.
+FUND_ROE_THRESHOLD = 15.0
+FUND_ROCE_THRESHOLD = 15.0
+FUND_CASH_CONVERSION_THRESHOLD = 80.0
+FUND_DOL_THRESHOLD = 1.5
+
+
+def _mab_active(d):
+    return bool(d and d.get("above") and d.get("recent_cross") and d.get("not_extended"))
+
+
+def build_checklist(fund, tech):
+    from _screener_fetch import yoy_series
+
+    items_f = []
+
+    rev_g = [v for v in (fund.get("revenue_growth_pct") or []) if v is not None]
+    latest_rev_g = rev_g[-1] if rev_g else None
+    items_f.append({
+        "key": "revenue_growth", "label": "Revenue growth positive (latest FY, YoY)",
+        "value": f"{latest_rev_g:+.1f}%" if latest_rev_g is not None else "—",
+        "pass": None if latest_rev_g is None else latest_rev_g > 0,
+    })
+
+    qrg = [v for v in (fund.get("q_revenue_growth_pct") or []) if v is not None]
+    if len(qrg) >= 2:
+        cur_q, prev_q = qrg[-1], qrg[-2]
+        items_f.append({
+            "key": "revenue_accel", "label": "Quarterly revenue growth accelerating (latest Q YoY vs prior Q YoY)",
+            "value": f"{cur_q:+.1f}% vs {prev_q:+.1f}%", "pass": cur_q > prev_q,
+        })
+    else:
+        items_f.append({"key": "revenue_accel", "label": "Quarterly revenue growth accelerating (latest Q YoY vs prior Q YoY)",
+                         "value": "—", "pass": None})
+
+    op_g = [v for v in yoy_series(fund.get("operating_profit") or []) if v is not None]
+    dol = round(op_g[-1] / latest_rev_g, 2) if (op_g and latest_rev_g not in (None, 0)) else None
+    items_f.append({
+        "key": "dol", "label": f"Operating leverage: OP growth ÷ Sales growth > {FUND_DOL_THRESHOLD} (annual)",
+        "value": str(dol) if dol is not None else "—", "pass": None if dol is None else dol > FUND_DOL_THRESHOLD,
+    })
+
+    eps_list = fund.get("eps") or []
+    eps_idx = [i for i, v in enumerate(eps_list) if v is not None]
+    eps_pass, eps_val = None, "—"
+    if len(eps_idx) >= 2:
+        e_cur, e_prev = eps_list[eps_idx[-1]], eps_list[eps_idx[-2]]
+        if e_prev < 0 and e_cur > 0:
+            eps_pass, eps_val = True, "Turned profitable"
+        elif e_prev != 0:
+            g = round((e_cur - e_prev) / abs(e_prev) * 100, 1)
+            eps_pass, eps_val = g > 0, f"{g:+.1f}%"
+    items_f.append({"key": "eps_growth", "label": "EPS growth positive (latest FY, YoY)", "value": eps_val, "pass": eps_pass})
+
+    roe = fund.get("roe_pct")
+    items_f.append({"key": "roe", "label": f"ROE > {FUND_ROE_THRESHOLD:.0f}%",
+                     "value": f"{roe:.1f}%" if roe is not None else "—",
+                     "pass": None if roe is None else roe > FUND_ROE_THRESHOLD})
+
+    roce = fund.get("roce_pct")
+    items_f.append({"key": "roce", "label": f"ROCE > {FUND_ROCE_THRESHOLD:.0f}%",
+                     "value": f"{roce:.1f}%" if roce is not None else "—",
+                     "pass": None if roce is None else roce > FUND_ROCE_THRESHOLD})
+
+    cc = fund.get("cash_conversion_pct")
+    items_f.append({"key": "cash_conversion", "label": f"Cash conversion (CFO ÷ Operating Profit) > {FUND_CASH_CONVERSION_THRESHOLD:.0f}%",
+                     "value": f"{cc:.0f}%" if cc is not None else "—",
+                     "pass": None if cc is None else cc > FUND_CASH_CONVERSION_THRESHOLD})
+
+    items_t = []
+    ltis = (tech or {}).get("ltis")
+    items_t.append({"key": "weekly_rsi", "label": f"Weekly RSI(14) > {LTIS_RSI_THRESHOLD} (Minervini SEPA)",
+                     "value": f"{ltis['rsi_w']}" if ltis else "—", "pass": ltis["rsi_w_pass"] if ltis else None})
+    items_t.append({"key": "ema_ribbon", "label": "Price above 12W/21W/33W EMA (Long-Term Investing Strategy)",
+                     "value": "—" if not ltis else ("Yes" if ltis["above_ribbon"] else "No"),
+                     "pass": ltis["above_ribbon"] if ltis else None})
+
+    mab = (tech or {}).get("ma_breakout") or {}
+    d200, w33 = mab.get("d200"), mab.get("w33")
+    above_any = [d for d in (d200, w33) if d and d.get("above")]
+    above_pass = (bool(above_any) if (d200 or w33) else None)
+    items_t.append({"key": "above_ma", "label": "Price above 200D EMA or 33W EMA (OHLC4)",
+                     "value": "—" if above_pass is None else ("Yes" if above_pass else "No"), "pass": above_pass})
+    if above_any:
+        not_ext_pass = any(d.get("not_extended") for d in above_any)
+        best_pct = min(d["pct_above"] for d in above_any)
+        not_ext_val = f"{best_pct:+.1f}%"
+    else:
+        not_ext_pass, not_ext_val = None, "—"
+    items_t.append({"key": "not_extended", "label": f"Not overextended — within {MAB_MAX_PCT_ABOVE:.0f}% of that EMA",
+                     "value": not_ext_val, "pass": not_ext_pass})
+
+    vcp = (tech or {}).get("vcp_contraction")
+    items_t.append({"key": "vcp", "label": "Daily EMA(10)/EMA(20) contracting (VCP-style tightening)",
+                     "value": "—" if vcp is None else ("Yes" if vcp else "No"), "pass": vcp})
+
+    def _tally(items):
+        applicable = [it for it in items if it["pass"] is not None]
+        return sum(1 for it in applicable if it["pass"]), len(applicable)
+
+    f_passed, f_applicable = _tally(items_f)
+    t_passed, t_applicable = _tally(items_t)
+    total_passed, total_applicable = f_passed + t_passed, f_applicable + t_applicable
+    pct = round(total_passed / total_applicable * 100) if total_applicable else 0
+    if total_applicable == 0:
+        verdict = "Not enough data to score"
+    elif pct >= 80:
+        verdict = "Strong checklist match"
+    elif pct >= 50:
+        verdict = "Partial match — watchlist"
+    else:
+        verdict = "Weak match"
+
+    entry_setups = {"ma_breakout": None, "value_rsi_turnaround": None, "grandfather_father_son": None}
+    if tech:
+        entry_setups["ma_breakout"] = {"active": _mab_active(d200) or _mab_active(w33), "d200": d200, "w33": w33}
+        vrt = tech.get("value_rsi_turnaround")
+        entry_setups["value_rsi_turnaround"] = {"active": bool(vrt and vrt.get("active")), **(vrt or {})}
+        gfs = tech.get("grandfather_father_son")
+        entry_setups["grandfather_father_son"] = {"active": bool(gfs and gfs.get("active")), **(gfs or {})}
+
+    return {
+        "fundamentals": {"items": items_f, "passed": f_passed, "applicable": f_applicable},
+        "technicals": {"items": items_t, "passed": t_passed, "applicable": t_applicable},
+        "entry_setups": entry_setups,
+        "score": {"passed": total_passed, "applicable": total_applicable, "pct": pct, "verdict": verdict},
+    }

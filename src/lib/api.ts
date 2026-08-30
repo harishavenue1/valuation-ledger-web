@@ -72,6 +72,44 @@ export interface Watchlist {
   tickers: string[];
 }
 
+// Guide page's Multibagger Checklist — see api/_multibagger.py's
+// build_checklist() for the exact shape this mirrors. Items' `pass` is
+// `null` (not a boolean) when there wasn't enough data to judge that
+// specific rule — rendered as a neutral "—", not counted in either
+// scored/applicable total.
+export interface GuideChecklistItem {
+  key: string;
+  label: string;
+  value: string;
+  pass: boolean | null;
+}
+export interface GuideSection {
+  items: GuideChecklistItem[];
+  passed: number;
+  applicable: number;
+}
+export interface GuideEntrySetup {
+  active: boolean;
+  [field: string]: any; // each setup (ma_breakout/value_rsi_turnaround/grandfather_father_son) carries its own detail fields
+}
+export interface GuideResult {
+  ok: boolean;
+  ticker: string;
+  name: string;
+  price: number | null;
+  market_cap_cr: number | null;
+  pe_ratio: number | null;
+  technicals_error: string | null;
+  fundamentals: GuideSection;
+  technicals: GuideSection;
+  entry_setups: {
+    ma_breakout: GuideEntrySetup | null;
+    value_rsi_turnaround: GuideEntrySetup | null;
+    grandfather_father_son: GuideEntrySetup | null;
+  };
+  score: { passed: number; applicable: number; pct: number; verdict: string };
+}
+
 export interface Bundle {
   stocks: Record<string, Stock>;
   scenarios: Record<string, Partial<Record<Case, CaseState>>>;
@@ -152,6 +190,16 @@ export const api = {
   // cookies, which only live on his Mac).
   runScreenerCloud: (screener: string): Promise<{ ok: boolean; universe: number; scanned: number; skipped: number; pushed: number; elapsed_s: number }> =>
     req(`/api/momentum_screeners?screener=${encodeURIComponent(screener)}`),
+
+  // Guide page's Multibagger Checklist (added 2026-08-30) — one live,
+  // stateless lookup for ANY NSE company by name/symbol, merging
+  // Screener.in fundamentals (ROE/ROCE/cash conversion/DOL/growth) with
+  // yfinance technicals mirroring 4 already-shipped screeners (weekly
+  // RSI>66 + EMA ribbon, MA Breakout, Value RSI Turnaround, Grandfather-
+  // Father-Son) — see api/fetch_company.py's `?guide=` branch and
+  // api/_multibagger.py. Takes ~2-4s (one Screener.in page + one
+  // single-ticker yfinance pull, nothing at NSE-750 scale).
+  guideCheck: (query: string): Promise<GuideResult> => req(`/api/fetch_company?guide=${encodeURIComponent(query)}`),
 
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),

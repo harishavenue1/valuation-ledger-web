@@ -9,6 +9,7 @@ import GuidanceTracker from "./pages/GuidanceTracker";
 import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
 import Watchlist from "./pages/Watchlist";
+import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
 
 interface DataCtx {
@@ -95,6 +96,9 @@ export default function App() {
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
+              <NavLink to="/guide" className={({ isActive }) => navClass(isActive)}>
+                🧭 Guide
+              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -119,6 +123,7 @@ export default function App() {
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/watchlist" element={<Watchlist />} />
+            <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
         </main>

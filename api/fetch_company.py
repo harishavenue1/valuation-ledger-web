@@ -41,6 +41,7 @@ from _clean import clean_stock
 from _cron_auth import is_authed_cron_or_cookie
 from _db import delete_json, get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
+from _multibagger import build_checklist, fetch_technicals
 from _screener_fetch import fetch_one
 
 CRON_DELAY_SECONDS = 3  # gap between tickers — heavier per-ticker load than the price cron
@@ -122,8 +123,39 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 401, {"error": "unauthorized"})
             return
 
-        limit = None
         query = parse_qs(urlparse(self.path).query)
+
+        # ?guide=<company name or symbol> — the Guide page's Multibagger
+        # Checklist (added 2026-08-30), an on-demand single-company
+        # lookup. Deliberately NOT written to the `stocks` table or the
+        # guidance_tracker "tracked" list the way POST above is — this
+        # is a stateless compute-and-return, works for ANY NSE company
+        # (not just ones already in the ledger), never persisted.
+        # Browser-only in practice (is_authed_cron_or_cookie's cookie
+        # half), but no separate auth path needed — same as every other
+        # "Run now" click elsewhere in this app.
+        if query.get("guide"):
+            guide_query = query["guide"][0].strip()
+            if not guide_query:
+                send_json(self, 400, {"error": "guide (company name or symbol) is required"})
+                return
+            fund, err = fetch_one(guide_query)
+            if err:
+                send_json(self, 502, {"error": err})
+                return
+            fund = clean_stock(fund)
+            tech, tech_err = fetch_technicals(fund["ticker"])
+            checklist = build_checklist(fund, tech)
+            send_json(self, 200, {
+                "ok": True, "ticker": fund["ticker"], "name": fund["name"],
+                "price": fund.get("current_price") or (tech or {}).get("price"),
+                "market_cap_cr": fund.get("market_cap_cr"), "pe_ratio": fund.get("pe_ratio"),
+                "technicals_error": tech_err,  # best-effort — fundamentals still returned even if this failed
+                **checklist,
+            })
+            return
+
+        limit = None
         if query.get("limit"):
             try:
                 limit = int(query["limit"][0])

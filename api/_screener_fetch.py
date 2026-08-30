@@ -338,7 +338,8 @@ def fetch_page(base_url, headers):
 
 
 def parse_top_ratios(soup):
-    out = {"current_price": None, "pe_ratio": None, "market_cap_cr": None, "week52_high": None}
+    out = {"current_price": None, "pe_ratio": None, "market_cap_cr": None, "week52_high": None,
+           "roce_pct": None, "roe_pct": None}
     top_ratios = soup.find("ul", id="top-ratios")
     if not top_ratios:
         return out
@@ -354,12 +355,54 @@ def parse_top_ratios(soup):
             out["market_cap_cr"] = nums[0]
         elif "High" in label and "Low" in label and nums:
             out["week52_high"] = nums[0]
+        # ROCE/ROE — added 2026-08-30 for the Guide page's multibagger
+        # checklist (Sector Leader Compare skill's fundamental quality
+        # bar). Same <ul id="top-ratios"> list every other field here
+        # already reads, just two more of its <li> entries — no extra
+        # request. Checked "ROCE" before "ROE" is a non-issue either
+        # way: "ROE" is not a substring of "ROCE" (ROCE = R-O-C-E), so
+        # the two labels never collide.
+        elif label.strip().upper().startswith("ROCE") and nums:
+            out["roce_pct"] = nums[0]
+        elif label.strip().upper().startswith("ROE") and nums:
+            out["roe_pct"] = nums[0]
     return out
 
 
 def parse_pl_section(soup):
     section = next((s for s in soup.find_all("section")
                      if s.find("h2") and "Profit" in s.find("h2").get_text(strip=True)), None)
+    if not section:
+        return None, None
+    table = section.find("table")
+    if not table:
+        return None, None
+    years = [th.get_text(strip=True) for th in table.find("thead").find_all("th")][1:]
+    rows = {}
+    for tr in table.find("tbody").find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < 2:
+            continue
+        label = cells[0].get_text(strip=True).rstrip("+").strip()
+        vals = [parse_number(td.get_text(strip=True)) for td in cells[1:]]
+        rows[label] = vals
+    return years, rows
+
+
+def parse_cash_flow_section(soup):
+    """Screener's "Cash Flow" section — added 2026-08-30 for the Guide
+    page's multibagger checklist (cash conversion, the third leg of the
+    Sector Leader Compare skill's fundamental bar alongside ROE/ROCE
+    above). Screener already computes the exact ratio itself as a
+    "CFO/OP" row (Cash from Operating Activity ÷ Operating Profit, e.g.
+    "92%") — read straight off that row via find_row() rather than
+    re-deriving it from Cash from Operating Activity + operating_profit
+    (which would need the two tables' year columns matched up; this
+    row is already aligned since it's computed by Screener itself in
+    the same table). Same shape/parsing as parse_pl_section(), just a
+    different section header."""
+    section = next((s for s in soup.find_all("section")
+                     if s.find("h2") and "Cash Flow" in s.find("h2").get_text(strip=True)), None)
     if not section:
         return None, None
     table = section.find("table")
@@ -691,6 +734,18 @@ def fetch_one(ticker, session_id=None):
     except Exception:
         pe_history = None
 
+    # Cash conversion (CFO/OP, latest available year) — best-effort
+    # add-on, same degrade-gracefully treatment as EMAs/PE history
+    # above. See parse_cash_flow_section()'s docstring.
+    cash_conversion_pct = None
+    try:
+        _, cf_rows = parse_cash_flow_section(soup)
+        cfo_op_row = find_row(cf_rows, "cfo/op") if cf_rows else None
+        if cfo_op_row:
+            cash_conversion_pct = next((v for v in reversed(cfo_op_row) if v is not None), None)
+    except Exception:
+        cash_conversion_pct = None
+
     return {
         "ticker": canonical_ticker,
         "name": company_name,
@@ -700,6 +755,9 @@ def fetch_one(ticker, session_id=None):
         "pe_ratio": top["pe_ratio"],
         "market_cap_cr": top["market_cap_cr"],
         "week52_high": top["week52_high"],
+        "roce_pct": top["roce_pct"],
+        "roe_pct": top["roe_pct"],
+        "cash_conversion_pct": cash_conversion_pct,
         "ema20d": emas["ema20d"],
         "ema50d": emas["ema50d"],
         "ema33w": emas["ema33w"],
