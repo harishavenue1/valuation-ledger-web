@@ -219,7 +219,7 @@ export default function MomentumScreeners() {
         <RunButton screener={tab} />
       </div>
 
-      <MethodologyNote key={tab}>{METHODOLOGY[tab]}</MethodologyNote>
+      <MethodologyNote>{METHODOLOGY[tab]}</MethodologyNote>
 
       {/* key={tab} — remounts fresh per tab so search/sector/sort
           state doesn't leak from one screener's filters into the
