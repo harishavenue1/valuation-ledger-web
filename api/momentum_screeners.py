@@ -625,6 +625,27 @@ SECTOR_ETF_TICKERS = {
     "Healthcare": "HEALTHIETF.NS",
     "Oil & Gas": "OILIETF.NS",
     "Infrastructure": "INFRAIETF.NS",
+    # Added 2026-08-30 after Harish pointed at NSE's thematic-indices page
+    # (nseindia.com itself times out to any fetch here — same bot-
+    # protection this codebase already worked around via the archives.
+    # subdomain elsewhere — so these were found by testing candidate
+    # NSE-listed ETF tickers against yfinance directly, same method as
+    # the original 12). Realty in particular was one of the three
+    # sectors excluded outright when this screener first shipped —
+    # MOREALTY.NS (listed Mar 2024, 600+ days of history) closes that
+    # gap. Energy/Services/Capital Markets ETFs were found too but
+    # excluded — each had well under a year of listing history (147-213
+    # days), not enough for a trustworthy 1Y return; revisit once they
+    # age past SEC_MIN_HISTORY_DAYS. Media and Consumer Durables still
+    # have no liquid ETF found.
+    "Commodities": "COMMOIETF.NS",
+    "Consumption": "CONSUMIETF.NS",
+    "MNC": "MNC.NS",
+    "Manufacturing": "MAKEINDIA.NS",
+    "EV & New Age Auto": "EVINDIA.NS",
+    "Defence": "GROWWDEFNC.NS",
+    "CPSE": "CPSEETF.NS",
+    "Realty": "MOREALTY.NS",
 }
 SEC_BENCHMARK_TICKER = "^CRSLDX"  # NIFTY 500 — same benchmark as Nifty500RelativeStrength above
 SEC_FETCH_YEARS = 2  # comfortably covers the 1Y lookback + MIN_HISTORY check
