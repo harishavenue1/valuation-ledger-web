@@ -17,6 +17,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "Nifty500RelativeStrength", label: "RS (NSE750)", emoji: "💪" },
   { key: "nseScreener", label: "NSE Screener", emoji: "📈" },
   { key: "sectorAlpha", label: "Sector Alpha", emoji: "🧭" },
+  { key: "sectorStockAlpha", label: "Stocks vs Sector", emoji: "🎯" },
 ];
 
 export default function MomentumScreeners() {
@@ -95,6 +96,19 @@ export default function MomentumScreeners() {
       { key: "rs_1y", label: "Alpha 1Y %", render: (r) => <Signed v={r.rs_1y} digits={1} /> },
       { key: "rs_score", label: "Alpha Score", render: (r) => <span className="font-semibold">{fmtNum(r.rs_score, 1)}</span> },
       { key: "rs_new_high", label: "New High?", render: (r) => (r.rs_new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
+    sectorStockAlpha: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "r_1m", label: "1M %", render: (r) => <Signed v={r.r_1m} digits={1} /> },
+      { key: "alpha_1m", label: "Alpha 1M %", render: (r) => <Signed v={r.alpha_1m} digits={1} /> },
+      { key: "alpha_3m", label: "Alpha 3M %", render: (r) => <Signed v={r.alpha_3m} digits={1} /> },
+      { key: "alpha_6m", label: "Alpha 6M %", render: (r) => <Signed v={r.alpha_6m} digits={1} /> },
+      { key: "alpha_1y", label: "Alpha 1Y %", render: (r) => <Signed v={r.alpha_1y} digits={1} /> },
+      { key: "alpha_score", label: "Alpha Score", render: (r) => <span className="font-semibold">{fmtNum(r.alpha_score, 1)}</span> },
     ],
   };
 

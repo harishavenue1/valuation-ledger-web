@@ -758,6 +758,114 @@ def _run_sector_alpha(symbols, name_map, sector_map):
     return {"label": "Sector Alpha", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── sectorStockAlpha ─────────────────────────────────────────────────────────
+#
+# Which stocks are beating THEIR OWN sector's return — the drill-down
+# sectorAlpha above doesn't give: stock alpha = stock return minus its
+# sector's average return, same 1M/3M/6M/1Y windows. Added 2026-08-30
+# right after sectorAlpha, at Harish's request ("video also shows
+# internal stocks in each sector showing alpha against the sector
+# returns over same time period").
+#
+# Deliberately does NOT reuse sectorAlpha's 12 ETF-branded sectors —
+# checked with Harish first: those are Nifty-INDEX groupings (Pharma
+# and Healthcare are two separate indices; Bank splits into PSU/
+# Private; Infrastructure is a cross-sector theme with no constituent
+# list at all), and none of that maps cleanly onto the NSE-750
+# universe's own "Industry" tag every stock already carries elsewhere
+# in this file (sector_map, from the same NSE-archives CSV RS/LTIS/WI/
+# QB/nseScreener all already fetch) — that tag lumps Pharma+Healthcare
+# into one "Healthcare" industry, doesn't distinguish PSU vs Private
+# banks, etc. Forcing stocks into the ETF-sector list would mean
+# silently misclassifying or dropping most of the universe.
+#
+# So this uses a DIFFERENT, self-consistent "sector" definition just
+# for this screener: NSE's own Industry tag, with each industry's
+# "return" computed bottom-up as the plain average of its own
+# constituent stocks' returns (only industries with at least
+# SSA_MIN_STOCKS_PER_SECTOR scoreable stocks are used at all) — no ETL
+# ticker, no mapping guesswork, full coverage of every real industry
+# in the universe rather than just the 12 with a liquid ETF proxy.
+
+SSA_FETCH_YEARS = 2
+SSA_MIN_HISTORY_DAYS = 250  # ~1Y of real data to be scoreable at all
+SSA_MIN_STOCKS_PER_SECTOR = 3  # need at least this many scoreable stocks for a sector average to mean anything
+SSA_WEIGHTS = {"alpha_1m": 0.40, "alpha_3m": 0.30, "alpha_6m": 0.20, "alpha_1y": 0.10}
+
+
+def _ssa_sector_avg(vals):
+    vals = [v for v in vals if v is not None]
+    return round(sum(vals) / len(vals), 2) if vals else None
+
+
+def _run_sector_stock_alpha(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * SSA_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    per_stock = {}
+    for sym, g in daily.groupby("symbol"):
+        recs = _rs_to_records(g)
+        if not recs:
+            continue
+        last_date = datetime.strptime(recs[-1]["date"], "%Y-%m-%d").date()
+        r = _sec_returns_for(recs, last_date)
+        if r["span_days"] < SSA_MIN_HISTORY_DAYS:
+            continue
+        per_stock[sym] = r
+
+    by_sector = {}
+    for sym, r in per_stock.items():
+        sec = sector_map.get(sym) or "Unknown"
+        by_sector.setdefault(sec, []).append(r)
+
+    sector_returns = {}
+    for sec, items in by_sector.items():
+        if len(items) < SSA_MIN_STOCKS_PER_SECTOR:
+            continue
+        sector_returns[sec] = {
+            "r_1m": _ssa_sector_avg([r["r_1m"] for r in items]),
+            "r_3m": _ssa_sector_avg([r["r_3m"] for r in items]),
+            "r_6m": _ssa_sector_avg([r["r_6m"] for r in items]),
+            "r_1y": _ssa_sector_avg([r["r_1y"] for r in items]),
+        }
+
+    rows, skipped = [], []
+    for sym, r in per_stock.items():
+        sec = sector_map.get(sym) or "Unknown"
+        sec_ret = sector_returns.get(sec)
+        if sec_ret is None:
+            skipped.append(sym)  # sector had too few scoreable stocks to average
+            continue
+
+        alpha_1m = None if r["r_1m"] is None or sec_ret["r_1m"] is None else round(r["r_1m"] - sec_ret["r_1m"], 2)
+        alpha_3m = None if r["r_3m"] is None or sec_ret["r_3m"] is None else round(r["r_3m"] - sec_ret["r_3m"], 2)
+        alpha_6m = None if r["r_6m"] is None or sec_ret["r_6m"] is None else round(r["r_6m"] - sec_ret["r_6m"], 2)
+        alpha_1y = None if r["r_1y"] is None or sec_ret["r_1y"] is None else round(r["r_1y"] - sec_ret["r_1y"], 2)
+
+        parts = {"alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
+        available = {k: v for k, v in parts.items() if v is not None}
+        if not available:
+            skipped.append(sym)
+            continue
+        wsum = sum(SSA_WEIGHTS[k] for k in available)
+        alpha_score = round(sum(v * SSA_WEIGHTS[k] for k, v in available.items()) / wsum, 2)
+
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sec,
+            "price": r["last_close"], "as_of": r["last_date"],
+            "r_1m": r["r_1m"], "r_3m": r["r_3m"], "r_6m": r["r_6m"], "r_1y": r["r_1y"],
+            "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
+            "alpha_score": alpha_score,
+        })
+
+    rows.sort(key=lambda r: -r["alpha_score"])
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return {"label": "Stocks vs Sector", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -765,6 +873,7 @@ SCREENER_RUNNERS = {
     "quantBollinger": _run_quant_bollinger,
     "nseScreener": _run_nse_screener,
     "sectorAlpha": _run_sector_alpha,
+    "sectorStockAlpha": _run_sector_stock_alpha,
 }
 
 
