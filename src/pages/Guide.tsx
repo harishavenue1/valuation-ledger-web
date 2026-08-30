@@ -465,7 +465,6 @@ export default function Guide() {
                       { label: "Working Cap.", value: r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d` },
                     ]}
                   />
-                  <p className="text-xs text-slate-400 px-4 py-3">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
                 </div>
 
                 <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
@@ -477,8 +476,7 @@ export default function Guide() {
                       { label: "Monthly RSI", value: fmtNum(rsi?.monthly, 1), good: rsi?.monthly != null ? rsi.monthly > 66 : null },
                       ...(["ema12w", "ema21w", "ema33w"] as const).map((k) => ({
                         label: `${k.replace("ema", "").replace("w", "")}W EMA`,
-                        value: prices ? (prices[k].above ? "Yes" : "No") : "—",
-                        sub: prices ? fmtNum(prices[k].value, 2) : undefined,
+                        value: prices ? fmtNum(prices[k].value, 2) : "—",
                         good: prices ? prices[k].above : null,
                       })),
                     ]}
