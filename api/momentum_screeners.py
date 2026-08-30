@@ -81,13 +81,16 @@ def _ms_get_universe_symbols():
     return [(r["Symbol"].strip(), r["Company Name"].strip(), r["Industry"].strip()) for r in rows]
 
 
-def _ms_fetch_daily(symbols, start_iso, need_hl=False):
+def _ms_fetch_daily(symbols, start_iso, need_hl=False, need_ohlc=False):
     """Shared chunked-yfinance-download helper — identical pattern all 4
     original scripts used with their own local parquet cache, just
     without the cache (this runs once per cron trigger, nothing to
     cache against). need_hl=True also keeps High/Low (quantBollinger's
-    ATR/chandelier-stop math needs them; the other 3 only use Close)."""
-    cols = ["Close", "High", "Low"] if need_hl else ["Close"]
+    ATR/chandelier-stop math needs them; the other 3 only use Close).
+    need_ohlc=True keeps Open too (maBreakout computes its EMAs on
+    OHLC4 = (O+H+L+C)/4 per Harish's standing EMA rule — see
+    feedback_ema_ohlc4_source.md — not Close alone)."""
+    cols = ["Open", "High", "Low", "Close"] if need_ohlc else (["Close", "High", "Low"] if need_hl else ["Close"])
     tickers = [f"{s}.NS" for s in symbols]
     frames = []
     for i in range(0, len(tickers), FETCH_CHUNK):
@@ -972,6 +975,127 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
     return {"label": "Stocks vs Sector", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── maBreakout ───────────────────────────────────────────────────────────────
+#
+# Stocks that recently crossed above (and have held above) the 200-day
+# EMA or the 33-week EMA, without having run too far past it — added
+# 2026-08-30 on request: "stocks above 500 Cr Market Cap, crossing
+# 200DEMA or 33WEMA... or crossed and stays above... recently and
+# consolidates... distance ... should not be more than 20% on upside."
+# Three deliberate scope decisions, all confirmed with Harish before
+# building rather than assumed:
+#   - No market cap filter. There's no bulk NSE/yfinance source for
+#     market cap across 750 stocks — getting it would mean 750
+#     individual Screener.in fetches, far too slow/risky at that scale
+#     (a lighter ~110-ticker Screener.in fetch already took 230s
+#     elsewhere in this file). The NSE 750 (Nifty Total Market)
+#     universe's own inclusion bar already excludes true microcaps in
+#     practice, so this is likely close to a no-op anyway.
+#   - "Consolidates" isn't a separate tightness/range test — the
+#     "not more than 20% above the MA" cap IS the consolidation
+#     definition (still basing near the line, not extended).
+#   - "Recently" = within the last 8 weeks (MAB_RECENCY_WEEKS) since
+#     the actual cross-up event, not just "currently above" (which
+#     would also match a stock that's been trending for a year).
+#
+# EMAs are computed on OHLC4 = (Open+High+Low+Close)/4, not Close
+# alone, per Harish's standing rule (feedback_ema_ohlc4_source.md) —
+# but the above/below CHECK compares the real Close against that
+# OHLC4-based EMA line, not OHLC4 against itself (same memory: "SMA/
+# RSI/trigger comparisons stay on Close"). The weekly OHLC4 is built
+# from real weekly O/H/L/C (first/max/min/last of the week), not an
+# average of daily OHLC4 values — the standard way to build a weekly
+# candle from daily bars.
+
+MAB_FETCH_YEARS = 3
+MAB_MIN_HISTORY_DAYS = 250
+MAB_RECENCY_WEEKS = 8
+MAB_MAX_PCT_ABOVE = 20.0
+MAB_DAILY_EMA_PERIOD = 200
+MAB_WEEKLY_EMA_PERIOD = 33
+
+
+def _mab_analyze(close, ohlc4, ema_period, recency_periods):
+    """close/ohlc4: same-length, same-index pd.Series, ascending. EMA is
+    computed on ohlc4; the above/below check and the %-above figure
+    compare the real close against that EMA line. Returns None if the
+    stock doesn't currently qualify: not above the EMA right now,
+    crossed too long ago (or the cross predates our fetch window
+    entirely, so recency can't be confirmed), or price has run more
+    than MAB_MAX_PCT_ABOVE% past the EMA."""
+    if len(close) < ema_period + recency_periods + 20:  # buffer before the recency window, so a real prior "below" can actually be observed
+        return None
+    ema = ohlc4.ewm(span=ema_period, adjust=False).mean()
+    above = close > ema
+    if not bool(above.iloc[-1]):
+        return None
+    i = len(above) - 1
+    while i > 0 and bool(above.iloc[i - 1]):
+        i -= 1
+    if i == 0:
+        return None  # already above at the start of our fetch window — can't confirm this was actually a recent cross
+    periods_since_cross = len(above) - 1 - i
+    if periods_since_cross > recency_periods:
+        return None
+    last_close = float(close.iloc[-1])
+    last_ema = float(ema.iloc[-1])
+    pct_above = round((last_close / last_ema - 1) * 100, 2)
+    if pct_above > MAB_MAX_PCT_ABOVE:
+        return None
+    return {"ema": round(last_ema, 2), "pct_above": pct_above, "periods_since_cross": periods_since_cross,
+            "fresh": periods_since_cross <= 1}
+
+
+def _run_ma_breakout(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * MAB_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    daily_recency_bars = MAB_RECENCY_WEEKS * 5  # ~5 trading days/week
+    weekly_recency_bars = MAB_RECENCY_WEEKS
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        g = g.set_index("date").sort_index()
+        if len(g) < MAB_MIN_HISTORY_DAYS:
+            skipped.append(sym)
+            continue
+        close_d = g["Close"]
+        ohlc4_d = (g["Open"] + g["High"] + g["Low"] + g["Close"]) / 4
+
+        weekly_ohlc = g[["Open", "High", "Low", "Close"]].resample("W-FRI").agg(
+            {"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+        close_w = weekly_ohlc["Close"]
+        ohlc4_w = (weekly_ohlc["Open"] + weekly_ohlc["High"] + weekly_ohlc["Low"] + weekly_ohlc["Close"]) / 4
+
+        d200 = _mab_analyze(close_d, ohlc4_d, MAB_DAILY_EMA_PERIOD, daily_recency_bars)
+        w33 = _mab_analyze(close_w, ohlc4_w, MAB_WEEKLY_EMA_PERIOD, weekly_recency_bars)
+        if d200 is None and w33 is None:
+            skipped.append(sym)
+            continue
+
+        via = " & ".join(v for v, ok in (("200D EMA", d200), ("33W EMA", w33)) if ok)
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(float(close_d.iloc[-1]), 2), "via": via,
+            "ema200d": d200["ema"] if d200 else None,
+            "pct_above_200d": d200["pct_above"] if d200 else None,
+            "days_since_cross_200d": d200["periods_since_cross"] if d200 else None,
+            "ema33w": w33["ema"] if w33 else None,
+            "pct_above_33w": w33["pct_above"] if w33 else None,
+            "weeks_since_cross_33w": w33["periods_since_cross"] if w33 else None,
+            "fresh_this_week": bool((d200 and d200["fresh"]) or (w33 and w33["fresh"])),
+        })
+
+    def _sort_key(r):
+        candidates = [v for v in (r["pct_above_200d"], r["pct_above_33w"]) if v is not None]
+        return min(candidates) if candidates else 999
+    rows.sort(key=_sort_key)
+
+    return {"label": "MA Breakout", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -980,6 +1104,7 @@ SCREENER_RUNNERS = {
     "nseScreener": _run_nse_screener,
     "sectorAlpha": _run_sector_alpha,
     "sectorStockAlpha": _run_sector_stock_alpha,
+    "maBreakout": _run_ma_breakout,
 }
 
 

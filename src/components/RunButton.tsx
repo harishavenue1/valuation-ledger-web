@@ -28,6 +28,7 @@ const CLOUD_SCREENERS = new Set([
   "nseScreener",
   "sectorAlpha",
   "sectorStockAlpha",
+  "maBreakout",
   "viraj_screen",
 ]);
 

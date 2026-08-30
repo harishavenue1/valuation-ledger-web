@@ -18,6 +18,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "nseScreener", label: "NSE Screener", emoji: "📈" },
   { key: "sectorAlpha", label: "Sector Alpha", emoji: "🧭" },
   { key: "sectorStockAlpha", label: "Stocks vs Sector", emoji: "🎯" },
+  { key: "maBreakout", label: "MA Breakout", emoji: "🚀" },
 ];
 
 export default function MomentumScreeners() {
@@ -110,6 +111,20 @@ export default function MomentumScreeners() {
       { key: "alpha_1y", label: "Alpha 1Y %", render: (r) => <Signed v={r.alpha_1y} digits={1} /> },
       { key: "alpha_score", label: "Alpha Score", render: (r) => <span className="font-semibold">{fmtNum(r.alpha_score, 1)}</span> },
     ],
+    maBreakout: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "via", label: "Via", align: "left" },
+      { key: "ema200d", label: "200D EMA", render: (r) => fmtNum(r.ema200d) },
+      { key: "pct_above_200d", label: "% Above 200D", render: (r) => <Signed v={r.pct_above_200d} digits={1} /> },
+      { key: "days_since_cross_200d", label: "Days Since Cross", render: (r) => (r.days_since_cross_200d === null || r.days_since_cross_200d === undefined ? "—" : r.days_since_cross_200d) },
+      { key: "ema33w", label: "33W EMA", render: (r) => fmtNum(r.ema33w) },
+      { key: "pct_above_33w", label: "% Above 33W", render: (r) => <Signed v={r.pct_above_33w} digits={1} /> },
+      { key: "weeks_since_cross_33w", label: "Weeks Since Cross", render: (r) => (r.weeks_since_cross_33w === null || r.weeks_since_cross_33w === undefined ? "—" : r.weeks_since_cross_33w) },
+      { key: "fresh_this_week", label: "Fresh This Week?", render: (r) => (r.fresh_this_week ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -174,6 +189,18 @@ export default function MomentumScreeners() {
         industry is covered, not just the ones with a liquid ETF. Defence and Manufacturing also appear as separate theme rows, compared
         against <i>that theme's own ETF</i> return instead of an industry average, since those are cross-industry themes (not a single
         industry) — a stock can legitimately appear twice, once under its industry and once under a theme it also belongs to.
+      </>
+    ),
+    maBreakout: (
+      <>
+        No numeric score — a stock either qualifies or it doesn't. Qualifies if it's <b>currently above</b> its 200-day EMA <b>or</b> its
+        33-week EMA (shown under <b>Via</b>, both if it qualifies on each), the cross above that EMA happened within the{" "}
+        <b>last 8 weeks</b> (not an old, already-established trend), <b>and</b> price hasn't run more than <b>20% past</b> that EMA yet —
+        that 20% cap doubles as the "still consolidating, not extended" test, rather than a separate range/volatility check.{" "}
+        <b>Fresh This Week?</b> = the cross happened in the most recent bar (this week for the 33W EMA, the last trading day for the 200D
+        EMA). EMAs are computed on <b>OHLC4</b> ((Open+High+Low+Close)/4), not Close alone — but the above/below check and the %-above figure
+        compare the real <b>Close</b> against that OHLC4-based EMA line. No market-cap filter: there's no bulk data source for it across all
+        750 stocks, and this universe's own inclusion bar already excludes true microcaps in practice.
       </>
     ),
   };
