@@ -5,7 +5,8 @@
     "api/watchlist_detail.py": { "maxDuration": 60 },
     "api/refresh_price.py": { "maxDuration": 300 },
     "api/fetch_company.py": { "maxDuration": 300 },
-    "api/momentum_screeners.py": { "maxDuration": 300 }
+    "api/momentum_screeners.py": { "maxDuration": 300 },
+    "api/viraj_screen.py": { "maxDuration": 300 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
@@ -17,6 +18,7 @@
     { "path": "/api/momentum_screeners?screener=Nifty500RelativeStrength", "schedule": "35 23 * * *" },
     { "path": "/api/momentum_screeners?screener=myLongTermInvestingStrategy", "schedule": "40 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=weekendInvesting", "schedule": "45 23 * * 6" },
-    { "path": "/api/momentum_screeners?screener=quantBollinger", "schedule": "50 23 * * 6" }
+    { "path": "/api/momentum_screeners?screener=quantBollinger", "schedule": "50 23 * * 6" },
+    { "path": "/api/viraj_screen", "schedule": "55 23 * * 6" }
   ]
 }

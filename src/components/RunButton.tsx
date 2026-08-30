@@ -3,22 +3,29 @@ import { useData } from "../App";
 import { api, ApiError } from "../lib/api";
 
 // 2026-08-30, "refresh on click from any machine, not just the Mac" —
-// these 4 now run natively on Vercel (see api/momentum_screeners.py's
-// do_GET, proven live at full 750-ticker scale the same day), so their
-// "Run now" can call that endpoint directly with the browser's own
+// all 5 now run natively on Vercel (see api/momentum_screeners.py's
+// and api/viraj_screen.py's do_GET, both proven live), so their
+// "Run now" can call the endpoint directly with the browser's own
 // session cookie instead of going through the local-poller queue
-// below. viraj_screen is deliberately NOT in this set — it needs
-// Harish's own Screener.in/Chartink session cookies, which only live
-// on his Mac, so it still queues for the local poller.
-const CLOUD_SCREENERS = new Set(["myLongTermInvestingStrategy", "weekendInvesting", "quantBollinger", "Nifty500RelativeStrength"]);
+// below. viraj_screen was initially assumed to need Harish's own
+// Screener.in/Chartink login cookies (same as the local script it's
+// ported from insists on) — checked live and neither Screener.in's
+// Quarterly Results table nor Chartink's ad-hoc scan_clause endpoint
+// actually requires one; the cookie only gates saved/premium Chartink
+// screens, not this. So it joined this set with zero stored
+// credentials, no security trade-off to weigh.
+const CLOUD_SCREENERS = new Set(["myLongTermInvestingStrategy", "weekendInvesting", "quantBollinger", "Nifty500RelativeStrength", "viraj_screen"]);
 
-// "Run now" for a screener that can't execute inside Vercel (see
-// api/run_requests.py) — queues a request that a local poller on the
-// user's own Mac picks up and actually runs. While a request is
-// pending/running, auto-polls reload() every 20s so the status pill
-// updates without the user manually hitting Refresh, and stops once
-// it lands on done/error (or after ~15 minutes, in case the local
-// poller isn't running at all — no point polling forever).
+// "Run now" for a screener that can't (or doesn't yet) execute inside
+// Vercel (see api/run_requests.py) — queues a request that a local
+// poller on the user's own Mac picks up and actually runs. Currently
+// unreachable in practice (every screener CLOUD_SCREENERS doesn't
+// cover), kept as the fallback path for any future local-only
+// screener. While a request is pending/running, auto-polls reload()
+// every 20s so the status pill updates without the user manually
+// hitting Refresh, and stops once it lands on done/error (or after
+// ~15 minutes, in case the local poller isn't running at all — no
+// point polling forever).
 const POLL_MS = 20_000;
 const MAX_POLL_MS = 15 * 60_000;
 
