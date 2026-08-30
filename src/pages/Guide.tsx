@@ -451,37 +451,39 @@ export default function Guide() {
           <div className="grid lg:grid-cols-2 gap-4 items-start">
             <FundamentalTrendSection ft={result.fundamental_trend} />
             <div className="space-y-4">
-              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                <h3 className="font-semibold text-sm px-4 pt-4 pb-3">🧮 Ratios</h3>
-                <MetricTable
-                  rows={[
-                    { label: "PE", value: fmtNum(r?.pe, 1) },
-                    { label: "GPM", value: "—" },
-                    { label: "OPM", value: r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%` },
-                    { label: "PEG", value: fmtNum(r?.peg, 2), good: r?.peg != null ? r.peg < 1.5 : null },
-                    { label: "ROE", value: r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`, good: r?.roe_pct != null ? r.roe_pct > 15 : null },
-                    { label: "ROCE", value: r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`, good: r?.roce_pct != null ? r.roce_pct > 15 : null },
-                    { label: "Working Cap.", value: r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d` },
-                  ]}
-                />
-                <p className="text-xs text-slate-400 px-4 py-3">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
-              </div>
+              <div className="grid sm:grid-cols-2 gap-4 items-start">
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                  <h3 className="font-semibold text-sm px-4 pt-4 pb-3">🧮 Ratios</h3>
+                  <MetricTable
+                    rows={[
+                      { label: "PE", value: fmtNum(r?.pe, 1) },
+                      { label: "GPM", value: "—" },
+                      { label: "OPM", value: r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%` },
+                      { label: "PEG", value: fmtNum(r?.peg, 2), good: r?.peg != null ? r.peg < 1.5 : null },
+                      { label: "ROE", value: r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`, good: r?.roe_pct != null ? r.roe_pct > 15 : null },
+                      { label: "ROCE", value: r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`, good: r?.roce_pct != null ? r.roce_pct > 15 : null },
+                      { label: "Working Cap.", value: r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d` },
+                    ]}
+                  />
+                  <p className="text-xs text-slate-400 px-4 py-3">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
+                </div>
 
-              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
-                <h3 className="font-semibold text-sm px-4 pt-4 pb-3">📉 RSI &amp; Prices vs Weekly EMA</h3>
-                <MetricTable
-                  rows={[
-                    { label: "Daily RSI", value: fmtNum(rsi?.daily, 1), good: rsi?.daily != null ? rsi.daily > 66 : null },
-                    { label: "Weekly RSI", value: fmtNum(rsi?.weekly, 1), good: rsi?.weekly != null ? rsi.weekly > 66 : null },
-                    { label: "Monthly RSI", value: fmtNum(rsi?.monthly, 1), good: rsi?.monthly != null ? rsi.monthly > 66 : null },
-                    ...(["ema12w", "ema21w", "ema33w"] as const).map((k) => ({
-                      label: `${k.replace("ema", "").replace("w", "")}W EMA`,
-                      value: prices ? (prices[k].above ? "Yes" : "No") : "—",
-                      sub: prices ? fmtNum(prices[k].value, 2) : undefined,
-                      good: prices ? prices[k].above : null,
-                    })),
-                  ]}
-                />
+                <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                  <h3 className="font-semibold text-sm px-4 pt-4 pb-3">📉 RSI &amp; Prices vs Weekly EMA</h3>
+                  <MetricTable
+                    rows={[
+                      { label: "Daily RSI", value: fmtNum(rsi?.daily, 1), good: rsi?.daily != null ? rsi.daily > 66 : null },
+                      { label: "Weekly RSI", value: fmtNum(rsi?.weekly, 1), good: rsi?.weekly != null ? rsi.weekly > 66 : null },
+                      { label: "Monthly RSI", value: fmtNum(rsi?.monthly, 1), good: rsi?.monthly != null ? rsi.monthly > 66 : null },
+                      ...(["ema12w", "ema21w", "ema33w"] as const).map((k) => ({
+                        label: `${k.replace("ema", "").replace("w", "")}W EMA`,
+                        value: prices ? (prices[k].above ? "Yes" : "No") : "—",
+                        sub: prices ? fmtNum(prices[k].value, 2) : undefined,
+                        good: prices ? prices[k].above : null,
+                      })),
+                    ]}
+                  />
+                </div>
               </div>
 
               <RsBenchmarkSection rs={result.rs_benchmark} />
