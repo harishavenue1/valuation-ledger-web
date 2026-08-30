@@ -585,12 +585,186 @@ def _run_nse_screener(symbols, name_map, sector_map):
     return {"label": "NSE Screener", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── sectorAlpha ──────────────────────────────────────────────────────────────
+#
+# Sector rotation screen: alpha (sector return minus NIFTY 500 return)
+# across 1M/3M/6M/1Y for NSE's canonical sectors — added 2026-08-30 at
+# Harish's request after a Vijay Thakkar video ("Monthly Analysis"
+# series) on identifying strong sectors; the video's transcript wasn't
+# actually reachable (no tool here can pull YouTube captions), so the
+# exact definition was confirmed directly with Harish instead of
+# guessed at: alpha = sector return - NIFTY 500 return, same
+# methodology his existing SectorRelativeStrength skill already uses
+# (that skill's 1W/1M/3M/6M, extended here to 1M/3M/6M/1Y per his ask).
+#
+# Data source is the one real deviation from that skill: it reads
+# sector INDEX prices from Zerodha Kite (Harish's private, authenticated
+# API — not something to run from Vercel). Checked live before building
+# anything: yfinance's own NSE sectoral INDEX tickers (^CNXAUTO,
+# ^CNXFMCG, etc.) are stale — several hadn't updated in 6+ weeks when
+# checked. Liquid NSE-listed sector ETFs (BANKBEES, ITBEES, PHARMABEES,
+# ...) have fresh daily data instead, same as any stock, so those are
+# the sector proxy here. Coverage is deliberately incomplete rather
+# than papered over: Realty, Media, and Consumer Durables have no
+# liquid tradeable ETF on NSE, and the one Chemicals ETF found had only
+# 21 days of listing history (not enough for a 1Y return) — all four
+# are simply left out rather than estimated from a shakier proxy, same
+# "don't compute on data you don't trust" principle as the ENTERO fix
+# in nseScreener above.
+
+SECTOR_ETF_TICKERS = {
+    "Auto": "AUTOIETF.NS",
+    "Bank": "BANKBEES.NS",
+    "PSU Bank": "PSUBNKBEES.NS",
+    "Private Bank": "PVTBANIETF.NS",
+    "Financial Services": "FINIETF.NS",
+    "FMCG": "FMCGIETF.NS",
+    "IT": "ITBEES.NS",
+    "Metal": "METALIETF.NS",
+    "Pharma": "PHARMABEES.NS",
+    "Healthcare": "HEALTHIETF.NS",
+    "Oil & Gas": "OILIETF.NS",
+    "Infrastructure": "INFRAIETF.NS",
+}
+SEC_BENCHMARK_TICKER = "^CRSLDX"  # NIFTY 500 — same benchmark as Nifty500RelativeStrength above
+SEC_FETCH_YEARS = 2  # comfortably covers the 1Y lookback + MIN_HISTORY check
+SEC_WEIGHTS = {"rs_1m": 0.40, "rs_3m": 0.30, "rs_6m": 0.20, "rs_1y": 0.10}
+SEC_MIN_HISTORY_DAYS = 250  # need close to a year of real data to be scoreable at all
+
+
+def _sec_fetch_series(ticker, start_iso):
+    df = yf.download(ticker, start=start_iso, interval="1d", progress=False, auto_adjust=True)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df[["Close"]].dropna()
+    df.index.name = "date"
+    return df.reset_index()
+
+
+def _sec_to_records(df_slice):
+    out = []
+    for _, row in df_slice.sort_values("date").iterrows():
+        d = row["date"]
+        d = d.date() if hasattr(d, "date") else d
+        out.append({"date": d.isoformat() if hasattr(d, "isoformat") else str(d), "close": float(row["Close"])})
+    return out
+
+
+def _sec_nearest_on_or_before(data, target_date):
+    best = None
+    for row in data:
+        d = datetime.strptime(row["date"], "%Y-%m-%d").date()
+        if d <= target_date:
+            if best is None or d > datetime.strptime(best["date"], "%Y-%m-%d").date():
+                best = row
+    return best
+
+
+def _sec_pct(a, b):
+    if a is None or b is None or b == 0:
+        return None
+    return round((a / b - 1) * 100, 2)
+
+
+def _sec_returns_for(data, last_date):
+    data = sorted(data, key=lambda r: r["date"])
+    last = data[-1]
+    m1 = _sec_nearest_on_or_before(data, last_date - timedelta(days=30))
+    m3 = _sec_nearest_on_or_before(data, last_date - timedelta(days=90))
+    m6 = _sec_nearest_on_or_before(data, last_date - timedelta(days=180))
+    y1 = _sec_nearest_on_or_before(data, last_date - timedelta(days=365))
+    return {
+        "last_close": last["close"], "last_date": last["date"],
+        "r_1m": _sec_pct(last["close"], m1["close"] if m1 else None),
+        "r_3m": _sec_pct(last["close"], m3["close"] if m3 else None),
+        "r_6m": _sec_pct(last["close"], m6["close"] if m6 else None),
+        "r_1y": _sec_pct(last["close"], y1["close"] if y1 else None),
+        "data": data, "span_days": (datetime.strptime(data[-1]["date"], "%Y-%m-%d").date()
+                                     - datetime.strptime(data[0]["date"], "%Y-%m-%d").date()).days,
+    }
+
+
+def _run_sector_alpha(symbols, name_map, sector_map):
+    """Ignores symbols/name_map/sector_map (the NSE-750 universe) — this
+    screener has its own fixed, small list of sector ETF tickers, not
+    the per-stock universe every other screener in this file scans."""
+    start = (date.today() - timedelta(days=365 * SEC_FETCH_YEARS)).isoformat()
+    try:
+        bench_df = _sec_fetch_series(SEC_BENCHMARK_TICKER, start)
+    except Exception as e:
+        return None, f"benchmark fetch failed: {e}"
+    if bench_df.empty:
+        return None, "no benchmark data fetched from yfinance"
+    bench_data = sorted(_sec_to_records(bench_df), key=lambda r: r["date"])
+    last_date = datetime.strptime(bench_data[-1]["date"], "%Y-%m-%d").date()
+    bench = _sec_returns_for(bench_data, last_date)
+
+    rows, skipped = [], []
+    for sector, ticker in SECTOR_ETF_TICKERS.items():
+        try:
+            df = _sec_fetch_series(ticker, start)
+        except Exception:
+            skipped.append(sector)
+            continue
+        if df.empty:
+            skipped.append(sector)
+            continue
+        data = sorted(_sec_to_records(df), key=lambda r: r["date"])
+        s = _sec_returns_for(data, last_date)
+        if s["span_days"] < SEC_MIN_HISTORY_DAYS:
+            skipped.append(sector)
+            continue
+
+        rs_1m = None if s["r_1m"] is None or bench["r_1m"] is None else round(s["r_1m"] - bench["r_1m"], 2)
+        rs_3m = None if s["r_3m"] is None or bench["r_3m"] is None else round(s["r_3m"] - bench["r_3m"], 2)
+        rs_6m = None if s["r_6m"] is None or bench["r_6m"] is None else round(s["r_6m"] - bench["r_6m"], 2)
+        rs_1y = None if s["r_1y"] is None or bench["r_1y"] is None else round(s["r_1y"] - bench["r_1y"], 2)
+
+        rs_parts = {"rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y}
+        available = {k: v for k, v in rs_parts.items() if v is not None}
+        if not available:
+            skipped.append(sector)
+            continue
+        wsum = sum(SEC_WEIGHTS[k] for k in available)
+        rs_score = round(sum(v * SEC_WEIGHTS[k] for k, v in available.items()) / wsum, 2)
+
+        stock_by_date = {r["date"]: r["close"] for r in s["data"]}
+        bench_by_date = {r["date"]: r["close"] for r in bench["data"]}
+        common_dates = sorted(d for d in stock_by_date if d in bench_by_date)
+        if common_dates:
+            base_ratio = stock_by_date[common_dates[0]] / bench_by_date[common_dates[0]]
+            rs_line_vals = [(stock_by_date[d] / bench_by_date[d]) / base_ratio * 100 for d in common_dates]
+            rs_new_high = rs_line_vals[-1] >= max(rs_line_vals)
+        else:
+            rs_new_high = False
+
+        rows.append({
+            # "sector_name", not "sector" — GenericTable auto-shows a
+            # sector-filter dropdown for any row shape with a "sector"
+            # field, which makes no sense here since each row already
+            # IS one distinct sector, not a stock classified into one.
+            "sector_name": sector, "ticker": ticker.replace(".NS", ""),
+            "price": s["last_close"], "as_of": s["last_date"],
+            "r_1m": s["r_1m"], "r_3m": s["r_3m"], "r_6m": s["r_6m"], "r_1y": s["r_1y"],
+            "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y,
+            "rs_score": rs_score, "rs_new_high": rs_new_high,
+        })
+
+    rows.sort(key=lambda r: -r["rs_score"])
+    n = len(rows)
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+        r["zone"] = "Leader" if i <= max(1, n // 3) else ("Laggard" if i > n - max(1, n // 3) else "Middle")
+    return {"label": "Sector Alpha", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
     "weekendInvesting": _run_weekend_investing,
     "quantBollinger": _run_quant_bollinger,
     "nseScreener": _run_nse_screener,
+    "sectorAlpha": _run_sector_alpha,
 }
 
 
