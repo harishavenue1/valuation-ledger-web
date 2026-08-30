@@ -471,11 +471,126 @@ def _run_quant_bollinger(symbols, name_map, sector_map):
     return {"label": "quantBollinger", "push_rows": kept, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── nseScreener ──────────────────────────────────────────────────────────────
+#
+# Day/Week/Month/3Month/Year % change + Wilder RSI(D/W/M) + 3-week-
+# green flag, ported from ~/.claude/skills/NseScreener/scripts/
+# nse_screener.py. One deliberate deviation from that script (and from
+# this file's own RS/momentum_screeners naming — this section is
+# "_nse_" not "_ns_" to avoid colliding with the unrelated NSE_
+# constants elsewhere): the original does 3 SEPARATE yfinance pulls
+# (daily/weekly/monthly intervals) per run. Three full 750-ticker bulk
+# downloads back to back risked actually exceeding Vercel's 300s cap
+# outright (each of the 4 single-fetch screeners already took ~90-100s
+# alone) — a silent kill with no partial result, worse than a small
+# fidelity gap. So this fetches ONE 5-year daily series (covers both
+# the 2y window the original's weekly fetch used and the 5y window its
+# monthly fetch used) and derives weekly/monthly via pandas resample
+# instead — same "resample from one daily fetch" technique
+# weekendInvesting/quantBollinger/myLongTermInvestingStrategy already
+# use in this same file. Verified live (2026-08-30, TITAN) that
+# resampled Close values match yfinance's own native weekly/monthly
+# bars — both are just "last close in the period", so the numbers
+# don't move, only the network cost does (1 download instead of 3).
+
+NSE_RSI_MIN_DAILY = 30
+NSE_RSI_MIN_WEEKLY = 20
+NSE_RSI_MIN_MONTHLY = 15
+NSE_FETCH_YEARS = 5
+NSE_STALE_DAYS = 5  # matches build_row()'s own staleness guard
+
+
+def _nse_wilder_rsi(series, length=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.iloc[1:length + 1].mean()
+    avg_loss = loss.iloc[1:length + 1].mean()
+    for g, l in zip(gain.iloc[length + 1:], loss.iloc[length + 1:]):
+        avg_gain = (avg_gain * (length - 1) + g) / length
+        avg_loss = (avg_loss * (length - 1) + l) / length
+    if avg_loss == 0:
+        return 100.0
+    return round(100 - 100 / (1 + avg_gain / avg_loss), 2)
+
+
+def _nse_pct(cd, idx):
+    if len(cd) > abs(idx):
+        old = float(cd.iloc[idx])
+        current = float(cd.iloc[-1])
+        return round((current - old) / old * 100, 2) if old else None
+    return None
+
+
+def _nse_pct_since(cd, offset):
+    current_date = cd.index[-1]
+    current = float(cd.iloc[-1])
+    target = current_date - offset
+    past = cd[cd.index <= target]
+    if past.empty:
+        return None
+    old = float(past.iloc[-1])
+    return round((current - old) / old * 100, 2) if old else None
+
+
+def _nse_build_row(symbol, name, sector, cd, cw, cm):
+    if cd is None or len(cd) < 20:
+        return None
+    last_date = cd.index[-1].date()
+    if (date.today() - last_date).days > NSE_STALE_DAYS:
+        return None
+
+    rsi_w, green_3w = None, False
+    if cw is not None and len(cw) >= NSE_RSI_MIN_WEEKLY:
+        rsi_w = _nse_wilder_rsi(cw)
+    if cw is not None and len(cw) >= 4:
+        green_3w = bool(all(float(cw.iloc[i]) > float(cw.iloc[i - 1]) for i in [-3, -2, -1]))
+
+    rsi_m = _nse_wilder_rsi(cm) if (cm is not None and len(cm) >= NSE_RSI_MIN_MONTHLY) else None
+
+    return {
+        "symbol": symbol, "name": name, "sector": sector,
+        "price": round(float(cd.iloc[-1]), 2),
+        "as_of": last_date.isoformat(),
+        "change_pct": _nse_pct(cd, -2),
+        "weekly_pct": _nse_pct(cd, -6),
+        "monthly_pct": _nse_pct_since(cd, pd.DateOffset(months=1)),
+        "three_month_pct": _nse_pct_since(cd, pd.DateOffset(months=3)),
+        "yearly_pct": _nse_pct_since(cd, pd.DateOffset(years=1)),
+        "rsi_d": _nse_wilder_rsi(cd) if len(cd) >= NSE_RSI_MIN_DAILY else None,
+        "rsi_w": rsi_w,
+        "rsi_m": rsi_m,
+        "three_week_green": green_3w,
+    }
+
+
+def _run_nse_screener(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * NSE_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        cd = g.set_index("date")["Close"]
+        cw = cd.resample("W-FRI").last().dropna()
+        cm = cd.resample("ME").last().dropna()
+        r = _nse_build_row(sym, name_map.get(sym, sym), sector_map.get(sym, ""), cd, cw, cm)
+        if r is None:
+            skipped.append(sym)
+            continue
+        rows.append(r)
+
+    rows.sort(key=lambda r: -(r["change_pct"] or -999))
+    return {"label": "NSE Screener", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
     "weekendInvesting": _run_weekend_investing,
     "quantBollinger": _run_quant_bollinger,
+    "nseScreener": _run_nse_screener,
 }
 
 
