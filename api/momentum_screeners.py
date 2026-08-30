@@ -646,6 +646,13 @@ SECTOR_ETF_TICKERS = {
     "Defence": "GROWWDEFNC.NS",
     "CPSE": "CPSEETF.NS",
     "Realty": "MOREALTY.NS",
+    # Added same day, on request — Mirae Asset's is the only real
+    # Internet-sector ETF found (NETF.NS looked promising by name but
+    # is actually Tata's plain Nifty 50 ETF, a ticker-guess false
+    # positive, discarded). Only listed Sep 2025, so it clears
+    # SEC_MIN_HISTORY_DAYS but doesn't have a full year yet — its 1Y
+    # alpha will read "—" until its first anniversary; 1M/3M/6M work now.
+    "Internet": "INTERNET.NS",
 }
 SEC_BENCHMARK_TICKER = "^CRSLDX"  # NIFTY 500 — same benchmark as Nifty500RelativeStrength above
 SEC_FETCH_YEARS = 2  # comfortably covers the 1Y lookback + MIN_HISTORY check
