@@ -22,6 +22,22 @@ export function Signed({ v, digits = 2 }: { v: any; digits?: number }) {
   return <span className={n >= 0 ? "text-emerald-600" : "text-red-600"}>{fmtSigned(n, digits)}</span>;
 }
 
+// Collapsed-by-default methodology blurb — shared by every screener
+// page (2026-08-23... er, 2026-08-30, "add a note on how the
+// calculation for score is calculated or the logic behind this
+// screener" for every screener tab). <details>/<summary> rather than
+// a state-driven toggle: no click handler to wire up, and it degrades
+// fine with JS disabled. Collapsed by default so it doesn't compete
+// with the actual data table for space on every page load.
+export function MethodologyNote({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="mb-3 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+      <summary className="cursor-pointer font-medium text-slate-700 select-none">ℹ️ How is this calculated?</summary>
+      <div className="mt-2 leading-relaxed max-w-3xl">{children}</div>
+    </details>
+  );
+}
+
 // Price column -> TradingView weekly chart for that symbol, new tab.
 // stopPropagation keeps a click here from also triggering the row's
 // Symbol nav link.

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import type { VirajRow } from "../lib/api";
 import RunButton from "../components/RunButton";
-import { WatchlistStar } from "../components/ScreenerTable";
+import { MethodologyNote, WatchlistStar } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // F1-F3/C1-C3/score/verdict/sales_g/ebit_g/eps_g/dol/dfl/dcl all
@@ -192,6 +192,40 @@ export default function VirajScreen() {
         Weekly momentum filter — Viraj's Momentum / T2T Segments / Sharpe Based Momentum, 6-rule validation. Pushed by{" "}
         <code className="bg-slate-100 px-1 rounded">viraj_screen.py</code> after each run.
       </p>
+
+      <MethodologyNote>
+        <p className="mb-2">
+          Universe = top 45 stocks each from 3 momoindiascreener.in lists (EQ / T2T / Sharpe), deduped by symbol. Every unique stock gets 3
+          fundamental checks (<b>F1-F3</b>, from Screener.in) and 3 chart checks (<b>C1-C3</b>, from Chartink), scored <b>X/6</b>:
+        </p>
+        <ul className="list-disc list-inside mb-2 space-y-0.5">
+          <li>
+            <b>F1</b>: DOL (Degree of Operating Leverage = EBIT growth% ÷ Sales growth%) &gt; 1.5
+          </li>
+          <li>
+            <b>F2</b>: DFL (Degree of Financial Leverage = EPS growth% ÷ EBIT growth%) &lt; 1.2
+          </li>
+          <li>
+            <b>F3</b>: latest quarter's Operating Profit &gt; the same quarter last year
+          </li>
+          <li>
+            <b>C1</b>: weekly RSI(14) &gt; 66
+          </li>
+          <li>
+            <b>C2</b>: price above the 200-day EMA
+          </li>
+          <li>
+            <b>C3</b>: 10-day/20-day EMA gap has been narrowing for the last 3 days (contraction, i.e. a base forming)
+          </li>
+        </ul>
+        <p>
+          <b>Verdict</b>: "SKIP — sales declining" if latest-quarter Sales growth% isn't positive; "SKIP" if 2 or more of F1/F2/F3 fail;{" "}
+          <b>⭐ ENTRY READY</b> if every rule that has data passes (score = max score, and at least 5 rules were scoreable); "WATCHLIST — await
+          EMA contraction" if only C3 is missing and everything else is one rule off the max; "WATCHLIST" if the score is one rule off the max
+          for any other reason; otherwise "SKIP". <b>DOL/DFL/DCL</b> (DCL = DOL × DFL) are shown as raw numbers alongside the F1/F2 pass/fail
+          ticks so you can see how close a borderline case actually is.
+        </p>
+      </MethodologyNote>
 
       {rows.length === 0 ? (
         <div className="text-slate-500 text-sm py-10 text-center border border-slate-200 rounded">

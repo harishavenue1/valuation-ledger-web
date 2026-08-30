@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, fmtNum, GenericTable, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
+import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Each of these 5 screeners now scans NSE 750 (Nifty Total Market) and
@@ -112,6 +112,72 @@ export default function MomentumScreeners() {
     ],
   };
 
+  // 2026-08-30, "add a note on how the calculation for score is
+  // calculated or the logic behind this screener" — one per tab,
+  // collapsed by default (MethodologyNote), matching exactly what
+  // api/momentum_screeners.py actually computes for that screener, not
+  // a marketing gloss on it.
+  const METHODOLOGY: Record<string, React.ReactNode> = {
+    myLongTermInvestingStrategy: (
+      <>
+        No numeric score — a stock either qualifies or it doesn't. <b>Signal</b> = weekly RSI(14) &gt; 66 <b>AND</b> price above the 12-week,
+        21-week, <b>AND</b> 33-week EMA (full ribbon alignment, all three at once). RSI and EMAs are computed on weekly closes resampled from
+        daily data. Only stocks currently meeting the signal are shown.
+      </>
+    ),
+    weekendInvesting: (
+      <>
+        Pure rank, no benchmark and no fundamentals: every stock's trailing <b>1-year price return</b> (52 weeks back from the latest close),
+        sorted highest to lowest. Top 20 = the buy list (5% each, equal weight), ranks 21-40 shown as a watchlist. A held stock would exit the
+        moment it drops out of the top 20 on the next weekly re-rank.
+      </>
+    ),
+    quantBollinger: (
+      <>
+        Signal = latest weekly close breaks above the <b>55-week SMA + 3.7 standard deviations</b> upper band. If more than 25 stocks signal in
+        the same run, the excess is ranked by <b>55-week relative strength</b> (price now vs. price 55 weeks ago) and only the top 25 are kept —
+        shown here already deduped down to that cap. 34-week SMA and the ATR(14)×1.8 chandelier stop are shown for context only, not used to
+        filter or rank.
+      </>
+    ),
+    Nifty500RelativeStrength: (
+      <>
+        <b>Alpha</b> = stock's own return minus NIFTY 500's return, over the same window (1W/1M/3M/6M). <b>RS Score</b> is a recency-weighted
+        blend of those four alphas — 10% (1W) / 40% (1M) / 30% (3M) / 20% (6M) — so a stock just starting to rotate in shows up quickly, while
+        longer windows stop one good week from topping the rank alone. <b>New High?</b> = the stock's price-to-NIFTY500 ratio is at its highest
+        point in the fetched window — i.e. it's leading the market in relative terms, even if its own price isn't at a high.
+      </>
+    ),
+    nseScreener: (
+      <>
+        Plain price/RSI screen — no alpha vs. any benchmark, no combined score. <b>Change / Weekly / Monthly / 3Month / Yearly %</b> are rolling
+        trailing returns: today's close vs. the closest trading day roughly 1 / 5 / 30 / 90 / 365 days back — not calendar week/month
+        boundaries. <b>RSI(D/W/M)</b> is Wilder's RSI(14) on daily/weekly/monthly closes. <b>3W Green</b> = the last 3 completed weekly candles
+        each closed higher than the one before.
+      </>
+    ),
+    sectorAlpha: (
+      <>
+        <b>Alpha</b> = a sector's ETF return minus NIFTY 500's return, over 1M/3M/6M/1Y. <b>Alpha Score</b> is a recency-weighted blend — 40%
+        (1M) / 30% (3M) / 20% (6M) / 10% (1Y). <b>Zone</b> = top third of the ranked list is "Leader", bottom third "Laggard", the rest
+        "Middle". <b>New High?</b> = the sector's price-to-NIFTY500 ratio is at its highest point in the fetched window. 21 sectors are covered
+        via their most liquid NSE-listed ETF, not the raw index (several raw NSE sector indices are stale on this data source) — Media, Consumer
+        Durables, Chemicals, Energy, Services, and Capital Markets aren't included: either no liquid ETF exists, or it's too newly listed for a
+        trustworthy 1-year number yet.
+      </>
+    ),
+    sectorStockAlpha: (
+      <>
+        The drill-down under Sector Alpha: <b>Alpha</b> = a stock's own return minus <i>its sector's</i> return (not the market's), same
+        1M/3M/6M/1Y windows and 40/30/20/10% weighting as Sector Alpha. "Sector" here is NSE's own industry classification (not the ETF list
+        above) — each industry's return is computed bottom-up as the plain average of its own constituent stocks' returns, so every real
+        industry is covered, not just the ones with a liquid ETF. Defence and Manufacturing also appear as separate theme rows, compared
+        against <i>that theme's own ETF</i> return instead of an industry average, since those are cross-industry themes (not a single
+        industry) — a stock can legitimately appear twice, once under its industry and once under a theme it also belongs to.
+      </>
+    ),
+  };
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
@@ -152,6 +218,8 @@ export default function MomentumScreeners() {
         {entry?.as_of && <span className="text-xs text-slate-400">as of {entry.as_of}</span>}
         <RunButton screener={tab} />
       </div>
+
+      <MethodologyNote key={tab}>{METHODOLOGY[tab]}</MethodologyNote>
 
       {/* key={tab} — remounts fresh per tab so search/sector/sort
           state doesn't leak from one screener's filters into the
