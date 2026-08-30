@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { useState } from "react";
 import { api, ApiError } from "../lib/api";
 import type { GuideCompoundingChecklist, GuideEntrySetup, GuideFundamentalTrend, GuidePeriodRow, GuideQuantLogic, GuideResult, GuideRsBenchmark, GuideTrendRow, GuideVirajLogic } from "../lib/api";
 
@@ -157,7 +157,7 @@ function TrendTable({ title, rows, unit }: { title: string; rows: GuideTrendRow[
 function FundamentalTrendSection({ ft }: { ft: GuideFundamentalTrend }) {
   const flag = ft.deterioration_flag;
   return (
-    <div className="border border-slate-200 rounded-lg p-4 h-full bg-white shadow-sm">
+    <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
       <h3 className="font-semibold text-sm mb-3">📐 Fundamental Trend (1Y/3Y/5Y)</h3>
       <div className="space-y-4">
         <TrendTable title="Growth (CAGR)" rows={ft.growth} unit="%" />
@@ -232,7 +232,7 @@ function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
     ["12m", "Yearly"],
   ];
   return (
-    <div className="border border-slate-200 rounded-lg p-4 h-full bg-white shadow-sm">
+    <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
       <h3 className="font-semibold text-sm mb-3">📡 RS vs NIFTY 500 (5 timeframes)</h3>
       {!rs ? (
         <p className="text-xs text-slate-400 mt-2">Not enough history to compute.</p>
@@ -266,34 +266,20 @@ function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
 // and Viraj Logic's F1-F3/C1-C3 6-rule scoring, applied to the single
 // company Guide is checking rather than screening a whole universe.
 function LogicTable({ checks }: { checks: { layer?: string; key: string; name: string; pass: boolean | null; detail: string }[] }) {
-  let lastLayer: string | undefined;
   return (
     <table className="w-full text-sm">
       <TableHead cols={[{ label: "", align: "center" }, { label: "Check" }, { label: "Pass", align: "center" }, { label: "Detail" }]} />
       <tbody>
-        {checks.map((c, i) => {
-          const showLayer = c.layer && c.layer !== lastLayer;
-          lastLayer = c.layer;
-          return (
-            <Fragment key={c.key}>
-              {showLayer && (
-                <tr>
-                  <td colSpan={4} className="px-2.5 pt-2.5 pb-1 text-xs font-semibold text-slate-400 uppercase tracking-wide">
-                    {c.layer}
-                  </td>
-                </tr>
-              )}
-              <tr className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
-                <td className="py-1.5 px-2.5 text-center text-xs font-semibold text-slate-400">{c.key}</td>
-                <td className="py-1.5 px-2.5">{c.name}</td>
-                <td className="py-1.5 px-2.5 text-center">
-                  <PassBadge pass={c.pass} />
-                </td>
-                <td className="py-1.5 px-2.5 text-xs text-slate-500">{c.detail}</td>
-              </tr>
-            </Fragment>
-          );
-        })}
+        {checks.map((c, i) => (
+          <tr key={c.key} className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+            <td className="py-1.5 px-2.5 text-center text-xs font-semibold text-slate-400">{c.key}</td>
+            <td className="py-1.5 px-2.5">{c.name}</td>
+            <td className="py-1.5 px-2.5 text-center">
+              <PassBadge pass={c.pass} />
+            </td>
+            <td className="py-1.5 px-2.5 text-xs text-slate-500">{c.detail}</td>
+          </tr>
+        ))}
       </tbody>
     </table>
   );
@@ -307,7 +293,7 @@ function QuantLogicSection({ ql }: { ql: GuideQuantLogic }) {
         <SignalChip score={ql.score} scored={ql.scored} />
       </div>
       <p className="text-xs text-slate-500 px-4 mb-3">
-        Layer 1 — Universe filter: Market Cap ₹500–20,000 Cr.{" "}
+        Universe filter: Market Cap ₹500–20,000 Cr.{" "}
         {ql.mcap == null ? "Mkt Cap unknown." : ql.in_universe ? <span className="text-emerald-700 font-medium">₹{ql.mcap.toLocaleString("en-IN")} Cr — within range.</span> : <span className="text-amber-700 font-medium">₹{ql.mcap.toLocaleString("en-IN")} Cr — outside range, would be dropped from this universe.</span>}
       </p>
       <LogicTable checks={ql.checks} />
@@ -411,46 +397,9 @@ export default function Guide() {
             <p className="text-xs text-amber-600">⚠️ Technicals couldn't be computed ({result.technicals_error}) — fundamentals below are still real, technical panels shown as "—".</p>
           )}
 
-          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
+          <div className="grid md:grid-cols-2 gap-4 items-start">
             <PeriodTable title="📆 Quarterly Growth (last 3 qtrs)" rows={result.quarterly_table} />
             <PeriodTable title="📅 Annual Growth (last 3 yrs)" rows={result.annual_table} />
-
-            <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
-              <h3 className="font-semibold text-sm mb-3">🧮 Ratios</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
-                <StatBox label="GPM" value="—" />
-                <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
-                <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
-                <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
-                <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
-                <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
-              </div>
-              <p className="text-xs text-slate-400 mt-2">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
-            </div>
-
-            <div className="border border-slate-200 rounded-lg p-4 space-y-4 bg-white shadow-sm">
-              <div>
-                <h3 className="font-semibold text-sm mb-3">📉 RSI</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
-                  <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
-                  <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
-                </div>
-              </div>
-              <div>
-                <h3 className="font-semibold text-sm mb-3">📈 Prices vs Weekly EMA</h3>
-                <div className="grid grid-cols-3 gap-2">
-                  {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
-                    <div key={k} className={`border rounded-lg px-2 py-1.5 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
-                      <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W")}</div>
-                      <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
-                      <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
           </div>
 
           <div>
@@ -479,9 +428,54 @@ export default function Guide() {
             <VirajLogicSection vl={result.viraj_logic} />
           </div>
 
+          {/* Fundamental Trend runs long (2 tables + a flag) — paired with
+              Ratios/RSI+Prices/RS Benchmark stacked together rather than
+              RS Benchmark alone, so neither column of this row is left
+              with a lot of dead white space below a much shorter card
+              (2026-08-30, "this section has enough space to fit in ratios
+              and rsi"). */}
           <div className="grid lg:grid-cols-2 gap-4 items-start">
             <FundamentalTrendSection ft={result.fundamental_trend} />
-            <RsBenchmarkSection rs={result.rs_benchmark} />
+            <div className="space-y-4">
+              <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
+                <h3 className="font-semibold text-sm mb-3">🧮 Ratios</h3>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
+                  <StatBox label="GPM" value="—" />
+                  <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
+                  <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
+                  <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
+                  <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
+                  <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
+                </div>
+                <p className="text-xs text-slate-400 mt-2">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
+              </div>
+
+              <div className="border border-slate-200 rounded-lg p-4 space-y-4 bg-white shadow-sm">
+                <div>
+                  <h3 className="font-semibold text-sm mb-3">📉 RSI</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
+                    <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
+                    <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
+                  </div>
+                </div>
+                <div>
+                  <h3 className="font-semibold text-sm mb-3">📈 Prices vs Weekly EMA</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
+                      <div key={k} className={`border rounded-lg px-2 py-1.5 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
+                        <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W")}</div>
+                        <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
+                        <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <RsBenchmarkSection rs={result.rs_benchmark} />
+            </div>
           </div>
           <CompoundingChecklistSection cc={result.compounding_checklist} />
         </div>
