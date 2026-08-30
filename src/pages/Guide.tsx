@@ -127,9 +127,9 @@ function TrendTable({ title, rows, unit }: { title: string; rows: GuideTrendRow[
 function FundamentalTrendSection({ ft }: { ft: GuideFundamentalTrend }) {
   const flag = ft.deterioration_flag;
   return (
-    <details className="border border-slate-200 rounded-lg p-4">
-      <summary className="font-semibold text-sm cursor-pointer">📐 Fundamental Trend (1Y/3Y/5Y)</summary>
-      <div className="grid md:grid-cols-2 gap-4 mt-3">
+    <div className="border border-slate-200 rounded-lg p-4 h-full">
+      <h3 className="font-semibold text-sm mb-3">📐 Fundamental Trend (1Y/3Y/5Y)</h3>
+      <div className="space-y-4">
         <TrendTable title="Growth (CAGR)" rows={ft.growth} unit="%" />
         <TrendTable title="Days / Return ratios (point change)" rows={ft.ratios} unit="pts" />
       </div>
@@ -140,7 +140,7 @@ function FundamentalTrendSection({ ft }: { ft: GuideFundamentalTrend }) {
             ? `⚠️ Cash Conversion Deterioration: YES — Working Capital Days trending up while ROCE trends down (growth may be consuming cash, not generating it).${flag.ccc_confirms && flag.inventory_confirms ? " Cash Conversion Cycle and Inventory Days both confirm the operating cycle is the cause." : " CCC doesn't fully confirm — check the Balance Sheet's Other Assets schedule or a recent capital raise before treating this as purely operational."}`
             : "✅ Cash Conversion Deterioration: No — Working Capital Days isn't trending up alongside falling ROCE."}
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -207,8 +207,8 @@ function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
     ["12m", "Yearly"],
   ];
   return (
-    <details className="border border-slate-200 rounded-lg p-4">
-      <summary className="font-semibold text-sm cursor-pointer">📡 RS vs NIFTY 500 (5 timeframes)</summary>
+    <div className="border border-slate-200 rounded-lg p-4 h-full">
+      <h3 className="font-semibold text-sm mb-3">📡 RS vs NIFTY 500 (5 timeframes)</h3>
       {!rs ? (
         <p className="text-xs text-slate-400 mt-2">Not enough history to compute.</p>
       ) : (
@@ -238,7 +238,7 @@ function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
           </p>
         </>
       )}
-    </details>
+    </div>
   );
 }
 
@@ -272,15 +272,15 @@ export default function Guide() {
   const prices = result?.prices;
 
   return (
-    <div className="max-w-4xl">
+    <div className="max-w-[1600px]">
       <h1 className="text-xl font-semibold mb-1">🧭 Guide</h1>
-      <p className="text-xs text-slate-500 mb-4">
+      <p className="text-xs text-slate-500 mb-4 max-w-3xl">
         Type any NSE company name or symbol — checks it live against every fundamental + technical rule already encoded across this app's screeners (Minervini SEPA weekly RSI, Long-Term
         Investing Strategy EMA ribbon, MA Breakout, Value RSI Turnaround, Grandfather-Father-Son) plus ROE/ROCE/cash-conversion/operating-leverage fundamentals. A mechanical checklist against
         your own rules, not investment advice.
       </p>
 
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 max-w-xl">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -291,7 +291,7 @@ export default function Guide() {
         <button
           onClick={check}
           disabled={loading || !query.trim()}
-          className="px-4 py-2 text-sm rounded border border-indigo-300 text-indigo-700 font-medium hover:border-indigo-400 disabled:opacity-50"
+          className="px-4 py-2 text-sm rounded border border-indigo-300 text-indigo-700 font-medium hover:border-indigo-400 disabled:opacity-50 whitespace-nowrap"
         >
           {loading ? "Checking… (~3-5s)" : "Check"}
         </button>
@@ -322,44 +322,44 @@ export default function Guide() {
             <p className="text-xs text-amber-600">⚠️ Technicals couldn't be computed ({result.technicals_error}) — fundamentals below are still real, technical panels shown as "—".</p>
           )}
 
-          <div className="grid md:grid-cols-2 gap-4">
+          <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
             <PeriodTable title="📆 Quarterly Growth (last 3 qtrs)" rows={result.quarterly_table} />
             <PeriodTable title="📅 Annual Growth (last 3 yrs)" rows={result.annual_table} />
-          </div>
 
-          <div>
-            <h3 className="font-semibold text-sm mb-2">🧮 Ratios</h3>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
-              <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
-              <StatBox label="GPM" value="—" />
-              <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
-              <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
-              <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
-              <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
-              <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
-            </div>
-            <p className="text-xs text-slate-400 mt-1">GPM isn't available — Screener.in has no distinct Gross Profit line in its standard P&L. Working Capital reads "—" for financial companies (no working-capital cycle).</p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div>
-              <h3 className="font-semibold text-sm mb-2">📉 Technical (RSI)</h3>
-              <div className="grid grid-cols-3 gap-2">
-                <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
-                <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
-                <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
+            <div className="border border-slate-200 rounded-lg p-4">
+              <h3 className="font-semibold text-sm mb-3">🧮 Ratios</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
+                <StatBox label="GPM" value="—" />
+                <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
+                <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
+                <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
+                <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
+                <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
               </div>
+              <p className="text-xs text-slate-400 mt-2">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
             </div>
-            <div>
-              <h3 className="font-semibold text-sm mb-2">📈 Prices vs Weekly EMA</h3>
-              <div className="grid grid-cols-3 gap-2">
-                {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
-                  <div key={k} className={`border rounded-lg px-3 py-2 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
-                    <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W EMA")}</div>
-                    <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
-                    <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
-                  </div>
-                ))}
+
+            <div className="border border-slate-200 rounded-lg p-4 space-y-4">
+              <div>
+                <h3 className="font-semibold text-sm mb-3">📉 RSI</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
+                  <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
+                  <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold text-sm mb-3">📈 Prices vs Weekly EMA</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
+                    <div key={k} className={`border rounded-lg px-2 py-1.5 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
+                      <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W")}</div>
+                      <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
+                      <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -385,11 +385,11 @@ export default function Guide() {
             </div>
           </div>
 
-          <div className="space-y-3">
+          <div className="grid lg:grid-cols-2 gap-4 items-start">
             <FundamentalTrendSection ft={result.fundamental_trend} />
-            <CompoundingChecklistSection cc={result.compounding_checklist} />
             <RsBenchmarkSection rs={result.rs_benchmark} />
           </div>
+          <CompoundingChecklistSection cc={result.compounding_checklist} />
         </div>
       )}
     </div>
