@@ -23,6 +23,7 @@
     { "path": "/api/momentum_screeners?screener=myLongTermInvestingStrategy", "schedule": "40 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=weekendInvesting", "schedule": "45 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=quantBollinger", "schedule": "50 23 * * 6" },
-    { "path": "/api/viraj_screen", "schedule": "55 23 * * 6" }
+    { "path": "/api/viraj_screen", "schedule": "55 23 * * 6" },
+    { "path": "/api/momentum_screeners?screener=valueRsiTurnaround", "schedule": "56 23 * * 6" }
   ]
 }

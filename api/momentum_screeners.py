@@ -1096,6 +1096,106 @@ def _run_ma_breakout(symbols, name_map, sector_map):
     return {"label": "MA Breakout", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── valueRsiTurnaround ───────────────────────────────────────────────────────
+#
+# "Value" strategy: monthly RSI(14) crossing above 40 and progressing —
+# added 2026-08-30. Confirmed 3 specific choices with Harish before
+# building rather than guessing at "crossing 40 and progressing":
+#   - "Recent" cross = within the last 3 completed monthly candles.
+#   - "Progressing" = current RSI is strictly higher than it was at the
+#     cross month (net higher since crossing — a flat/wobbly month in
+#     between doesn't disqualify it, as long as the overall move since
+#     the cross is upward).
+#   - Upper cap at RSI 60 — past that it's arguably already a momentum
+#     stock, not a value/turnaround entry anymore.
+#
+# Uses a SEPARATE RSI implementation from nseScreener's _nse_wilder_rsi
+# on purpose, not sharing it: that one only returns the latest scalar
+# value (a manual Wilder-recursion loop), but this screener needs the
+# FULL historical RSI series to find WHEN it crossed 40 and what RSI
+# was at that point — so this uses the same EWM-based Wilder-equivalent
+# approach myLongTermInvestingStrategy's weekly RSI already uses
+# elsewhere in this file, just vectorized (pandas .ewm(alpha=1/14),
+# same mathematical family as Wilder smoothing, differing only in how
+# the first few periods are seeded — the two can show slightly
+# different values for the same stock/period as a result). Left
+# nseScreener's existing RSI untouched rather than refactor it to
+# share this — that's live, user-visible data; not something to
+# silently change as a side effect of adding a new screener.
+
+VAL_FETCH_YEARS = 5  # matches nseScreener's own precedent for monthly-RSI reliability
+VAL_RSI_THRESHOLD = 40
+VAL_RSI_UPPER_CAP = 60
+VAL_RECENCY_MONTHS = 3
+VAL_MIN_MONTHLY_BARS = 24  # ~2 years of monthly closes — long enough to trust the RSI and actually observe a prior below-40 state
+
+
+def _val_rsi_series(close, period=14):
+    delta = close.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = -delta.where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    avg_loss = loss.ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - 100 / (1 + rs)
+    return rsi.where(avg_loss != 0, 100.0)
+
+
+def _run_value_rsi_turnaround(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * VAL_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        cd = g.set_index("date")["Close"].sort_index()
+        cm = cd.resample("ME").last().dropna()
+        if len(cm) < VAL_MIN_MONTHLY_BARS:
+            skipped.append(sym)
+            continue
+
+        valid = _val_rsi_series(cm).dropna()
+        if len(valid) < VAL_RECENCY_MONTHS + 5:
+            skipped.append(sym)
+            continue
+
+        above = valid > VAL_RSI_THRESHOLD
+        if not bool(above.iloc[-1]):
+            skipped.append(sym)
+            continue
+        i = len(above) - 1
+        while i > 0 and bool(above.iloc[i - 1]):
+            i -= 1
+        if i == 0:
+            skipped.append(sym)  # already above 40 at the start of our fetch window — can't confirm this was actually a recent cross
+            continue
+        months_since_cross = len(above) - 1 - i
+        if months_since_cross > VAL_RECENCY_MONTHS:
+            skipped.append(sym)
+            continue
+
+        current_rsi = round(float(valid.iloc[-1]), 2)
+        rsi_at_cross = round(float(valid.iloc[i]), 2)
+        if current_rsi <= rsi_at_cross:
+            skipped.append(sym)  # not "progressing" — net flat or lower since the cross
+            continue
+        if current_rsi > VAL_RSI_UPPER_CAP:
+            skipped.append(sym)
+            continue
+
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(float(cd.iloc[-1]), 2),
+            "rsi_m": current_rsi, "rsi_at_cross": rsi_at_cross,
+            "months_since_cross": months_since_cross,
+            "rsi_gain_since_cross": round(current_rsi - rsi_at_cross, 2),
+        })
+
+    rows.sort(key=lambda r: -r["rsi_gain_since_cross"])
+    return {"label": "Value RSI Turnaround", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1105,6 +1205,7 @@ SCREENER_RUNNERS = {
     "sectorAlpha": _run_sector_alpha,
     "sectorStockAlpha": _run_sector_stock_alpha,
     "maBreakout": _run_ma_breakout,
+    "valueRsiTurnaround": _run_value_rsi_turnaround,
 }
 
 

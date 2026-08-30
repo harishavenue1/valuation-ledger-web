@@ -29,6 +29,7 @@ const CLOUD_SCREENERS = new Set([
   "sectorAlpha",
   "sectorStockAlpha",
   "maBreakout",
+  "valueRsiTurnaround",
   "viraj_screen",
 ]);
 

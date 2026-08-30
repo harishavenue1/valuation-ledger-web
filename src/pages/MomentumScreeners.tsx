@@ -19,6 +19,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "sectorAlpha", label: "Sector Alpha", emoji: "🧭" },
   { key: "sectorStockAlpha", label: "Stocks vs Sector", emoji: "🎯" },
   { key: "maBreakout", label: "MA Breakout", emoji: "🚀" },
+  { key: "valueRsiTurnaround", label: "Value RSI Turnaround", emoji: "💎" },
 ];
 
 export default function MomentumScreeners() {
@@ -125,6 +126,16 @@ export default function MomentumScreeners() {
       { key: "weeks_since_cross_33w", label: "Weeks Since Cross", render: (r) => (r.weeks_since_cross_33w === null || r.weeks_since_cross_33w === undefined ? "—" : r.weeks_since_cross_33w) },
       { key: "fresh_this_week", label: "Fresh This Week?", render: (r) => (r.fresh_this_week ? <span className="text-amber-600 font-semibold">Y</span> : "") },
     ],
+    valueRsiTurnaround: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "rsi_m", label: "Monthly RSI", render: (r) => <span className="font-semibold">{fmtNum(r.rsi_m, 1)}</span> },
+      { key: "rsi_at_cross", label: "RSI at Cross", render: (r) => fmtNum(r.rsi_at_cross, 1) },
+      { key: "months_since_cross", label: "Months Since Cross" },
+      { key: "rsi_gain_since_cross", label: "RSI Gain Since Cross", render: (r) => <Signed v={r.rsi_gain_since_cross} digits={1} /> },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -201,6 +212,17 @@ export default function MomentumScreeners() {
         EMA). EMAs are computed on <b>OHLC4</b> ((Open+High+Low+Close)/4), not Close alone — but the above/below check and the %-above figure
         compare the real <b>Close</b> against that OHLC4-based EMA line. No market-cap filter: there's no bulk data source for it across all
         750 stocks, and this universe's own inclusion bar already excludes true microcaps in practice.
+      </>
+    ),
+    valueRsiTurnaround: (
+      <>
+        No numeric score — a "value"/turnaround screen: monthly RSI(14) crossed <b>above 40</b> within the <b>last 3 completed monthly
+        candles</b> (not an old, already-established recovery), and is <b>progressing</b> — today's RSI is net higher than it was the month it
+        crossed (a flat or slightly lower month in between doesn't disqualify it, as long as the overall move since the cross is upward).
+        Capped at <b>RSI 60</b>: past that it's arguably already a momentum stock, not a value/turnaround entry anymore. Uses a different RSI
+        calculation than the NSE Screener tab's Monthly RSI column (same Wilder-family formula, different warm-up seeding) since this screen
+        needs the full historical RSI series to find exactly when it crossed 40 — the two can show slightly different values for the same
+        stock. No market-cap filter, same reasoning as MA Breakout.
       </>
     ),
   };
