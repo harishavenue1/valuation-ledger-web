@@ -2,10 +2,14 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/watchlist_detail.py": { "maxDuration": 60 }
+    "api/watchlist_detail.py": { "maxDuration": 60 },
+    "api/cron_refresh_prices.py": { "maxDuration": 300 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
+  ],
+  "crons": [
+    { "path": "/api/cron_refresh_prices", "schedule": "30 23 * * *" }
   ]
 }
