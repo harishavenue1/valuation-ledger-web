@@ -4,7 +4,8 @@
   "functions": {
     "api/watchlist_detail.py": { "maxDuration": 60 },
     "api/cron_refresh_prices.py": { "maxDuration": 300 },
-    "api/cron_refresh_full.py": { "maxDuration": 300 }
+    "api/cron_refresh_full.py": { "maxDuration": 300 },
+    "api/cron_screener_rs.py": { "maxDuration": 300 }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
