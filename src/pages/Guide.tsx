@@ -96,13 +96,27 @@ function PeriodTable({ title, rows, note }: { title: string; rows: GuidePeriodRo
   );
 }
 
-function StatBox({ label, value, good }: { label: string; value: string; good?: boolean | null }) {
-  const color = good === true ? "text-emerald-700" : good === false ? "text-red-600" : "text-slate-800";
+// Compact "Metric | Value" table — same dark-header visual language as
+// every other table on this page, used for Ratios/RSI/Prices instead
+// of a grid of boxes so these short panels don't run noticeably taller
+// than they need to (2026-08-30, "adjust ratios and rsi same format
+// table as others so it can easily fit ... without any blank space").
+function MetricTable({ rows }: { rows: { label: string; value: string; sub?: string; good?: boolean | null }[] }) {
   return (
-    <div className="border border-slate-200 rounded-lg px-3 py-2">
-      <div className="text-xs text-slate-500">{label}</div>
-      <div className={`text-base font-semibold ${color}`}>{value}</div>
-    </div>
+    <table className="w-full text-sm">
+      <TableHead cols={[{ label: "Metric" }, { label: "Value", align: "right" }]} />
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={r.label} className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+            <td className="py-1.5 px-2.5 text-slate-700">{r.label}</td>
+            <td className={`py-1.5 px-2.5 text-right font-semibold ${r.good === true ? "bg-emerald-50 text-emerald-700" : r.good === false ? "bg-red-50 text-red-600" : "text-slate-800"}`}>
+              {r.value}
+              {r.sub && <div className="text-xs font-normal text-slate-400">{r.sub}</div>}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -437,41 +451,37 @@ export default function Guide() {
           <div className="grid lg:grid-cols-2 gap-4 items-start">
             <FundamentalTrendSection ft={result.fundamental_trend} />
             <div className="space-y-4">
-              <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
-                <h3 className="font-semibold text-sm mb-3">🧮 Ratios</h3>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
-                  <StatBox label="GPM" value="—" />
-                  <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
-                  <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
-                  <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
-                  <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
-                  <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
-                </div>
-                <p className="text-xs text-slate-400 mt-2">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
+              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                <h3 className="font-semibold text-sm px-4 pt-4 pb-3">🧮 Ratios</h3>
+                <MetricTable
+                  rows={[
+                    { label: "PE", value: fmtNum(r?.pe, 1) },
+                    { label: "GPM", value: "—" },
+                    { label: "OPM", value: r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%` },
+                    { label: "PEG", value: fmtNum(r?.peg, 2), good: r?.peg != null ? r.peg < 1.5 : null },
+                    { label: "ROE", value: r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`, good: r?.roe_pct != null ? r.roe_pct > 15 : null },
+                    { label: "ROCE", value: r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`, good: r?.roce_pct != null ? r.roce_pct > 15 : null },
+                    { label: "Working Cap.", value: r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d` },
+                  ]}
+                />
+                <p className="text-xs text-slate-400 px-4 py-3">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
               </div>
 
-              <div className="border border-slate-200 rounded-lg p-4 space-y-4 bg-white shadow-sm">
-                <div>
-                  <h3 className="font-semibold text-sm mb-3">📉 RSI</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
-                    <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
-                    <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
-                  </div>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm mb-3">📈 Prices vs Weekly EMA</h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
-                      <div key={k} className={`border rounded-lg px-2 py-1.5 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
-                        <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W")}</div>
-                        <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
-                        <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+                <h3 className="font-semibold text-sm px-4 pt-4 pb-3">📉 RSI &amp; Prices vs Weekly EMA</h3>
+                <MetricTable
+                  rows={[
+                    { label: "Daily RSI", value: fmtNum(rsi?.daily, 1), good: rsi?.daily != null ? rsi.daily > 66 : null },
+                    { label: "Weekly RSI", value: fmtNum(rsi?.weekly, 1), good: rsi?.weekly != null ? rsi.weekly > 66 : null },
+                    { label: "Monthly RSI", value: fmtNum(rsi?.monthly, 1), good: rsi?.monthly != null ? rsi.monthly > 66 : null },
+                    ...(["ema12w", "ema21w", "ema33w"] as const).map((k) => ({
+                      label: `${k.replace("ema", "").replace("w", "")}W EMA`,
+                      value: prices ? (prices[k].above ? "Yes" : "No") : "—",
+                      sub: prices ? fmtNum(prices[k].value, 2) : undefined,
+                      good: prices ? prices[k].above : null,
+                    })),
+                  ]}
+                />
               </div>
 
               <RsBenchmarkSection rs={result.rs_benchmark} />
