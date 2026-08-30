@@ -13,6 +13,10 @@
   ],
   "crons": [
     { "path": "/api/refresh_price", "schedule": "30 23 * * *" },
-    { "path": "/api/fetch_company", "schedule": "30 23 * * 6" }
+    { "path": "/api/fetch_company", "schedule": "30 23 * * 6" },
+    { "path": "/api/momentum_screeners?screener=Nifty500RelativeStrength", "schedule": "35 23 * * *" },
+    { "path": "/api/momentum_screeners?screener=myLongTermInvestingStrategy", "schedule": "40 23 * * 6" },
+    { "path": "/api/momentum_screeners?screener=weekendInvesting", "schedule": "45 23 * * 6" },
+    { "path": "/api/momentum_screeners?screener=quantBollinger", "schedule": "50 23 * * 6" }
   ]
 }
