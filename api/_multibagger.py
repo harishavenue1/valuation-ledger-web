@@ -943,7 +943,14 @@ def build_quant_layer(fund, tech):
     ttm_eps = sum(ttm_eps_vals) if len(ttm_eps_vals) == 4 else None
     price = fund.get("current_price")
     trailing_pe = round(price / ttm_eps, 1) if (price is not None and ttm_eps not in (None, 0)) else None
-    pe_pass = None if trailing_pe is None else trailing_pe < QUANT_PE_THRESHOLD
+    # A negative trailing PE means TTM EPS itself is negative (loss-
+    # making), not "cheap" — added 2026-08-30 after Harish caught a
+    # loss-making company (Tejas Networks, -10.6x) reading as a PASS
+    # here since -10.6 < 40 is numerically true but meaningless. Not
+    # scoreable (None), same "undefined ratio" treatment as PEG off a
+    # loss (see _cagr_pct) — not counted as a FAIL either, since this
+    # isn't a valuation read at all.
+    pe_pass = None if (trailing_pe is None or trailing_pe < 0) else trailing_pe < QUANT_PE_THRESHOLD
 
     momentum = (tech or {}).get("quant_momentum")
 
@@ -957,7 +964,8 @@ def build_quant_layer(fund, tech):
         {"layer": "Layer 2: Quality", "key": "ROCE", "name": f"ROCE > {QUANT_ROCE_THRESHOLD:.0f}% (TTM Op. Profit ÷ Capital Employed)",
          "pass": roce_pass, "detail": f"{quant_roce}%" if quant_roce is not None else "—"},
         {"layer": "Layer 3: Valuation", "key": "PE", "name": f"Trailing PE < {QUANT_PE_THRESHOLD:.0f}x (Price ÷ TTM EPS)",
-         "pass": pe_pass, "detail": f"{trailing_pe}x" if trailing_pe is not None else "—"},
+         "pass": pe_pass,
+         "detail": "N/A (negative TTM EPS)" if (trailing_pe is not None and trailing_pe < 0) else (f"{trailing_pe}x" if trailing_pe is not None else "—")},
         {"layer": "Layer 4: Momentum", "key": "Momentum", "name": "1Y return ÷ stdev(daily returns)",
          "pass": None, "detail": f"{momentum}" if momentum is not None else "—"},
     ]
