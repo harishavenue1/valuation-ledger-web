@@ -98,7 +98,7 @@ export default function MomentumScreeners() {
         </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        Four independent momentum strategies, each pushed by its own local skill script after every run.
+        Four independent momentum strategies, refreshed automatically on Vercel (RS daily, the other 3 weekly) — "Run now" triggers an on-demand run from any machine.
       </p>
 
       <div className="flex gap-1 mb-4 border-b border-slate-200">

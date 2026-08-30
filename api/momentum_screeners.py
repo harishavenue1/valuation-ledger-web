@@ -65,7 +65,7 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from _cron_auth import is_authed_cron
+from _cron_auth import is_authed_cron_or_cookie
 from _db import get_conn, get_meta, set_meta
 from _http import read_json_body, require_auth, send_json
 
@@ -505,7 +505,7 @@ class handler(BaseHTTPRequestHandler):
             conn.close()
 
     def do_GET(self):
-        if not is_authed_cron(self):
+        if not is_authed_cron_or_cookie(self):
             send_json(self, 401, {"error": "unauthorized"})
             return
 

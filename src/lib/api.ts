@@ -141,6 +141,18 @@ export const api = {
 
   requestRun: (screener: string) => req("/api/run_requests", { method: "POST", body: JSON.stringify({ action: "request", screener }) }),
 
+  // Runs one of the 4 yfinance-based NSE-750 momentum screeners
+  // directly on Vercel (see api/momentum_screeners.py's do_GET) — the
+  // same session cookie every other request already uses, no local
+  // poller involved. Takes ~60-100s (a full 750-ticker yfinance pull),
+  // so the caller should show a "running" state while this awaits
+  // rather than treating it as instant. 2026-08-30, "refresh on click
+  // from any machine, not just the Mac" — viraj_screen still needs
+  // api.requestRun() above (it needs Harish's own Screener.in/Chartink
+  // cookies, which only live on his Mac).
+  runScreenerCloud: (screener: string): Promise<{ ok: boolean; universe: number; scanned: number; skipped: number; pushed: number; elapsed_s: number }> =>
+    req(`/api/momentum_screeners?screener=${encodeURIComponent(screener)}`),
+
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
 

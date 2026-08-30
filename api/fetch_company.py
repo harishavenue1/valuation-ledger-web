@@ -38,7 +38,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _clean import clean_stock
-from _cron_auth import is_authed_cron
+from _cron_auth import is_authed_cron_or_cookie
 from _db import delete_json, get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
 from _screener_fetch import fetch_one
@@ -118,7 +118,7 @@ class handler(BaseHTTPRequestHandler):
             conn.close()
 
     def do_GET(self):
-        if not is_authed_cron(self):
+        if not is_authed_cron_or_cookie(self):
             send_json(self, 401, {"error": "unauthorized"})
             return
 
