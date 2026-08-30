@@ -319,7 +319,7 @@ function VirajLogicSection({ vl }: { vl: GuideVirajLogic }) {
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm h-full">
       <div className="flex items-center gap-2 px-4 pt-4 pb-3">
-        <h3 className="font-semibold text-sm">🎯 VIRAJ Logic</h3>
+        <h3 className="font-semibold text-sm">🎯 FunTech Logic</h3>
         <SignalChip score={vl.score} scored={vl.scored} />
       </div>
       <p className="text-xs text-slate-500 px-4 mb-3">
