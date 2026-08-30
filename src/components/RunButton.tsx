@@ -30,6 +30,7 @@ const CLOUD_SCREENERS = new Set([
   "sectorStockAlpha",
   "maBreakout",
   "valueRsiTurnaround",
+  "grandfatherFatherSon",
   "viraj_screen",
 ]);
 

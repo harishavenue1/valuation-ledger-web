@@ -1196,6 +1196,120 @@ def _run_value_rsi_turnaround(symbols, name_map, sector_map):
     return {"label": "Value RSI Turnaround", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── grandfatherFatherSon ─────────────────────────────────────────────────────
+#
+# Vishal Malkan's "Grandfather-Father-Son" / "5-Star RSI" strategy —
+# added 2026-08-30 after a linked video turned out to describe a
+# genuinely different, more specific setup than valueRsiTurnaround
+# above (checked live via web search against multiple independent
+# sources — a chartink screener, an elearnmarkets writeup, and the
+# video's own title — before building, rather than guessed at):
+#   - Monthly RSI(14) > 60 AND Weekly RSI(14) > 60 — the "grandfather"
+#     and "father" timeframes confirm a genuinely strong, established
+#     uptrend, not just a short-term bounce.
+#   - Daily RSI(14) (the "son") pulled back into a 35-45 support zone
+#     within the last 10 trading days — in a trend this strong, 40 on
+#     the daily tends to act as support rather than get broken.
+#   - The day of that pullback low must be a bullish (green) candle —
+#     the "reversal at support" entry trigger — and daily RSI today
+#     must be at or above that low (the bounce has actually started,
+#     not still sitting at the low with no confirmation yet).
+#   - The setup must still be live: no day AFTER that low has broken
+#     below its candle's own low (that would mean the stop already
+#     got hit — this isn't still an open, valid setup).
+# Stop-loss = the low of that trigger candle, per the strategy's own
+# rule. Target (daily RSI back to 60) is shown as a fact in the
+# methodology note, not fabricated into a price number — RSI doesn't
+# map cleanly onto price, so a "target price" here would just be
+# invented precision.
+#
+# Reuses _val_rsi_series (the same EWM-based Wilder RSI as
+# valueRsiTurnaround) for all three timeframes — not nseScreener's
+# _nse_wilder_rsi, for the same reason as that screener: this needs
+# full historical RSI series (to find the recent daily low and check
+# no later day broke the trigger candle), not just nseScreener's
+# single latest-value output.
+
+GFS_FETCH_YEARS = 5
+GFS_HIGHER_TF_RSI_THRESHOLD = 60  # monthly AND weekly RSI must clear this
+GFS_SUPPORT_LOW = 35
+GFS_SUPPORT_HIGH = 45
+GFS_LOOKBACK_DAYS = 10  # trading days to look back for the daily RSI pullback low
+
+
+def _run_grandfather_father_son(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * GFS_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        g = g.set_index("date").sort_index()
+        close_d, open_d, low_d = g["Close"], g["Open"], g["Low"]
+
+        cm = close_d.resample("ME").last().dropna()
+        cw = close_d.resample("W-FRI").last().dropna()
+        if len(cm) < VAL_MIN_MONTHLY_BARS or len(cw) < 30 or len(close_d) < 60:
+            skipped.append(sym)
+            continue
+
+        rsi_m = _val_rsi_series(cm).dropna()
+        rsi_w = _val_rsi_series(cw).dropna()
+        rsi_d = _val_rsi_series(close_d).dropna()
+        if rsi_m.empty or rsi_w.empty or len(rsi_d) < GFS_LOOKBACK_DAYS + 5:
+            skipped.append(sym)
+            continue
+
+        monthly_rsi = float(rsi_m.iloc[-1])
+        weekly_rsi = float(rsi_w.iloc[-1])
+        if monthly_rsi <= GFS_HIGHER_TF_RSI_THRESHOLD or weekly_rsi <= GFS_HIGHER_TF_RSI_THRESHOLD:
+            skipped.append(sym)
+            continue
+
+        # The trigger day is NOT simply "whichever day has the lowest RSI
+        # in the window" — that day is almost always still a falling
+        # (bearish) candle, since RSI keeps dropping as price drops. The
+        # actual Malkan trigger is: scan the window for ANY day where RSI
+        # sits in the 35-45 support zone AND that day's own candle is
+        # bullish (confirmed empirically 2026-08-30 — the naive "RSI
+        # minimum" approach found zero matches out of 750 stocks; this
+        # approach found real ones immediately). Take the most recent
+        # such day if more than one qualifies.
+        recent_idx = rsi_d.index[-GFS_LOOKBACK_DAYS:]
+        candidates = [d for d in recent_idx
+                      if GFS_SUPPORT_LOW <= rsi_d.loc[d] <= GFS_SUPPORT_HIGH and close_d.loc[d] > open_d.loc[d]]
+        if not candidates:
+            skipped.append(sym)
+            continue
+        trigger_date = candidates[-1]
+        trigger_rsi = float(rsi_d.loc[trigger_date])
+
+        current_daily_rsi = float(rsi_d.iloc[-1])
+        if current_daily_rsi < trigger_rsi:
+            skipped.append(sym)  # hasn't turned up from the trigger day yet
+            continue
+        trigger_low = float(low_d.loc[trigger_date])
+
+        after = low_d.loc[low_d.index > trigger_date]
+        if not after.empty and float(after.min()) < trigger_low:
+            skipped.append(sym)  # a later day already broke below the trigger candle's low — setup already stopped out
+            continue
+
+        days_since_trigger = int((close_d.index > trigger_date).sum())
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(float(close_d.iloc[-1]), 2),
+            "monthly_rsi": round(monthly_rsi, 1), "weekly_rsi": round(weekly_rsi, 1),
+            "daily_rsi": round(current_daily_rsi, 1), "daily_rsi_at_support": round(trigger_rsi, 1),
+            "days_since_support": days_since_trigger,
+            "stop_loss": round(trigger_low, 2),
+        })
+
+    rows.sort(key=lambda r: r["days_since_support"])
+    return {"label": "Grandfather-Father-Son", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1206,6 +1320,7 @@ SCREENER_RUNNERS = {
     "sectorStockAlpha": _run_sector_stock_alpha,
     "maBreakout": _run_ma_breakout,
     "valueRsiTurnaround": _run_value_rsi_turnaround,
+    "grandfatherFatherSon": _run_grandfather_father_son,
 }
 
 

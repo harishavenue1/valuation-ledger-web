@@ -20,6 +20,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "sectorStockAlpha", label: "Stocks vs Sector", emoji: "🎯" },
   { key: "maBreakout", label: "MA Breakout", emoji: "🚀" },
   { key: "valueRsiTurnaround", label: "Value RSI Turnaround", emoji: "💎" },
+  { key: "grandfatherFatherSon", label: "Grandfather-Father-Son", emoji: "👴" },
 ];
 
 export default function MomentumScreeners() {
@@ -136,6 +137,18 @@ export default function MomentumScreeners() {
       { key: "months_since_cross", label: "Months Since Cross" },
       { key: "rsi_gain_since_cross", label: "RSI Gain Since Cross", render: (r) => <Signed v={r.rsi_gain_since_cross} digits={1} /> },
     ],
+    grandfatherFatherSon: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "monthly_rsi", label: "Monthly RSI", render: (r) => <span className="font-semibold">{fmtNum(r.monthly_rsi, 1)}</span> },
+      { key: "weekly_rsi", label: "Weekly RSI", render: (r) => <span className="font-semibold">{fmtNum(r.weekly_rsi, 1)}</span> },
+      { key: "daily_rsi", label: "Daily RSI", render: (r) => fmtNum(r.daily_rsi, 1) },
+      { key: "daily_rsi_at_support", label: "RSI at Support", render: (r) => fmtNum(r.daily_rsi_at_support, 1) },
+      { key: "days_since_support", label: "Days Since Support" },
+      { key: "stop_loss", label: "Stop-Loss", render: (r) => fmtNum(r.stop_loss) },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -223,6 +236,19 @@ export default function MomentumScreeners() {
         calculation than the NSE Screener tab's Monthly RSI column (same Wilder-family formula, different warm-up seeding) since this screen
         needs the full historical RSI series to find exactly when it crossed 40 — the two can show slightly different values for the same
         stock. No market-cap filter, same reasoning as MA Breakout.
+      </>
+    ),
+    grandfatherFatherSon: (
+      <>
+        Vishal Malkan's "Grandfather-Father-Son" / "5-Star RSI" strategy. No numeric score — needs <b>all</b> of: Monthly RSI(14) &gt; 60{" "}
+        <b>and</b> Weekly RSI(14) &gt; 60 (the "grandfather" and "father" timeframes confirming a genuinely strong, established uptrend), and
+        the Daily RSI(14) (the "son") found a <b>bullish (green) candle</b> while sitting in the <b>35-45 support zone</b> within the last 10
+        trading days — in a trend this strong, 40 tends to act as support on the daily chart rather than get broken. Today's Daily RSI must be
+        at or above that trigger day's level (the bounce has actually started), and no day since has closed <b>below the trigger candle's
+        low</b> (that would mean the setup already stopped out). <b>Stop-Loss</b> = the low of that trigger candle, per the strategy's own
+        rule. The strategy's target is Daily RSI reaching back up to 60 — not a price level, so no price target is shown; judge the distance
+        from the Daily RSI column itself. Uses the same RSI calculation as Value RSI Turnaround (not the NSE Screener tab's), for the same
+        reason: needs the full historical series, not just the latest value.
       </>
     ),
   };

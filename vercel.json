@@ -20,6 +20,7 @@
     { "path": "/api/momentum_screeners?screener=sectorAlpha", "schedule": "39 23 * * *" },
     { "path": "/api/momentum_screeners?screener=sectorStockAlpha", "schedule": "41 23 * * *" },
     { "path": "/api/momentum_screeners?screener=maBreakout", "schedule": "43 23 * * *" },
+    { "path": "/api/momentum_screeners?screener=grandfatherFatherSon", "schedule": "44 23 * * *" },
     { "path": "/api/momentum_screeners?screener=myLongTermInvestingStrategy", "schedule": "40 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=weekendInvesting", "schedule": "45 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=quantBollinger", "schedule": "50 23 * * 6" },
