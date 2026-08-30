@@ -41,7 +41,7 @@ from _clean import clean_stock
 from _cron_auth import is_authed_cron_or_cookie
 from _db import delete_json, get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
-from _multibagger import build_checklist, fetch_technicals
+from _multibagger import build_guide_view, fetch_technicals
 from _screener_fetch import fetch_one
 
 CRON_DELAY_SECONDS = 3  # gap between tickers — heavier per-ticker load than the price cron
@@ -145,7 +145,7 @@ class handler(BaseHTTPRequestHandler):
                 return
             fund = clean_stock(fund)
             tech, tech_err = fetch_technicals(fund["ticker"])
-            checklist = build_checklist(fund, tech)
+            checklist = build_guide_view(fund, tech)
             send_json(self, 200, {
                 "ok": True, "ticker": fund["ticker"], "name": fund["name"],
                 "price": fund.get("current_price") or (tech or {}).get("price"),

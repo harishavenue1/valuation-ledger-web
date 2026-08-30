@@ -420,6 +420,35 @@ def parse_cash_flow_section(soup):
     return years, rows
 
 
+def parse_ratios_section(soup):
+    """Screener's "Ratios" section (Debtor Days/Inventory Days/Days
+    Payable/Cash Conversion Cycle/Working Capital Days/...) — added
+    2026-08-30 for the Guide page's Ratios panel. Only populated with
+    these working-capital-cycle rows for non-financial companies
+    (verified live: TCS has the full set, IFCI — an NBFC, no
+    inventory/debtor cycle to speak of — only has "ROE %" in this
+    section) so a financial company's working_capital_days is
+    expected to come back None, not a bug. Same shape as
+    parse_pl_section()."""
+    section = next((s for s in soup.find_all("section")
+                     if s.find("h2") and "Ratio" in s.find("h2").get_text(strip=True)), None)
+    if not section:
+        return None, None
+    table = section.find("table")
+    if not table:
+        return None, None
+    years = [th.get_text(strip=True) for th in table.find("thead").find_all("th")][1:]
+    rows = {}
+    for tr in table.find("tbody").find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < 2:
+            continue
+        label = cells[0].get_text(strip=True).rstrip("+").strip()
+        vals = [parse_number(td.get_text(strip=True)) for td in cells[1:]]
+        rows[label] = vals
+    return years, rows
+
+
 def find_row(rows, *keywords):
     for label, vals in rows.items():
         low = label.lower()
@@ -687,6 +716,10 @@ def fetch_one(ticker, session_id=None):
             # (see module docstring), not a fixed -4 offset.
             q_revenue_growth_pct = yoy_series_by_date(q_revenue, q_dates)
             q_pat_growth_pct = yoy_series_by_date(q_net_profit, q_dates)
+            # Added 2026-08-30 for the Guide page's Quarterly Growth
+            # table ("OpGr" column) — same date-matched YoY as the two
+            # above, just on Operating Profit instead of Sales/PAT.
+            q_op_growth_pct = yoy_series_by_date(q_op_profit, q_dates)
 
             # Last N only (2026-08-16 request: "last 8 quarters";
             # widened to 12 on 2026-08-23) — trimmed after growth%
@@ -704,6 +737,7 @@ def fetch_one(ticker, session_id=None):
                 "q_interest": qtrim(q_interest), "q_depreciation": qtrim(q_depreciation),
                 "q_pbt": qtrim(q_pbt), "q_tax_pct": qtrim(q_tax_pct),
                 "q_net_profit": qtrim(q_net_profit), "q_pat_growth_pct": qtrim(q_pat_growth_pct),
+                "q_operating_profit_growth_pct": qtrim(q_op_growth_pct),
                 "q_eps": qtrim(q_eps),
             }
     except Exception:
@@ -746,6 +780,17 @@ def fetch_one(ticker, session_id=None):
     except Exception:
         cash_conversion_pct = None
 
+    # Working Capital Days — best-effort, None for financial companies
+    # (no working-capital cycle) per parse_ratios_section()'s docstring.
+    working_capital_days = None
+    try:
+        _, ratio_rows = parse_ratios_section(soup)
+        wc_row = find_row(ratio_rows, "working capital days") if ratio_rows else None
+        if wc_row:
+            working_capital_days = next((v for v in reversed(wc_row) if v is not None), None)
+    except Exception:
+        working_capital_days = None
+
     return {
         "ticker": canonical_ticker,
         "name": company_name,
@@ -758,6 +803,7 @@ def fetch_one(ticker, session_id=None):
         "roce_pct": top["roce_pct"],
         "roe_pct": top["roe_pct"],
         "cash_conversion_pct": cash_conversion_pct,
+        "working_capital_days": working_capital_days,
         "ema20d": emas["ema20d"],
         "ema50d": emas["ema50d"],
         "ema33w": emas["ema33w"],

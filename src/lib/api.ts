@@ -92,6 +92,26 @@ export interface GuideEntrySetup {
   active: boolean;
   [field: string]: any; // each setup (ma_breakout/value_rsi_turnaround/grandfather_father_son) carries its own detail fields
 }
+export interface GuidePeriodRow {
+  period: string;
+  sales_growth_pct: number | null;
+  op_growth_pct: number | null;
+  opm_pct: number | null;
+  eps: number | null;
+}
+export interface GuideRatios {
+  pe: number | null;
+  gpm_pct: number | null; // always null — Screener.in has no distinct Gross Profit line; kept as a visible row, not silently dropped
+  opm_pct: number | null;
+  peg: number | null;
+  roe_pct: number | null;
+  roce_pct: number | null;
+  working_capital_days: number | null; // null for financial companies (no working-capital cycle) — expected, not a fetch failure
+}
+export interface GuideEmaPoint {
+  value: number;
+  above: boolean;
+}
 export interface GuideResult {
   ok: boolean;
   ticker: string;
@@ -108,6 +128,11 @@ export interface GuideResult {
     grandfather_father_son: GuideEntrySetup | null;
   };
   score: { passed: number; applicable: number; pct: number; verdict: string };
+  quarterly_table: GuidePeriodRow[];
+  annual_table: GuidePeriodRow[];
+  ratios: GuideRatios;
+  rsi: { daily: number | null; weekly: number | null; monthly: number | null };
+  prices: { ema12w: GuideEmaPoint; ema21w: GuideEmaPoint; ema33w: GuideEmaPoint } | null;
 }
 
 export interface Bundle {

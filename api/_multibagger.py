@@ -125,6 +125,10 @@ def fetch_technicals(symbol):
 
     result = {"price": round(float(close_d.iloc[-1]), 2)}
 
+    # --- RSI across all three timeframes, for the Guide page's Technical panel ---
+    rsi_d_series_early = _rsi_series(close_d, 14).dropna()
+    result["rsi_d"] = round(float(rsi_d_series_early.iloc[-1]), 1) if len(rsi_d_series_early) else None
+
     # --- myLongTermInvestingStrategy mirror: weekly RSI>66 + 12/21/33W EMA ribbon (Close-based) ---
     ltis = None
     rsi_w_series = _rsi_series(close_w, LTIS_RSI_PERIOD).dropna()
@@ -132,13 +136,16 @@ def fetch_technicals(symbol):
         ema_w = {p: close_w.ewm(span=p, adjust=False).mean() for p in LTIS_EMA_PERIODS}
         if all(not pd.isna(ema_w[p].iloc[-1]) for p in LTIS_EMA_PERIODS):
             rsi_w = float(rsi_w_series.iloc[-1])
-            ribbon_ok = all(float(close_w.iloc[-1]) > float(ema_w[p].iloc[-1]) for p in LTIS_EMA_PERIODS)
+            last_close_w = float(close_w.iloc[-1])
+            above_12 = last_close_w > float(ema_w[12].iloc[-1])
+            above_21 = last_close_w > float(ema_w[21].iloc[-1])
+            above_33 = last_close_w > float(ema_w[33].iloc[-1])
             ltis = {
                 "rsi_w": round(rsi_w, 1), "rsi_w_pass": rsi_w > LTIS_RSI_THRESHOLD,
-                "ema12w": round(float(ema_w[12].iloc[-1]), 2),
-                "ema21w": round(float(ema_w[21].iloc[-1]), 2),
-                "ema33w_close": round(float(ema_w[33].iloc[-1]), 2),
-                "above_ribbon": ribbon_ok,
+                "ema12w": round(float(ema_w[12].iloc[-1]), 2), "above_ema12w": above_12,
+                "ema21w": round(float(ema_w[21].iloc[-1]), 2), "above_ema21w": above_21,
+                "ema33w_close": round(float(ema_w[33].iloc[-1]), 2), "above_ema33w": above_33,
+                "above_ribbon": above_12 and above_21 and above_33,
             }
     result["ltis"] = ltis
 
@@ -181,7 +188,7 @@ def fetch_technicals(symbol):
 
     # --- Grandfather-Father-Son mirror ---
     gfs = None
-    rsi_d_series = _rsi_series(close_d, 14).dropna()
+    rsi_d_series = rsi_d_series_early
     if len(rsi_m_series) and len(rsi_w_series) and len(rsi_d_series) >= GFS_LOOKBACK_DAYS + 5:
         monthly_rsi, weekly_rsi = float(rsi_m_series.iloc[-1]), float(rsi_w_series.iloc[-1])
         gfs = {"monthly_rsi": round(monthly_rsi, 1), "weekly_rsi": round(weekly_rsi, 1), "active": False}
@@ -348,4 +355,110 @@ def build_checklist(fund, tech):
         "technicals": {"items": items_t, "passed": t_passed, "applicable": t_applicable},
         "entry_setups": entry_setups,
         "score": {"passed": total_passed, "applicable": total_applicable, "pct": pct, "verdict": verdict},
+    }
+
+
+# ── Guide page view (added 2026-08-30, "page can be improved, lets
+# have columns...") — wraps build_checklist() (still the source of the
+# score badge) with the data Harish actually asked to see: last-3-
+# period growth tables (quarterly + annual), a current-state Ratios
+# panel, an RSI-across-3-timeframes panel, and a per-EMA-period Y/N
+# price panel. ──────────────────────────────────────────────────────
+
+PEG_MIN_YEARS = 3  # 3 annual EPS points = 2 YoY steps for the CAGR
+
+
+def _last_n_periods(labels, series_map, n=3):
+    """labels: full period-label list (already trimmed to whatever
+    fetch_one()/clean_stock() kept). series_map: {field_name: values},
+    same length/index alignment as labels. Returns up to the last n
+    periods as a list of {"period": ..., **row}, oldest first — None
+    values pass through as None (rendered as "—" by the frontend)."""
+    n_avail = len(labels)
+    take = min(n, n_avail)
+    if take <= 0:
+        return []
+    out = []
+    for i in range(n_avail - take, n_avail):
+        row = {"period": labels[i]}
+        for field, vals in series_map.items():
+            row[field] = vals[i] if i < len(vals) else None
+        out.append(row)
+    return out
+
+
+def _cagr_pct(vals, min_years=PEG_MIN_YEARS):
+    """CAGR% over the last `min_years` non-None values of an annual
+    series (e.g. EPS) — None if there aren't enough clean points or the
+    earliest of them isn't positive (a CAGR off a loss/zero base is
+    undefined, not just a small/negative number)."""
+    clean = [v for v in vals if v is not None]
+    if len(clean) < min_years:
+        return None
+    first, last = clean[-min_years], clean[-1]
+    if first is None or first <= 0:
+        return None
+    years = min_years - 1
+    return round(((last / first) ** (1 / years) - 1) * 100, 1)
+
+
+def build_guide_view(fund, tech):
+    from _screener_fetch import yoy_series
+
+    checklist = build_checklist(fund, tech)
+
+    quarters = fund.get("quarters") or []
+    quarterly_table = _last_n_periods(quarters, {
+        "sales_growth_pct": fund.get("q_revenue_growth_pct") or [],
+        "op_growth_pct": fund.get("q_operating_profit_growth_pct") or [],
+        "opm_pct": fund.get("q_opm_pct") or [],
+        "eps": fund.get("q_eps") or [],
+    })
+
+    years = fund.get("years") or []
+    op_growth_annual = yoy_series(fund.get("operating_profit") or [])
+    annual_table = _last_n_periods(years, {
+        "sales_growth_pct": fund.get("revenue_growth_pct") or [],
+        "op_growth_pct": op_growth_annual,
+        "opm_pct": fund.get("opm_pct") or [],
+        "eps": fund.get("eps") or [],
+    })
+
+    eps_cagr = _cagr_pct(fund.get("eps") or [])
+    pe = fund.get("pe_ratio")
+    peg = round(pe / eps_cagr, 2) if (pe is not None and eps_cagr and eps_cagr > 0) else None
+    latest_q_opm = next((v for v in reversed(fund.get("q_opm_pct") or []) if v is not None), None)
+
+    ratios = {
+        "pe": pe,
+        "gpm_pct": None,  # Screener.in has no distinct Gross Profit line in its standard P&L — genuinely unavailable, not a fetch failure
+        "opm_pct": latest_q_opm,
+        "peg": peg,
+        "roe_pct": fund.get("roe_pct"),
+        "roce_pct": fund.get("roce_pct"),
+        "working_capital_days": fund.get("working_capital_days"),
+    }
+
+    ltis = (tech or {}).get("ltis")
+    rsi = {
+        "daily": (tech or {}).get("rsi_d"),
+        "weekly": ltis["rsi_w"] if ltis else None,
+        "monthly": (tech or {}).get("value_rsi_turnaround", {}).get("rsi_m") if tech and tech.get("value_rsi_turnaround") else None,
+    }
+
+    prices = None
+    if ltis:
+        prices = {
+            "ema12w": {"value": ltis["ema12w"], "above": ltis["above_ema12w"]},
+            "ema21w": {"value": ltis["ema21w"], "above": ltis["above_ema21w"]},
+            "ema33w": {"value": ltis["ema33w_close"], "above": ltis["above_ema33w"]},
+        }
+
+    return {
+        **checklist,
+        "quarterly_table": quarterly_table,
+        "annual_table": annual_table,
+        "ratios": ratios,
+        "rsi": rsi,
+        "prices": prices,
     }

@@ -1,44 +1,65 @@
 import { useState } from "react";
 import { api, ApiError } from "../lib/api";
-import type { GuideChecklistItem, GuideResult } from "../lib/api";
+import type { GuideEntrySetup, GuidePeriodRow, GuideResult } from "../lib/api";
 
 // Guide page — added 2026-08-30, "type a company name, check it
 // against a multibagger checklist". Merges every fundamental/technical
-// rule already coded elsewhere in this app into one scorecard for a
-// single company, fetched live (api/fetch_company.py's `?guide=`
-// branch + api/_multibagger.py) — works for any NSE company, not just
-// ones already tracked in the ledger. This is a mechanical check
-// against Harish's own pre-defined rules (same as every screener's
-// verdict elsewhere in this app), not investment advice — the wording
-// throughout deliberately stays in "criteria met" terms, not "buy"/
-// "sell".
-function Tick({ pass }: { pass: boolean | null }) {
-  if (pass === null) return <span className="text-slate-300">—</span>;
-  return pass ? <span className="text-emerald-600">✅</span> : <span className="text-red-500">❌</span>;
+// rule already coded elsewhere in this app into one view for a single
+// company, fetched live (api/fetch_company.py's `?guide=` branch +
+// api/_multibagger.py) — works for any NSE company, not just ones
+// already tracked in the ledger. Redesigned same day from an all-ticks
+// checklist into data tables/panels (Harish: "lets have columns...")
+// — the score badge (still a mechanical "criteria met" tally against
+// Harish's own pre-defined rules, not investment advice) is the only
+// piece carried over from the original layout.
+function fmtPct(v: number | null | undefined, digits = 1) {
+  return v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(digits)}%`;
+}
+function fmtNum(v: number | null | undefined, digits = 2) {
+  return v == null ? "—" : v.toFixed(digits);
 }
 
-function ChecklistSection({ title, passed, applicable, items }: { title: string; passed: number; applicable: number; items: GuideChecklistItem[] }) {
+function PeriodTable({ title, rows, note }: { title: string; rows: GuidePeriodRow[]; note?: string }) {
   return (
     <div className="border border-slate-200 rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-3">
-        <h3 className="font-semibold text-sm">{title}</h3>
-        <span className="text-xs text-slate-500 ml-auto">
-          {passed}/{applicable} met
-        </span>
-      </div>
-      <table className="w-full text-sm">
-        <tbody>
-          {items.map((it) => (
-            <tr key={it.key} className="border-t border-slate-100 first:border-t-0">
-              <td className="py-1.5 pr-2 w-6 text-center">
-                <Tick pass={it.pass} />
-              </td>
-              <td className="py-1.5 pr-3 text-slate-700">{it.label}</td>
-              <td className="py-1.5 text-right font-medium whitespace-nowrap">{it.value}</td>
+      <h3 className="font-semibold text-sm mb-3">{title}</h3>
+      {rows.length === 0 ? (
+        <p className="text-xs text-slate-400">Not enough history</p>
+      ) : (
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-xs text-slate-500 text-right">
+              <th className="text-left font-medium pb-1.5">Period</th>
+              <th className="font-medium pb-1.5">Sales Gr.</th>
+              <th className="font-medium pb-1.5">OP Gr.</th>
+              <th className="font-medium pb-1.5">OPM</th>
+              <th className="font-medium pb-1.5">EPS</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.period} className="border-t border-slate-100">
+                <td className="py-1.5 text-slate-700">{r.period}</td>
+                <td className="py-1.5 text-right">{fmtPct(r.sales_growth_pct)}</td>
+                <td className="py-1.5 text-right">{fmtPct(r.op_growth_pct)}</td>
+                <td className="py-1.5 text-right">{r.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`}</td>
+                <td className="py-1.5 text-right font-medium">{fmtNum(r.eps)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {note && <p className="text-xs text-slate-400 mt-2">{note}</p>}
+    </div>
+  );
+}
+
+function StatBox({ label, value, good }: { label: string; value: string; good?: boolean | null }) {
+  const color = good === true ? "text-emerald-700" : good === false ? "text-red-600" : "text-slate-800";
+  return (
+    <div className="border border-slate-200 rounded-lg px-3 py-2">
+      <div className="text-xs text-slate-500">{label}</div>
+      <div className={`text-base font-semibold ${color}`}>{value}</div>
     </div>
   );
 }
@@ -50,7 +71,7 @@ function verdictColor(verdict: string) {
   return "bg-slate-50 border-slate-300 text-slate-500";
 }
 
-function EntrySetupBadge({ label, setup, detail }: { label: string; setup: { active: boolean; [k: string]: any } | null | undefined; detail?: string }) {
+function EntrySetupBadge({ label, setup, detail }: { label: string; setup: GuideEntrySetup | null | undefined; detail?: string }) {
   const active = !!setup?.active;
   return (
     <div className={`border rounded-lg p-3 text-sm ${active ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-slate-50"}`}>
@@ -89,9 +110,12 @@ export default function Guide() {
   const mab = result?.entry_setups.ma_breakout;
   const vrt = result?.entry_setups.value_rsi_turnaround;
   const gfs = result?.entry_setups.grandfather_father_son;
+  const r = result?.ratios;
+  const rsi = result?.rsi;
+  const prices = result?.prices;
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-4xl">
       <h1 className="text-xl font-semibold mb-1">🧭 Guide</h1>
       <p className="text-xs text-slate-500 mb-4">
         Type any NSE company name or symbol — checks it live against every fundamental + technical rule already encoded across this app's screeners (Minervini SEPA weekly RSI, Long-Term
@@ -138,12 +162,49 @@ export default function Guide() {
           </div>
 
           {result.technicals_error && (
-            <p className="text-xs text-amber-600">⚠️ Technicals couldn't be computed ({result.technicals_error}) — fundamentals checklist below is still real, technicals shown as "—".</p>
+            <p className="text-xs text-amber-600">⚠️ Technicals couldn't be computed ({result.technicals_error}) — fundamentals below are still real, technical panels shown as "—".</p>
           )}
 
           <div className="grid md:grid-cols-2 gap-4">
-            <ChecklistSection title="📊 Fundamentals (Screener.in)" passed={result.fundamentals.passed} applicable={result.fundamentals.applicable} items={result.fundamentals.items} />
-            <ChecklistSection title="📈 Technical Strength (yfinance)" passed={result.technicals.passed} applicable={result.technicals.applicable} items={result.technicals.items} />
+            <PeriodTable title="📆 Quarterly Growth (last 3 qtrs)" rows={result.quarterly_table} />
+            <PeriodTable title="📅 Annual Growth (last 3 yrs)" rows={result.annual_table} />
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-sm mb-2">🧮 Ratios</h3>
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+              <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
+              <StatBox label="GPM" value="—" />
+              <StatBox label="OPM" value={r?.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`} />
+              <StatBox label="PEG" value={fmtNum(r?.peg, 2)} good={r?.peg != null ? r.peg < 1.5 : null} />
+              <StatBox label="ROE" value={r?.roe_pct == null ? "—" : `${r.roe_pct.toFixed(1)}%`} good={r?.roe_pct != null ? r.roe_pct > 15 : null} />
+              <StatBox label="ROCE" value={r?.roce_pct == null ? "—" : `${r.roce_pct.toFixed(1)}%`} good={r?.roce_pct != null ? r.roce_pct > 15 : null} />
+              <StatBox label="Working Cap." value={r?.working_capital_days == null ? "—" : `${r.working_capital_days.toFixed(0)}d`} />
+            </div>
+            <p className="text-xs text-slate-400 mt-1">GPM isn't available — Screener.in has no distinct Gross Profit line in its standard P&L. Working Capital reads "—" for financial companies (no working-capital cycle).</p>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <h3 className="font-semibold text-sm mb-2">📉 Technical (RSI)</h3>
+              <div className="grid grid-cols-3 gap-2">
+                <StatBox label="Daily" value={fmtNum(rsi?.daily, 1)} good={rsi?.daily != null ? rsi.daily > 66 : null} />
+                <StatBox label="Weekly" value={fmtNum(rsi?.weekly, 1)} good={rsi?.weekly != null ? rsi.weekly > 66 : null} />
+                <StatBox label="Monthly" value={fmtNum(rsi?.monthly, 1)} good={rsi?.monthly != null ? rsi.monthly > 66 : null} />
+              </div>
+            </div>
+            <div>
+              <h3 className="font-semibold text-sm mb-2">📈 Prices vs Weekly EMA</h3>
+              <div className="grid grid-cols-3 gap-2">
+                {(["ema12w", "ema21w", "ema33w"] as const).map((k) => (
+                  <div key={k} className={`border rounded-lg px-3 py-2 ${prices?.[k]?.above ? "border-emerald-300 bg-emerald-50" : prices ? "border-red-200 bg-red-50" : "border-slate-200"}`}>
+                    <div className="text-xs text-slate-500">{k.replace("ema", "").replace("w", "W EMA")}</div>
+                    <div className="text-sm font-semibold">{prices ? (prices[k].above ? "Yes" : "No") : "—"}</div>
+                    <div className="text-xs text-slate-500">{prices ? fmtNum(prices[k].value, 2) : ""}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div>
