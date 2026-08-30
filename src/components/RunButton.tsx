@@ -3,18 +3,33 @@ import { useData } from "../App";
 import { api, ApiError } from "../lib/api";
 
 // 2026-08-30, "refresh on click from any machine, not just the Mac" —
-// all 5 now run natively on Vercel (see api/momentum_screeners.py's
-// and api/viraj_screen.py's do_GET, both proven live), so their
-// "Run now" can call the endpoint directly with the browser's own
-// session cookie instead of going through the local-poller queue
-// below. viraj_screen was initially assumed to need Harish's own
-// Screener.in/Chartink login cookies (same as the local script it's
-// ported from insists on) — checked live and neither Screener.in's
-// Quarterly Results table nor Chartink's ad-hoc scan_clause endpoint
-// actually requires one; the cookie only gates saved/premium Chartink
-// screens, not this. So it joined this set with zero stored
-// credentials, no security trade-off to weigh.
-const CLOUD_SCREENERS = new Set(["myLongTermInvestingStrategy", "weekendInvesting", "quantBollinger", "Nifty500RelativeStrength", "viraj_screen"]);
+// every screener on the Momentum Screeners + Viraj Screen pages now
+// runs natively on Vercel (see api/momentum_screeners.py's and
+// api/viraj_screen.py's do_GET, all proven live), so "Run now" can
+// call the endpoint directly with the browser's own session cookie
+// instead of going through the local-poller queue below. viraj_screen
+// was initially assumed to need Harish's own Screener.in/Chartink
+// login cookies (same as the local script it's ported from insists
+// on) — checked live and neither Screener.in's Quarterly Results
+// table nor Chartink's ad-hoc scan_clause endpoint actually requires
+// one; the cookie only gates saved/premium Chartink screens, not this.
+// So it joined this set with zero stored credentials, no security
+// trade-off to weigh. nseScreener/sectorAlpha/sectorStockAlpha were
+// ported the same cloud-native way as the other 4 momentum screeners
+// but initially missed being added here — the button quietly fell
+// back to the local-poller path for those 3 even though their backend
+// never needed it (caught 2026-08-30 while confirming "is everything
+// actually reachable from any machine").
+const CLOUD_SCREENERS = new Set([
+  "myLongTermInvestingStrategy",
+  "weekendInvesting",
+  "quantBollinger",
+  "Nifty500RelativeStrength",
+  "nseScreener",
+  "sectorAlpha",
+  "sectorStockAlpha",
+  "viraj_screen",
+]);
 
 // "Run now" for a screener that can't (or doesn't yet) execute inside
 // Vercel (see api/run_requests.py) — queues a request that a local
