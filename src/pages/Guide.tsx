@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, ApiError } from "../lib/api";
-import type { GuideEntrySetup, GuidePeriodRow, GuideResult } from "../lib/api";
+import type { GuideCompoundingChecklist, GuideEntrySetup, GuideFundamentalTrend, GuidePeriodRow, GuideResult, GuideRsBenchmark, GuideTrendRow } from "../lib/api";
 
 // Guide page — added 2026-08-30, "type a company name, check it
 // against a multibagger checklist". Merges every fundamental/technical
@@ -17,6 +17,11 @@ function fmtPct(v: number | null | undefined, digits = 1) {
 }
 function fmtNum(v: number | null | undefined, digits = 2) {
   return v == null ? "—" : v.toFixed(digits);
+}
+
+function Tick({ pass }: { pass: boolean | null }) {
+  if (pass === null) return <span className="text-slate-300">—</span>;
+  return pass ? <span className="text-emerald-600">✅</span> : <span className="text-red-500">❌</span>;
 }
 
 function PeriodTable({ title, rows, note }: { title: string; rows: GuidePeriodRow[]; note?: string }) {
@@ -82,6 +87,158 @@ function EntrySetupBadge({ label, setup, detail }: { label: string; setup: Guide
       {active && detail && <p className="text-xs text-slate-600 mt-1">{detail}</p>}
       {!active && <p className="text-xs text-slate-400 mt-1">Not currently triggered</p>}
     </div>
+  );
+}
+
+function TrendTable({ title, rows, unit }: { title: string; rows: GuideTrendRow[]; unit: "%" | "pts" }) {
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-slate-500 mb-1.5">{title}</h4>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-slate-500 text-right">
+            <th className="text-left font-medium pb-1">Metric</th>
+            <th className="font-medium pb-1">1Y</th>
+            <th className="font-medium pb-1">3Y</th>
+            <th className="font-medium pb-1">5Y</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.label} className="border-t border-slate-100">
+              <td className="py-1 text-slate-700">{r.label}</td>
+              {([r.y1, r.y3, r.y5] as (number | null)[]).map((v, i) => (
+                <td key={i} className="py-1 text-right">
+                  {v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}${unit === "%" ? "%" : "pts"}`}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// FundamentalTrend mirror — collapsed by default (details/summary, per
+// ScreenerTable.tsx's MethodologyNote pattern elsewhere in this app)
+// since this is a lot of extra detail on top of the always-visible
+// panels above.
+function FundamentalTrendSection({ ft }: { ft: GuideFundamentalTrend }) {
+  const flag = ft.deterioration_flag;
+  return (
+    <details className="border border-slate-200 rounded-lg p-4">
+      <summary className="font-semibold text-sm cursor-pointer">📐 Fundamental Trend (1Y/3Y/5Y)</summary>
+      <div className="grid md:grid-cols-2 gap-4 mt-3">
+        <TrendTable title="Growth (CAGR)" rows={ft.growth} unit="%" />
+        <TrendTable title="Days / Return ratios (point change)" rows={ft.ratios} unit="pts" />
+      </div>
+      <div className={`mt-3 text-xs rounded p-2 ${!flag.scoreable ? "bg-slate-50 text-slate-500" : flag.deteriorating ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}>
+        {!flag.scoreable
+          ? "Cash Conversion Deterioration flag: Working Capital Days and/or ROCE row not found — check skipped."
+          : flag.deteriorating
+            ? `⚠️ Cash Conversion Deterioration: YES — Working Capital Days trending up while ROCE trends down (growth may be consuming cash, not generating it).${flag.ccc_confirms && flag.inventory_confirms ? " Cash Conversion Cycle and Inventory Days both confirm the operating cycle is the cause." : " CCC doesn't fully confirm — check the Balance Sheet's Other Assets schedule or a recent capital raise before treating this as purely operational."}`
+            : "✅ Cash Conversion Deterioration: No — Working Capital Days isn't trending up alongside falling ROCE."}
+      </div>
+    </details>
+  );
+}
+
+function CompoundingChecklistSection({ cc }: { cc: GuideCompoundingChecklist }) {
+  const d = cc.dilution;
+  const qc = cc.quarterly_concentration;
+  return (
+    <details className="border border-slate-200 rounded-lg p-4">
+      <summary className="font-semibold text-sm cursor-pointer">
+        🧬 Compounding Engine Checklist — {cc.passed}/{cc.scored} computed checks pass
+      </summary>
+      <p className="text-xs text-slate-500 mt-2 mb-3">
+        Numbers-only subset of MultibaggerChecklist's 12-point check (point 1 — reading BSE order filings — needs judgment, not a mechanical fetch, so it's skipped here; run the skill locally for that
+        plus the bull/bear synthesis).
+      </p>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-slate-500 text-left">
+            <th className="pb-1 w-6">#</th>
+            <th className="pb-1">Check</th>
+            <th className="pb-1 w-10 text-center">Pass</th>
+            <th className="pb-1">Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+          {cc.checks.map((c) => (
+            <tr key={c.n} className="border-t border-slate-100 align-top">
+              <td className="py-1.5 text-slate-400">{c.n}</td>
+              <td className="py-1.5 pr-2">{c.name}</td>
+              <td className="py-1.5 text-center">
+                <Tick pass={c.pass} />
+              </td>
+              <td className="py-1.5 text-xs text-slate-500">{c.detail}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-xs font-medium mt-2">{cc.pattern_verdict} (mechanical count, not a Claude-written thesis)</p>
+      {d && (
+        <div className="mt-3">
+          <h4 className="text-xs font-semibold text-slate-500 mb-1">Share-count dilution timeline</h4>
+          <p className="text-xs text-slate-600">
+            1Y: {d["1Y"].pct == null ? "—" : `${d["1Y"].pct > 0 ? "+" : ""}${d["1Y"].pct}%`} · 3Y: {d["3Y"].pct == null ? "—" : `${d["3Y"].pct > 0 ? "+" : ""}${d["3Y"].pct}%`} · 5Y:{" "}
+            {d["5Y"].pct == null ? "—" : `${d["5Y"].pct > 0 ? "+" : ""}${d["5Y"].pct}%`}
+          </p>
+        </div>
+      )}
+      {qc && qc.latest_quarter_pct_of_ttm_profit != null && (
+        <p className={`text-xs mt-2 ${qc.concentrated ? "text-amber-700" : "text-slate-500"}`}>
+          Latest quarter = {qc.latest_quarter_pct_of_ttm_profit}% of trailing-12-month net profit
+          {qc.concentrated ? " — CONCENTRATED, treat multi-quarter durability as unproven." : "."}
+        </p>
+      )}
+    </details>
+  );
+}
+
+function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
+  const windows: [string, string][] = [
+    ["1w", "Weekly"],
+    ["1m", "Monthly"],
+    ["3m", "Quarterly"],
+    ["6m", "Bi-Annually"],
+    ["12m", "Yearly"],
+  ];
+  return (
+    <details className="border border-slate-200 rounded-lg p-4">
+      <summary className="font-semibold text-sm cursor-pointer">📡 RS vs NIFTY 500 (5 timeframes)</summary>
+      {!rs ? (
+        <p className="text-xs text-slate-400 mt-2">Not enough history to compute.</p>
+      ) : (
+        <>
+          <table className="w-full text-sm mt-3">
+            <thead>
+              <tr className="text-xs text-slate-500 text-right">
+                <th className="text-left font-medium pb-1">Window</th>
+                <th className="font-medium pb-1">Stock</th>
+                <th className="font-medium pb-1">NIFTY 500</th>
+                <th className="font-medium pb-1">RS</th>
+              </tr>
+            </thead>
+            <tbody>
+              {windows.map(([k, label]) => (
+                <tr key={k} className="border-t border-slate-100">
+                  <td className="py-1 text-slate-700">{label}</td>
+                  <td className="py-1 text-right">{fmtPct(rs.returns[k])}</td>
+                  <td className="py-1 text-right">{fmtPct(rs.benchmark_returns[k])}</td>
+                  <td className={`py-1 text-right font-medium ${rs.rs[k] != null ? (rs.rs[k]! >= 0 ? "text-emerald-700" : "text-red-600") : ""}`}>{fmtPct(rs.rs[k])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-xs text-slate-500 mt-2">
+            RS Score {fmtPct(rs.rs_score, 2)} (weighted 1W 10% / 1M 25% / 3M 30% / 6M 20% / 12M 15%) {rs.rs_new_high ? "· RS Line at a new high" : ""}
+          </p>
+        </>
+      )}
+    </details>
   );
 }
 
@@ -226,6 +383,12 @@ export default function Guide() {
                 detail={gfs?.active ? `Monthly/Weekly RSI ${gfs.monthly_rsi}/${gfs.weekly_rsi}, daily pullback held — stop-loss ₹${gfs.stop_loss}.` : undefined}
               />
             </div>
+          </div>
+
+          <div className="space-y-3">
+            <FundamentalTrendSection ft={result.fundamental_trend} />
+            <CompoundingChecklistSection cc={result.compounding_checklist} />
+            <RsBenchmarkSection rs={result.rs_benchmark} />
           </div>
         </div>
       )}

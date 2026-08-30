@@ -253,6 +253,55 @@ def fetch_pe_history_stats(company_id, headers, last_fy_year, q_eps, q_dates):
     }
 
 
+PE_TRAILING_FETCH_DAYS = 1900  # ~5.2Y — comfortably covers a true 5Y average window
+
+
+def fetch_pe_trailing_averages(company_id, headers, q_eps, q_dates):
+    """Current/1Y-avg/3Y-avg/5Y-avg PE — added 2026-08-30 for the Guide
+    page's MultibaggerChecklist mirror (point 8: is the market already
+    paying a richer multiple than its own trailing averages, i.e. is
+    there re-rating room left). Deliberately a SEPARATE function from
+    fetch_pe_history_stats() above rather than widening that one's
+    PE_HISTORY_FETCH_DAYS/PE_HISTORY_STAT_DAYS — those back the live
+    CAGR Estimator's PE History chips, and changing their fetch window
+    would change that feature's own numbers as a side effect of adding
+    this one. Same reliable methodology as that function (price ÷
+    trailing-4-quarter EPS sum — NOT Screener's own internal "Price to
+    Earning" chart metric, which that function's docstring already
+    found to be a different, less reliable calculation), just its own
+    5Y fetch + true calendar-day-window averaging instead of point
+    samples. Returns None (not a dict of Nones) if there's not enough
+    clean data for even a "current" PE point."""
+    try:
+        price_series = fetch_metric_series(company_id, headers, "Price", PE_TRAILING_FETCH_DAYS)
+    except Exception:
+        price_series = []
+    if not price_series:
+        return None
+
+    series = []
+    for d, price in price_series:
+        dt = _parse_chart_date(d)
+        if dt is None or not price or price <= 0:
+            continue
+        ttm = _ttm_eps_at(dt, q_dates, q_eps)
+        if ttm is None or ttm <= 0:
+            continue
+        series.append((dt, price / ttm))
+    if not series:
+        return None
+    series.sort()
+    latest_dt, current = series[-1]
+
+    def avg_window(days_back):
+        cutoff = latest_dt - timedelta(days=days_back)
+        vals = [v for dt, v in series if dt >= cutoff]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    return {"current": round(current, 1), "avg_1y": avg_window(365),
+            "avg_3y": avg_window(1095), "avg_5y": avg_window(1825)}
+
+
 def _parse_chart_date(s):
     try:
         return datetime.strptime(s, "%Y-%m-%d")
@@ -339,7 +388,7 @@ def fetch_page(base_url, headers):
 
 def parse_top_ratios(soup):
     out = {"current_price": None, "pe_ratio": None, "market_cap_cr": None, "week52_high": None,
-           "roce_pct": None, "roe_pct": None}
+           "roce_pct": None, "roe_pct": None, "face_value": None}
     top_ratios = soup.find("ul", id="top-ratios")
     if not top_ratios:
         return out
@@ -366,12 +415,44 @@ def parse_top_ratios(soup):
             out["roce_pct"] = nums[0]
         elif label.strip().upper().startswith("ROE") and nums:
             out["roe_pct"] = nums[0]
+        # Face Value — added 2026-08-30 for the Guide page's dilution
+        # timeline (MultibaggerChecklist mirror): share count = Equity
+        # Capital / Face Value.
+        elif "Face Value" in label and nums:
+            out["face_value"] = nums[0]
     return out
 
 
 def parse_pl_section(soup):
     section = next((s for s in soup.find_all("section")
                      if s.find("h2") and "Profit" in s.find("h2").get_text(strip=True)), None)
+    if not section:
+        return None, None
+    table = section.find("table")
+    if not table:
+        return None, None
+    years = [th.get_text(strip=True) for th in table.find("thead").find_all("th")][1:]
+    rows = {}
+    for tr in table.find("tbody").find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) < 2:
+            continue
+        label = cells[0].get_text(strip=True).rstrip("+").strip()
+        vals = [parse_number(td.get_text(strip=True)) for td in cells[1:]]
+        rows[label] = vals
+    return years, rows
+
+
+def parse_balance_sheet_section(soup):
+    """Screener's "Balance Sheet" section (Equity Capital/Reserves/
+    Borrowings/...) — added 2026-08-30 for the Guide page's
+    FundamentalTrend/MultibaggerChecklist mirrors: Borrowings growth,
+    computed ROE (Net Profit / (Equity Capital + Reserves) — Screener
+    doesn't reliably publish a multi-year ROE row for non-financials),
+    and the share-count dilution timeline (Equity Capital ÷ Face
+    Value). Same shape as parse_pl_section()."""
+    section = next((s for s in soup.find_all("section")
+                     if s.find("h2") and s.find("h2").get_text(strip=True) == "Balance Sheet"), None)
     if not section:
         return None, None
     table = section.find("table")
@@ -768,28 +849,73 @@ def fetch_one(ticker, session_id=None):
     except Exception:
         pe_history = None
 
-    # Cash conversion (CFO/OP, latest available year) — best-effort
-    # add-on, same degrade-gracefully treatment as EMAs/PE history
-    # above. See parse_cash_flow_section()'s docstring.
+    pe_trailing_averages = None
+    try:
+        if full_q_eps and any(v is not None for v in full_q_eps):
+            pe_trailing_averages = fetch_pe_trailing_averages(company_id, headers, full_q_eps, full_q_dates)
+    except Exception:
+        pe_trailing_averages = None
+
+    # Cash Flow / Ratios / Balance Sheet — best-effort, same
+    # degrade-gracefully treatment as EMAs/PE history above. Parsed
+    # once each into FULL multi-year rows (not just the latest value)
+    # so the Guide page's FundamentalTrend/MultibaggerChecklist mirrors
+    # (added 2026-08-30) can do their own 1Y/3Y/5Y CAGR/point-change
+    # math without a second fetch — "latest" convenience fields below
+    # are just `[-1]` of these same rows, kept for the existing Ratios
+    # panel that only ever wanted the current value.
+    cfo = None
     cash_conversion_pct = None
     try:
-        _, cf_rows = parse_cash_flow_section(soup)
-        cfo_op_row = find_row(cf_rows, "cfo/op") if cf_rows else None
-        if cfo_op_row:
-            cash_conversion_pct = next((v for v in reversed(cfo_op_row) if v is not None), None)
+        cf_years, cf_rows = parse_cash_flow_section(soup)
+        if cf_rows:
+            cfo = find_row(cf_rows, "cash from operating")
+            cfo_op_row = find_row(cf_rows, "cfo/op")
+            if cfo_op_row:
+                cash_conversion_pct = next((v for v in reversed(cfo_op_row) if v is not None), None)
     except Exception:
-        cash_conversion_pct = None
+        cfo, cash_conversion_pct = None, None
 
-    # Working Capital Days — best-effort, None for financial companies
-    # (no working-capital cycle) per parse_ratios_section()'s docstring.
+    debtor_days = inventory_days = days_payable = cash_conversion_cycle = None
+    working_capital_days_annual = None
+    roce_series = None
     working_capital_days = None
     try:
-        _, ratio_rows = parse_ratios_section(soup)
-        wc_row = find_row(ratio_rows, "working capital days") if ratio_rows else None
-        if wc_row:
-            working_capital_days = next((v for v in reversed(wc_row) if v is not None), None)
+        ratio_years, ratio_rows = parse_ratios_section(soup)
+        if ratio_rows:
+            debtor_days = find_row(ratio_rows, "debtor days")
+            inventory_days = find_row(ratio_rows, "inventory days")
+            days_payable = find_row(ratio_rows, "days payable")
+            cash_conversion_cycle = find_row(ratio_rows, "cash conversion cycle")
+            working_capital_days_annual = find_row(ratio_rows, "working capital days")
+            roce_series = find_row(ratio_rows, "roce")
+            if working_capital_days_annual:
+                working_capital_days = next((v for v in reversed(working_capital_days_annual) if v is not None), None)
     except Exception:
-        working_capital_days = None
+        pass
+
+    bs_years_out = None
+    borrowings = equity_capital = reserves = None
+    try:
+        bs_years_out, bs_rows = parse_balance_sheet_section(soup)
+        if bs_rows:
+            borrowings = find_row(bs_rows, "borrowings")
+            equity_capital = find_row(bs_rows, "equity capital")
+            reserves = find_row(bs_rows, "reserves")
+    except Exception:
+        pass
+
+    # ROE — computed (Net Profit / (Equity Capital + Reserves)), not a
+    # row Screener reliably publishes for non-financials. Aligned to
+    # Balance Sheet years by trailing position (P&L/Balance Sheet year
+    # counts can differ slightly — trim to the shorter of the two).
+    roe_series = None
+    if equity_capital and reserves and net_profit and len(equity_capital) == len(reserves):
+        n = min(len(net_profit), len(equity_capital))
+        roe_series = []
+        for i in range(-n, 0):
+            npv, e, r = net_profit[i], equity_capital[i], reserves[i]
+            roe_series.append(round(npv / (e + r) * 100, 1) if (npv is not None and e is not None and r is not None and (e + r) != 0) else None)
 
     return {
         "ticker": canonical_ticker,
@@ -802,8 +928,28 @@ def fetch_one(ticker, session_id=None):
         "week52_high": top["week52_high"],
         "roce_pct": top["roce_pct"],
         "roe_pct": top["roe_pct"],
+        "face_value": top["face_value"],
         "cash_conversion_pct": cash_conversion_pct,
         "working_capital_days": working_capital_days,
+        # Full multi-year annual rows (added 2026-08-30 for the Guide
+        # page's FundamentalTrend/MultibaggerChecklist mirrors) — same
+        # trailing-position alignment as `years`/`revenue`/etc. above;
+        # any of these can legitimately be None/shorter for a company
+        # whose Screener page doesn't publish that row at all (e.g. a
+        # financial company has no Cash Conversion Cycle).
+        "cfo": cfo,
+        "debtor_days": debtor_days,
+        "inventory_days": inventory_days,
+        "days_payable": days_payable,
+        "cash_conversion_cycle": cash_conversion_cycle,
+        "working_capital_days_annual": working_capital_days_annual,
+        "roce_series": roce_series,
+        "roe_series": roe_series,
+        "pe_trailing_averages": pe_trailing_averages,
+        "balance_sheet_years": bs_years_out,
+        "borrowings": borrowings,
+        "equity_capital": equity_capital,
+        "reserves": reserves,
         "ema20d": emas["ema20d"],
         "ema50d": emas["ema50d"],
         "ema33w": emas["ema33w"],

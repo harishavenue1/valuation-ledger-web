@@ -57,6 +57,92 @@ GFS_LOOKBACK_DAYS = 10
 VCP_LOOKBACK_1 = 3
 VCP_LOOKBACK_2 = 1
 
+# RSBenchmarkCheck mirror — relative strength vs NIFTY 500 across 5
+# timeframes. Deliberately its OWN weighting/window set, not shared
+# with momentum_screeners.py's Nifty500RelativeStrength (which uses a
+# DIFFERENT 10/40/30/20 weighting across only 4 windows, no 12M) — same
+# "don't let one screener's formula silently drift another's" reasoning
+# as every other duplicated formula in this file.
+RSB_WINDOWS = [("1w", 7), ("1m", 30), ("3m", 90), ("6m", 180), ("12m", 365)]
+RSB_WEIGHTS = {"1w": 0.10, "1m": 0.25, "3m": 0.30, "6m": 0.20, "12m": 0.15}
+RSB_BENCHMARK_TICKER = "^CRSLDX"  # Yahoo Finance's NIFTY 500 index symbol
+RSB_MIN_HISTORY_DAYS = 35
+RSB_FETCH_DAYS_BUFFER = 400
+
+
+def _rsb_nearest_on_or_before(series, target_date):
+    eligible = series[series.index.date <= target_date]
+    return None if eligible.empty else float(eligible.iloc[-1])
+
+
+def _rsb_pct(a, b):
+    if a is None or b is None or b == 0:
+        return None
+    return round((a / b - 1) * 100, 2)
+
+
+def _rsb_returns(close_series, last_date):
+    last_close = float(close_series.iloc[-1])
+    return {key: _rsb_pct(last_close, _rsb_nearest_on_or_before(close_series, last_date - timedelta(days=days)))
+            for key, days in RSB_WINDOWS}
+
+
+def fetch_rs_benchmark(symbol, close_d=None):
+    """Relative strength vs NIFTY 500 across Weekly/Monthly/Quarterly/
+    Bi-Annually/Yearly windows — mirrors the RSBenchmarkCheck skill
+    (~/.claude/skills/RSBenchmarkCheck), single-symbol. RS% = the
+    stock's own % return minus the benchmark's, over the same window —
+    a spread in percentage points, not a ratio. Returns (dict, None) on
+    success or (None, error) — best-effort, a failure here shouldn't
+    fail the whole Guide technicals fetch. `close_d`, if the caller
+    already has it (fetch_technicals does), is reused instead of a
+    second download of the stock's own price — only the benchmark
+    needs its own fetch."""
+    try:
+        if close_d is None:
+            start = (date.today() - timedelta(days=RSB_FETCH_DAYS_BUFFER)).isoformat()
+            df = yf.download(f"{symbol}.NS", start=start, interval="1d", auto_adjust=True, progress=False)
+            if df is None or df.empty:
+                return None, f"no yfinance price history for {symbol}.NS"
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            close_d = df["Close"].dropna()
+        start = (date.today() - timedelta(days=RSB_FETCH_DAYS_BUFFER)).isoformat()
+        bench_df = yf.download(RSB_BENCHMARK_TICKER, start=start, interval="1d", auto_adjust=True, progress=False)
+    except Exception as e:
+        return None, f"yfinance fetch failed: {e}"
+    if bench_df is None or bench_df.empty:
+        return None, "no benchmark data from yfinance"
+    if isinstance(bench_df.columns, pd.MultiIndex):
+        bench_df.columns = bench_df.columns.get_level_values(0)
+    bench_close = bench_df["Close"].dropna()
+
+    last_date = close_d.index[-1].date()
+    span_days = (close_d.index[-1].date() - close_d.index[0].date()).days
+    if span_days < RSB_MIN_HISTORY_DAYS:
+        return None, f"only {span_days}d of price history"
+
+    stock_r = _rsb_returns(close_d, last_date)
+    bench_r = _rsb_returns(bench_close, last_date)
+    rs = {k: (round(stock_r[k] - bench_r[k], 2) if stock_r[k] is not None and bench_r[k] is not None else None)
+          for k, _ in RSB_WINDOWS}
+    available = {k: v for k, v in rs.items() if v is not None}
+    rs_score = None
+    if available:
+        wsum = sum(RSB_WEIGHTS[k] for k in available)
+        rs_score = round(sum(v * RSB_WEIGHTS[k] for k, v in available.items()) / wsum, 2)
+
+    common_idx = close_d.index.intersection(bench_close.index)
+    rs_new_high = False
+    if len(common_idx) > 1:
+        ratio = close_d.loc[common_idx] / bench_close.loc[common_idx]
+        rs_new_high = bool(ratio.iloc[-1] >= ratio.max())
+
+    return {
+        "benchmark": "NIFTY 500", "returns": stock_r, "benchmark_returns": bench_r,
+        "rs": rs, "rs_score": rs_score, "rs_new_high": rs_new_high,
+    }, None
+
 
 def _rsi_series(close, period=14):
     delta = close.diff()
@@ -213,6 +299,9 @@ def fetch_technicals(symbol):
                     })
     result["grandfather_father_son"] = gfs
 
+    rs_benchmark, _rsb_err = fetch_rs_benchmark(symbol, close_d)
+    result["rs_benchmark"] = rs_benchmark  # None on failure — best-effort, doesn't fail the whole technicals fetch
+
     return result, None
 
 
@@ -358,6 +447,300 @@ def build_checklist(fund, tech):
     }
 
 
+# ── FundamentalTrend mirror (full port, added 2026-08-30) ───────────
+# Same math as ~/.claude/skills/FundamentalTrend/scripts/
+# fundamental_trend.py, reusing fetch_one()'s already-fetched annual
+# P&L/Balance Sheet/Cash Flow/Ratios rows instead of a second fetch.
+
+def _ft_cagr(vals, years_back):
+    if vals is None or len(vals) <= years_back:
+        return None, "insufficient history"
+    latest, base = vals[-1], vals[-1 - years_back]
+    if latest is None or base is None:
+        return None, "no data"
+    if base <= 0 and latest <= 0:
+        return None, "n/a"
+    if base <= 0 < latest:
+        return None, "turned positive"
+    if base > 0 and latest <= 0:
+        return None, "turned negative"
+    return round(((latest / base) ** (1 / years_back) - 1) * 100, 1), None
+
+
+def _ft_point_change(vals, years_back):
+    if vals is None or len(vals) <= years_back:
+        return None, "insufficient history"
+    latest, base = vals[-1], vals[-1 - years_back]
+    if latest is None or base is None:
+        return None, "no data"
+    return round(latest - base, 1), None
+
+
+def _ft_trend(vals, n):
+    """Directional check over the trailing n points, allowing one wobble
+    against the overall direction — used only for the deterioration
+    flag, independent of the 1Y/3Y/5Y table."""
+    pts = [v for v in (vals or []) if v is not None][-n:]
+    if len(pts) < 3:
+        return "insufficient data"
+    steps = [pts[i] - pts[i - 1] for i in range(1, len(pts))]
+    up, down = sum(1 for s in steps if s > 0), sum(1 for s in steps if s < 0)
+    avg = sum(pts) / len(pts)
+    net_pct = ((pts[-1] - pts[0]) / avg * 100) if avg else 0
+    if abs(net_pct) < 5:
+        return "flat"
+    if pts[-1] > pts[0] and up >= down + 1:
+        return "up"
+    if pts[-1] < pts[0] and down >= up + 1:
+        return "down"
+    return "mixed"
+
+
+def build_fundamental_trend(fund):
+    growth_metrics = [
+        ("Sales", fund.get("revenue")), ("Operating Profit", fund.get("operating_profit")),
+        ("EPS", fund.get("eps")), ("Borrowings", fund.get("borrowings")),
+        ("Operating Cash Flow", fund.get("cfo")),
+    ]
+    growth_rows = []
+    for label, vals in growth_metrics:
+        row = {"label": label}
+        for yrs in (1, 3, 5):
+            g, note = _ft_cagr(vals, yrs)
+            row[f"y{yrs}"], row[f"y{yrs}_note"] = g, note
+        growth_rows.append(row)
+
+    ratio_metrics = [
+        ("Debtor Days", fund.get("debtor_days")), ("Inventory Days", fund.get("inventory_days")),
+        ("Days Payable", fund.get("days_payable")), ("Cash Conversion Cycle", fund.get("cash_conversion_cycle")),
+        ("Working Capital Days", fund.get("working_capital_days_annual")),
+        ("ROCE %", fund.get("roce_series")), ("ROE % (computed)", fund.get("roe_series")),
+    ]
+    ratio_rows = []
+    for label, vals in ratio_metrics:
+        row = {"label": label}
+        for yrs in (1, 3, 5):
+            d, note = _ft_point_change(vals, yrs)
+            row[f"y{yrs}"], row[f"y{yrs}_note"] = d, note
+        ratio_rows.append(row)
+
+    # Cash Conversion Deterioration flag — Working Capital Days is the
+    # PRIMARY trigger (not Cash Conversion Cycle, which is blind to
+    # anything outside Inventory/Debtor/Payable Days); CCC/Inventory
+    # Days are diagnostic support, not required AND-conditions.
+    wc, roce = fund.get("working_capital_days_annual"), fund.get("roce_series")
+    ccc, inv = fund.get("cash_conversion_cycle"), fund.get("inventory_days")
+    have_core = wc is not None and roce is not None
+    deteriorating = have_core and _ft_trend(wc, 5) == "up" and _ft_trend(roce, 5) == "down"
+    return {
+        "growth": growth_rows, "ratios": ratio_rows,
+        "deterioration_flag": {
+            "scoreable": have_core, "deteriorating": deteriorating if have_core else None,
+            "ccc_confirms": bool(ccc is not None and _ft_trend(ccc, 5) == "up"),
+            "inventory_confirms": bool(inv is not None and _ft_trend(inv, 5) == "up"),
+        },
+    }
+
+
+# ── MultibaggerChecklist mirror — numbers-only subset (added
+# 2026-08-30) — 11 of the skill's 12 Compounding Engine Checklist
+# points; skips point 1 (order-book judgment: reading actual BSE
+# filing text to tell a binding order from a soft framework needs
+# human/AI judgment, not a deterministic backend check) and the bull/
+# bear prose synthesis the real skill adds on top — Harish's own
+# explicit scoping choice for this endpoint. Same math/thresholds as
+# ~/.claude/skills/MultibaggerChecklist/scripts/multibagger_checklist.py.
+
+def _mc_dilution_timeline(fund):
+    face_value, equity_capital = fund.get("face_value"), fund.get("equity_capital")
+    years = fund.get("balance_sheet_years") or fund.get("years")
+    if not equity_capital or not face_value:
+        return None
+    shares = [round(v / face_value, 4) if v is not None else None for v in equity_capital]
+    out = {"years": years, "shares_cr": shares}
+    for label, back in [("1Y", 1), ("3Y", 3), ("5Y", 5)]:
+        v, note = _ft_point_change(shares, back)
+        pct = round(v / shares[-1 - back] * 100, 1) if (v is not None and shares[-1 - back]) else None
+        out[label] = {"new_shares_cr": v, "pct": pct, "note": note}
+    return out
+
+
+def _mc_quarterly_concentration(fund):
+    net_profit = fund.get("q_net_profit")
+    if not net_profit or len(net_profit) < 4:
+        return None
+    last4 = [v for v in net_profit[-4:] if v is not None]
+    latest = net_profit[-1]
+    concentration = round(latest / sum(last4) * 100, 1) if (last4 and latest is not None and sum(last4) != 0) else None
+    return {
+        "quarters": fund.get("quarters"), "sales": fund.get("q_revenue"),
+        "net_profit": net_profit, "eps": fund.get("q_eps"),
+        "latest_quarter_pct_of_ttm_profit": concentration,
+        "concentrated": (abs(concentration) > 55) if concentration is not None else None,
+    }
+
+
+def _mc_rate_of_change(series, n_prior=3):
+    """Is the latest year-over-year point-change bigger than the average
+    of the PRIOR point-changes (an acceleration, not just an
+    improvement)? None if there isn't enough history for a 'prior
+    average pace' comparison."""
+    pts = [v for v in (series or []) if v is not None]
+    if len(pts) < n_prior + 2:
+        return None
+    changes = [pts[i] - pts[i - 1] for i in range(1, len(pts))]
+    latest = changes[-1]
+    prior = changes[-(n_prior + 1):-1]
+    prior_avg = sum(prior) / len(prior)
+    return {"latest_change": round(latest, 1), "prior_avg_change": round(prior_avg, 1),
+            "accelerating": latest > 0 and latest > prior_avg}
+
+
+def _mc_ascending_check(current, v1, v3, v5):
+    """Pass if current is below EACH of v1/v3/v5 independently (not a
+    chained current<v1<v3<v5 — a single volatile benchmark year can
+    break that stricter reading even when current is genuinely the
+    best of the four). None (not scoreable) if any value is missing."""
+    vals = [current, v1, v3, v5]
+    return None if any(v is None for v in vals) else (current < v1 and current < v3 and current < v5)
+
+
+def _mc_signed_change(vals, years_back):
+    """Linear normalized rate (latest-base)/abs(base)/years — stays
+    defined for a negative base (WC Days/CCC are legitimately negative
+    for a capital-efficient, supplier-financed business), unlike a
+    geometric CAGR which needs a positive base."""
+    if vals is None or len(vals) <= years_back:
+        return None
+    latest, base = vals[-1], vals[-1 - years_back]
+    if latest is None or base is None or base == 0:
+        return None
+    return ((latest - base) / abs(base) / years_back) * 100.0
+
+
+def _mc_wc_ccc_check(n, name, metric_vals, sales_vals, metric_label):
+    windows = [("1Y", 1), ("3Y", 3), ("5Y", 5)]
+    detail = {}
+    for w, back in windows:
+        m, s = _mc_signed_change(metric_vals, back), _mc_signed_change(sales_vals, back)
+        ok = None if (m is None or s is None) else m <= s
+        detail[w] = {"pass": ok, "metric_pct": round(m, 1) if m is not None else None,
+                     "sales_pct": round(s, 1) if s is not None else None}
+    subchecks = [d["pass"] for d in detail.values()]
+    overall = None if any(v is None for v in subchecks) else all(subchecks)
+    parts = []
+    for w, _ in windows:
+        d = detail[w]
+        parts.append(f"{w} n/a" if d["pass"] is None else
+                      f"{w} {metric_label} {d['metric_pct']:+.1f}% vs Sales {d['sales_pct']:+.1f}% [{'OK' if d['pass'] else 'X'}]")
+    return {"n": n, "name": name, "pass": overall, "windows": detail, "detail": " | ".join(parts)}
+
+
+def _mc_cmp3y(by_label, a, b, allow_equal=False):
+    va, vb = by_label[a].get("y3"), by_label[b].get("y3")
+    if va is None or vb is None:
+        return None
+    # allow_equal: 0% dilution makes EPS growth mathematically EQUAL to
+    # Net Profit growth, not greater — an epsilon treats "keeping pace"
+    # as a pass, same as "outpacing".
+    return va >= vb - 0.05 if allow_equal else va > vb
+
+
+def build_compounding_checklist(fund):
+    sales, op = fund.get("revenue"), fund.get("operating_profit")
+    netprofit, eps, borrow = fund.get("net_profit"), fund.get("eps"), fund.get("borrowings")
+
+    growth_rows = []
+    for label, vals in [("Sales Growth", sales), ("Operating Profit Growth", op),
+                         ("Net Profit Growth", netprofit), ("EPS Growth", eps),
+                         ("Borrowing Growth", borrow)]:
+        row = {"label": label}
+        for yrs in (1, 3, 5):
+            row[f"y{yrs}"], _ = _ft_cagr(vals, yrs)
+        growth_rows.append(row)
+    by_label = {r["label"]: r for r in growth_rows}
+
+    dilution = _mc_dilution_timeline(fund)
+    dilution_3y = dilution["3Y"]["pct"] if dilution else None
+    sales_3y = by_label["Sales Growth"].get("y3")
+
+    def pct_str(v):
+        return "—" if v is None else f"{v:+.1f}%"
+
+    checks = [
+        {"n": 2, "name": "Rising volume/revenue",
+         "pass": None if sales_3y is None else sales_3y > 0,
+         "detail": f"Sales 3Y CAGR {pct_str(sales_3y)}"},
+        {"n": 3, "name": "Operating leverage (Op. Profit growing faster than Sales)",
+         "pass": _mc_cmp3y(by_label, "Operating Profit Growth", "Sales Growth"),
+         "detail": f"Op.Profit {pct_str(by_label['Operating Profit Growth'].get('y3'))} vs Sales {pct_str(sales_3y)} (3Y)"},
+        {"n": 4, "name": "Net Profit growing faster than Sales",
+         "pass": _mc_cmp3y(by_label, "Net Profit Growth", "Sales Growth"),
+         "detail": f"Net Profit {pct_str(by_label['Net Profit Growth'].get('y3'))} vs Sales {pct_str(sales_3y)} (3Y)"},
+        {"n": 5, "name": "Minimal dilution",
+         "pass": None if dilution_3y is None else abs(dilution_3y) < 10,
+         "detail": f"Share count 3Y change: {pct_str(dilution_3y)}"},
+        {"n": 6, "name": "Debt growing slower than Sales (controlled, not necessarily falling)",
+         "pass": _mc_cmp3y(by_label, "Sales Growth", "Borrowing Growth"),
+         "detail": f"Sales {pct_str(sales_3y)} vs Borrowings {pct_str(by_label['Borrowing Growth'].get('y3'))} (3Y)"},
+        {"n": 7, "name": "EPS keeping pace with or outpacing Net Profit (no-dilution amplifier)",
+         "pass": _mc_cmp3y(by_label, "EPS Growth", "Net Profit Growth", allow_equal=True),
+         "detail": f"EPS {pct_str(by_label['EPS Growth'].get('y3'))} vs Net Profit {pct_str(by_label['Net Profit Growth'].get('y3'))} (3Y)"},
+    ]
+
+    def accel_detail(accel):
+        return "insufficient history for a prior-pace comparison" if not accel else \
+            f"latest change {accel['latest_change']:+.1f}pts vs prior avg {accel['prior_avg_change']:+.1f}pts/yr"
+
+    roce_accel = _mc_rate_of_change(fund.get("roce_series"))
+    roe_accel = _mc_rate_of_change(fund.get("roe_series"))
+    checks.append({"n": 9, "name": "ROCE accelerating (not just improving)",
+                    "pass": roce_accel["accelerating"] if roce_accel else None,
+                    "detail": accel_detail(roce_accel), "raw": roce_accel})
+    checks.append({"n": 10, "name": "ROE accelerating (not just improving)",
+                    "pass": roe_accel["accelerating"] if roe_accel else None,
+                    "detail": accel_detail(roe_accel), "raw": roe_accel})
+
+    pe_trail = fund.get("pe_trailing_averages")
+    pe_ok = _mc_ascending_check(pe_trail.get("current"), pe_trail.get("avg_1y"), pe_trail.get("avg_3y"), pe_trail.get("avg_5y")) if pe_trail else None
+    pe_detail = ("insufficient PE chart history" if not pe_trail else
+                 f"PE now {pe_trail['current']:g} | 1Y avg {pe_trail['avg_1y']:g} | 3Y avg {pe_trail['avg_3y']:g} | 5Y avg {pe_trail['avg_5y']:g}")
+    checks.append({"n": 8, "name": "Current PE below its own 1Y/3Y/5Y trailing averages (re-rating room, not already spent)",
+                    "pass": pe_ok, "detail": pe_detail, "raw": pe_trail})
+
+    checks.append(_mc_wc_ccc_check(11, "Working Capital Days change <= Sales change (1Y and 3Y and 5Y)",
+                                    fund.get("working_capital_days_annual"), sales, "WC"))
+    checks.append(_mc_wc_ccc_check(12, "Cash Conversion Cycle change <= Sales change (1Y and 3Y and 5Y)",
+                                    fund.get("cash_conversion_cycle"), sales, "CCC"))
+    checks.sort(key=lambda c: c["n"])
+
+    n_pass = sum(1 for c in checks if c["pass"] is True)
+    n_scored = sum(1 for c in checks if c["pass"] is not None)
+
+    # Mechanical "Pattern match vs ACE" verdict — a deterministic count
+    # of matched/diverged/unscoreable checks, NOT the Claude-written
+    # bull/bear synthesis the real skill layers on top (that needs
+    # judgment — e.g. is a dilution divergence a red flag or a
+    # deleveraging raise? — and stays out of this endpoint per Harish's
+    # own scoping choice, 2026-08-30).
+    matched = [c["name"] for c in checks if c["pass"] is True]
+    diverged = [c["name"] for c in checks if c["pass"] is False]
+    if n_scored == 0:
+        pattern_verdict = "Not yet determinable — too little reporting history"
+    elif len(matched) == n_scored and not diverged:
+        pattern_verdict = "REPLICATES the ACE pattern"
+    elif len(matched) / n_scored >= 0.5:
+        pattern_verdict = "PARTIALLY replicates the ACE pattern"
+    else:
+        pattern_verdict = "DOES NOT replicate the ACE pattern"
+
+    return {
+        "dilution": dilution, "quarterly_concentration": _mc_quarterly_concentration(fund),
+        "checks": checks, "passed": n_pass, "scored": n_scored,
+        "pattern_verdict": pattern_verdict, "matched": matched, "diverged": diverged,
+    }
+
+
 # ── Guide page view (added 2026-08-30, "page can be improved, lets
 # have columns...") — wraps build_checklist() (still the source of the
 # score badge) with the data Harish actually asked to see: last-3-
@@ -461,4 +844,7 @@ def build_guide_view(fund, tech):
         "ratios": ratios,
         "rsi": rsi,
         "prices": prices,
+        "fundamental_trend": build_fundamental_trend(fund),
+        "compounding_checklist": build_compounding_checklist(fund),
+        "rs_benchmark": (tech or {}).get("rs_benchmark"),
     }

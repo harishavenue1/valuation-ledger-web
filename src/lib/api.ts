@@ -112,6 +112,70 @@ export interface GuideEmaPoint {
   value: number;
   above: boolean;
 }
+// FundamentalTrend mirror (added 2026-08-30) — each row's y1/y3/y5 is
+// null when that window can't be judged (insufficient history, a
+// growth CAGR off a loss/zero base, etc.) — render as "—".
+export interface GuideTrendRow {
+  label: string;
+  y1: number | null;
+  y3: number | null;
+  y5: number | null;
+}
+export interface GuideFundamentalTrend {
+  growth: GuideTrendRow[];
+  ratios: GuideTrendRow[];
+  deterioration_flag: {
+    scoreable: boolean;
+    deteriorating: boolean | null;
+    ccc_confirms: boolean;
+    inventory_confirms: boolean;
+  };
+}
+
+// MultibaggerChecklist mirror, numbers-only subset (added 2026-08-30)
+// — 11 of the skill's 12 Compounding Engine Checklist points; point 1
+// (order-book judgment) and the bull/bear synthesis are intentionally
+// not here, see Guide.tsx's own note.
+export interface GuideCompoundingCheck {
+  n: number;
+  name: string;
+  pass: boolean | null;
+  detail: string;
+}
+export interface GuideDilution {
+  years: string[];
+  shares_cr: (number | null)[];
+  "1Y": { new_shares_cr: number | null; pct: number | null; note: string | null };
+  "3Y": { new_shares_cr: number | null; pct: number | null; note: string | null };
+  "5Y": { new_shares_cr: number | null; pct: number | null; note: string | null };
+}
+export interface GuideQuarterlyConcentration {
+  quarters: string[];
+  latest_quarter_pct_of_ttm_profit: number | null;
+  concentrated: boolean | null;
+}
+export interface GuideCompoundingChecklist {
+  dilution: GuideDilution | null;
+  quarterly_concentration: GuideQuarterlyConcentration | null;
+  checks: GuideCompoundingCheck[];
+  passed: number;
+  scored: number;
+  pattern_verdict: string;
+  matched: string[];
+  diverged: string[];
+}
+
+// RSBenchmarkCheck mirror (added 2026-08-30) — RS% = stock return minus
+// NIFTY 500's return over the same window, a spread not a ratio.
+export interface GuideRsBenchmark {
+  benchmark: string;
+  returns: Record<string, number | null>;
+  benchmark_returns: Record<string, number | null>;
+  rs: Record<string, number | null>;
+  rs_score: number | null;
+  rs_new_high: boolean;
+}
+
 export interface GuideResult {
   ok: boolean;
   ticker: string;
@@ -133,6 +197,9 @@ export interface GuideResult {
   ratios: GuideRatios;
   rsi: { daily: number | null; weekly: number | null; monthly: number | null };
   prices: { ema12w: GuideEmaPoint; ema21w: GuideEmaPoint; ema33w: GuideEmaPoint } | null;
+  fundamental_trend: GuideFundamentalTrend;
+  compounding_checklist: GuideCompoundingChecklist;
+  rs_benchmark: GuideRsBenchmark | null;
 }
 
 export interface Bundle {
