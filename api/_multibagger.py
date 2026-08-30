@@ -215,6 +215,32 @@ def fetch_technicals(symbol):
     rsi_d_series_early = _rsi_series(close_d, 14).dropna()
     result["rsi_d"] = round(float(rsi_d_series_early.iloc[-1]), 1) if len(rsi_d_series_early) else None
 
+    # --- StrongStockScreener (SSS) mirrors, added 2026-08-30 ---
+    # Viraj Logic's C2: plain Close-based 200-day EMA (Chartink's own
+    # "latest close > latest ema(close,200)" clause) — deliberately
+    # separate from MA Breakout's OHLC4-based 200D EMA above (same
+    # "duplicate rather than let one screener silently drift another"
+    # reasoning as every other mirrored formula in this file).
+    viraj_above_200d_close_ema = None
+    if len(close_d) >= 200:
+        ema200_close = close_d.ewm(span=200, adjust=False).mean()
+        viraj_above_200d_close_ema = bool(close_d.iloc[-1] > ema200_close.iloc[-1])
+    result["viraj_above_200d_close_ema"] = viraj_above_200d_close_ema
+
+    # Quant Logic's Layer 4 momentum: 1Y total return ÷ stdev(daily
+    # returns) over that same year — a Sharpe-like smoothness score,
+    # self-computed here (unlike StrongStockScreener's Viraj-list variant,
+    # which borrows momoindiascreener's own sharpe_1yr field — no such
+    # field exists for an arbitrary company typed into Guide).
+    quant_momentum = None
+    if len(close_d) >= 200:
+        window = close_d[close_d.index >= close_d.index[-1] - pd.Timedelta(days=365)]
+        if len(window) >= 100:
+            total_return = float(window.iloc[-1] / window.iloc[0] - 1)
+            stdev = float(window.pct_change().dropna().std())
+            quant_momentum = round(total_return / stdev, 2) if stdev else None
+    result["quant_momentum"] = quant_momentum
+
     # --- myLongTermInvestingStrategy mirror: weekly RSI>66 + 12/21/33W EMA ribbon (Close-based) ---
     ltis = None
     rsi_w_series = _rsi_series(close_w, LTIS_RSI_PERIOD).dropna()
@@ -847,4 +873,150 @@ def build_guide_view(fund, tech):
         "fundamental_trend": build_fundamental_trend(fund),
         "compounding_checklist": build_compounding_checklist(fund),
         "rs_benchmark": (tech or {}).get("rs_benchmark"),
+        "quant_logic": build_quant_layer(fund, tech),
+        "viraj_logic": build_viraj_layer(fund, tech),
     }
+
+
+# ── StrongStockScreener (SSS) mirrors, added 2026-08-30 — "create
+# sections like QUANT, VIRAJ logic" — Quant Logic's 4-layer pipeline
+# (Universe filter -> Quality -> Valuation -> Momentum) and Viraj
+# Logic's 6-rule F1-F3/C1-C3 scoring, both applied to the single
+# company Guide is checking rather than screening a whole universe.
+# Same thresholds/formulas as ~/.claude/skills/StrongStockScreener.
+
+QUANT_MCAP_MIN, QUANT_MCAP_MAX = 500.0, 20000.0
+QUANT_ROCE_THRESHOLD = 12.0
+QUANT_PE_THRESHOLD = 40.0
+
+
+def _all_positive(vals, n):
+    """True if the last n values are all present and > 0, False if all
+    present but at least one <= 0, None if there aren't n clean values
+    to judge at all."""
+    window = (vals or [])[-n:]
+    if len(window) < n or any(v is None for v in window):
+        return None
+    return all(v > 0 for v in window)
+
+
+def build_quant_layer(fund, tech):
+    mcap = fund.get("market_cap_cr")
+    in_universe = None if mcap is None else (QUANT_MCAP_MIN <= mcap <= QUANT_MCAP_MAX)
+
+    rev_g_3q = _all_positive(fund.get("q_revenue_growth_pct"), 3)
+    earn_g_4q = _all_positive(fund.get("q_pat_growth_pct"), 4)
+
+    opm = fund.get("q_opm_pct") or []
+    margin_exp = None
+    if len(opm) >= 8:
+        latest4 = [v for v in opm[-4:] if v is not None]
+        earliest4 = [v for v in opm[:4] if v is not None]
+        if len(latest4) == 4 and len(earliest4) == 4:
+            margin_exp = (sum(latest4) / 4) > (sum(earliest4) / 4)
+
+    # ROCE (Quant's own definition, distinct from Screener's published
+    # ROCE% already used elsewhere in Guide): TTM Operating Profit ÷
+    # (Equity Capital + Reserves + Borrowings) from the latest annual
+    # Balance Sheet.
+    q_op = fund.get("q_operating_profit") or []
+    ttm_op_vals = [v for v in q_op[-4:] if v is not None]
+    ttm_op = sum(ttm_op_vals) if len(ttm_op_vals) == 4 else None
+    eq, res, borrow = fund.get("equity_capital"), fund.get("reserves"), fund.get("borrowings")
+    capital_employed = None
+    if eq and res and eq[-1] is not None and res[-1] is not None:
+        b = borrow[-1] if (borrow and borrow[-1] is not None) else 0.0
+        capital_employed = eq[-1] + res[-1] + b
+    quant_roce = round(ttm_op / capital_employed * 100, 1) if (ttm_op is not None and capital_employed not in (None, 0)) else None
+    roce_pass = None if quant_roce is None else quant_roce > QUANT_ROCE_THRESHOLD
+
+    # Valuation: trailing PE = latest price ÷ TTM EPS (sum of last 4
+    # quarters) — Quant's own definition, may differ slightly from
+    # Screener's own displayed pe_ratio (different EPS basis).
+    q_eps = fund.get("q_eps") or []
+    ttm_eps_vals = [v for v in q_eps[-4:] if v is not None]
+    ttm_eps = sum(ttm_eps_vals) if len(ttm_eps_vals) == 4 else None
+    price = fund.get("current_price")
+    trailing_pe = round(price / ttm_eps, 1) if (price is not None and ttm_eps not in (None, 0)) else None
+    pe_pass = None if trailing_pe is None else trailing_pe < QUANT_PE_THRESHOLD
+
+    momentum = (tech or {}).get("quant_momentum")
+
+    checks = [
+        {"layer": "Layer 2: Quality", "key": "RevG3Q", "name": "Revenue growth positive, last 3 qtrs YoY",
+         "pass": rev_g_3q, "detail": ", ".join(f"{v:+.1f}%" for v in (fund.get("q_revenue_growth_pct") or [])[-3:] if v is not None) or "—"},
+        {"layer": "Layer 2: Quality", "key": "EarnG4Q", "name": "Earnings growth positive, last 4 qtrs YoY",
+         "pass": earn_g_4q, "detail": ", ".join(f"{v:+.1f}%" for v in (fund.get("q_pat_growth_pct") or [])[-4:] if v is not None) or "—"},
+        {"layer": "Layer 2: Quality", "key": "MarginExp", "name": "Margin expansion (latest 4Q avg OPM > earliest 4Q avg OPM)",
+         "pass": margin_exp, "detail": (f"latest {sum(v for v in opm[-4:] if v is not None)/4:.1f}% vs earliest {sum(v for v in opm[:4] if v is not None)/4:.1f}%" if margin_exp is not None else "—")},
+        {"layer": "Layer 2: Quality", "key": "ROCE", "name": f"ROCE > {QUANT_ROCE_THRESHOLD:.0f}% (TTM Op. Profit ÷ Capital Employed)",
+         "pass": roce_pass, "detail": f"{quant_roce}%" if quant_roce is not None else "—"},
+        {"layer": "Layer 3: Valuation", "key": "PE", "name": f"Trailing PE < {QUANT_PE_THRESHOLD:.0f}x (Price ÷ TTM EPS)",
+         "pass": pe_pass, "detail": f"{trailing_pe}x" if trailing_pe is not None else "—"},
+        {"layer": "Layer 4: Momentum", "key": "Momentum", "name": "1Y return ÷ stdev(daily returns) — higher = smoother/stronger trend",
+         "pass": None, "detail": f"{momentum}" if momentum is not None else "—"},
+    ]
+    score = sum(1 for c in checks if c["pass"] is True)
+    scored = sum(1 for c in checks if c["pass"] is not None)
+    return {"in_universe": in_universe, "mcap": mcap, "checks": checks, "score": score, "scored": scored, "momentum": momentum}
+
+
+def _vj_quarterly_yoy(cur, prev):
+    if cur is None or prev is None or prev == 0:
+        return None
+    return round((cur - prev) / abs(prev) * 100, 1)
+
+
+def build_viraj_layer(fund, tech):
+    q_eps = fund.get("q_eps") or []
+    e_cur = q_eps[-1] if q_eps else None
+    e_prev = q_eps[-5] if len(q_eps) >= 5 else None
+
+    sales_g = (fund.get("q_revenue_growth_pct") or [None])[-1]
+    ebit_g = (fund.get("q_operating_profit_growth_pct") or [None])[-1]
+
+    eps_g, eps_turned = None, False
+    if e_cur is not None and e_prev is not None:
+        if e_prev < 0 and e_cur > 0:
+            eps_turned = True
+        elif e_prev > 0 and e_cur > 0:
+            eps_g = _vj_quarterly_yoy(e_cur, e_prev)
+
+    dol = round(ebit_g / sales_g, 2) if (ebit_g and sales_g) else None
+    dfl = round(eps_g / ebit_g, 2) if (isinstance(eps_g, float) and ebit_g) else None
+    f1 = None if dol is None else dol > 1.5
+    f2 = None if dfl is None else dfl < 1.2
+
+    q_op = fund.get("q_operating_profit") or []
+    op_curr = q_op[-1] if q_op else None
+    op_prev = q_op[-5] if len(q_op) >= 5 else None
+    f3 = None if (op_curr is None or op_prev is None) else op_curr > op_prev
+
+    ltis = (tech or {}).get("ltis")
+    rsi_w = ltis["rsi_w"] if ltis else None
+    c1 = ltis["rsi_w_pass"] if ltis else None
+    c2 = (tech or {}).get("viraj_above_200d_close_ema")
+    c3 = (tech or {}).get("vcp_contraction")
+
+    rsi_d = (tech or {}).get("rsi_d")
+    val = (tech or {}).get("value_rsi_turnaround")
+    rsi_m = val.get("rsi_m") if val else None
+    mcap = fund.get("market_cap_cr")
+    in_universe = None
+    if mcap is not None and rsi_d is not None and rsi_w is not None and rsi_m is not None:
+        in_universe = mcap > 500 and rsi_d > 66 and rsi_w > 66 and rsi_m > 66
+
+    checks = [
+        {"key": "F1", "name": "DOL > 1.5 (EBIT growth outpaces Sales growth)",
+         "pass": f1, "detail": f"DOL {dol} (EBIT {ebit_g:+.1f}% / Sales {sales_g:+.1f}%)" if dol is not None else "—"},
+        {"key": "F2", "name": "DFL < 1.2 (EPS growth not over-levered vs EBIT growth)",
+         "pass": f2, "detail": f"DFL {dfl}" if dfl is not None else ("EPS turned profitable — DFL n/a" if eps_turned else "—")},
+        {"key": "F3", "name": "Latest quarter Operating Profit > same quarter last year",
+         "pass": f3, "detail": f"{op_curr:g} vs {op_prev:g}" if (op_curr is not None and op_prev is not None) else "—"},
+        {"key": "C1", "name": "Weekly RSI(14) > 66", "pass": c1, "detail": f"{rsi_w}" if rsi_w is not None else "—"},
+        {"key": "C2", "name": "Price above 200-day EMA (Stage 2, Close-based)", "pass": c2, "detail": ""},
+        {"key": "C3", "name": "Daily 10D & 20D EMA converging (coiling/basing)", "pass": c3, "detail": ""},
+    ]
+    score = sum(1 for c in checks if c["pass"] is True)
+    scored = sum(1 for c in checks if c["pass"] is not None)
+    return {"in_universe": in_universe, "checks": checks, "score": score, "scored": scored, "dol": dol, "dfl": dfl}

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { api, ApiError } from "../lib/api";
-import type { GuideCompoundingChecklist, GuideEntrySetup, GuideFundamentalTrend, GuidePeriodRow, GuideResult, GuideRsBenchmark, GuideTrendRow } from "../lib/api";
+import type { GuideCompoundingChecklist, GuideEntrySetup, GuideFundamentalTrend, GuidePeriodRow, GuideQuantLogic, GuideResult, GuideRsBenchmark, GuideTrendRow, GuideVirajLogic } from "../lib/api";
 
 // Guide page — added 2026-08-30, "type a company name, check it
 // against a multibagger checklist". Merges every fundamental/technical
@@ -24,37 +24,74 @@ function Tick({ pass }: { pass: boolean | null }) {
   return pass ? <span className="text-emerald-600">✅</span> : <span className="text-red-500">❌</span>;
 }
 
+// Colored pill instead of a bare tick — reads more like a dashboard
+// "Signal" cell (Harish's reference screenshot) than a plain checkbox.
+function PassBadge({ pass }: { pass: boolean | null }) {
+  if (pass === null) return <span className="text-xs text-slate-300">—</span>;
+  return (
+    <span className={`inline-block text-xs font-semibold px-2 py-0.5 rounded-full ${pass ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>{pass ? "PASS" : "FAIL"}</span>
+  );
+}
+
+// A "Strong / Good / Mixed / Weak" chip from a score/scored pair — same
+// four-tier language as Harish's reference screenshot's Signal column
+// (⭐ Strong / ↑ Good / ~ Mixed).
+function SignalChip({ score, scored }: { score: number; scored: number }) {
+  if (scored === 0) return <span className="text-xs text-slate-400">— no data</span>;
+  const pct = score / scored;
+  const [label, cls] =
+    pct === 1 ? ["⭐ Strong", "bg-emerald-100 text-emerald-800"] : pct >= 0.6 ? ["↑ Good", "bg-emerald-50 text-emerald-700"] : pct >= 0.4 ? ["~ Mixed", "bg-amber-50 text-amber-700"] : ["↓ Weak", "bg-red-50 text-red-600"];
+  return <span className={`inline-block text-xs font-semibold px-2 py-1 rounded-full ${cls}`}>{label}</span>;
+}
+
+// Dark navy header bar, per Harish's reference screenshot — used on
+// every data table on this page instead of a plain light-grey <thead>.
+function TableHead({ cols }: { cols: { label: string; align?: "left" | "right" | "center" }[] }) {
+  return (
+    <thead>
+      <tr className="bg-slate-800 text-white text-xs">
+        {cols.map((c, i) => (
+          <th key={i} className={`font-semibold py-2 px-2.5 ${c.align === "right" ? "text-right" : c.align === "center" ? "text-center" : "text-left"} ${i === 0 ? "rounded-l" : ""} ${i === cols.length - 1 ? "rounded-r" : ""}`}>
+            {c.label}
+          </th>
+        ))}
+      </tr>
+    </thead>
+  );
+}
+
+// Growth/return % cell with a tinted background (green/red), matching
+// the reference screenshot's colored Rev YoY%/OPM chg/EPS YoY% cells
+// instead of plain colored text.
+function PctCell({ v, digits = 1, suffix = "%" }: { v: number | null | undefined; digits?: number; suffix?: string }) {
+  if (v == null) return <td className="py-1.5 px-2.5 text-right text-slate-300">—</td>;
+  const cls = v > 0 ? "bg-emerald-50 text-emerald-700" : v < 0 ? "bg-red-50 text-red-600" : "bg-slate-50 text-slate-600";
+  return <td className={`py-1.5 px-2.5 text-right font-medium ${cls}`}>{v > 0 ? "+" : ""}{v.toFixed(digits)}{suffix}</td>;
+}
+
 function PeriodTable({ title, rows, note }: { title: string; rows: GuidePeriodRow[]; note?: string }) {
   return (
-    <div className="border border-slate-200 rounded-lg p-4">
-      <h3 className="font-semibold text-sm mb-3">{title}</h3>
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      <h3 className="font-semibold text-sm px-4 pt-4 pb-3">{title}</h3>
       {rows.length === 0 ? (
-        <p className="text-xs text-slate-400">Not enough history</p>
+        <p className="text-xs text-slate-400 px-4 pb-4">Not enough history</p>
       ) : (
         <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-slate-500 text-right">
-              <th className="text-left font-medium pb-1.5">Period</th>
-              <th className="font-medium pb-1.5">Sales Gr.</th>
-              <th className="font-medium pb-1.5">OP Gr.</th>
-              <th className="font-medium pb-1.5">OPM</th>
-              <th className="font-medium pb-1.5">EPS</th>
-            </tr>
-          </thead>
+          <TableHead cols={[{ label: "Period" }, { label: "Sales Gr.", align: "right" }, { label: "OP Gr.", align: "right" }, { label: "OPM", align: "right" }, { label: "EPS", align: "right" }]} />
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.period} className="border-t border-slate-100">
-                <td className="py-1.5 text-slate-700">{r.period}</td>
-                <td className="py-1.5 text-right">{fmtPct(r.sales_growth_pct)}</td>
-                <td className="py-1.5 text-right">{fmtPct(r.op_growth_pct)}</td>
-                <td className="py-1.5 text-right">{r.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`}</td>
-                <td className="py-1.5 text-right font-medium">{fmtNum(r.eps)}</td>
+            {rows.map((r, i) => (
+              <tr key={r.period} className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+                <td className="py-1.5 px-2.5 text-slate-700">{r.period}</td>
+                <PctCell v={r.sales_growth_pct} />
+                <PctCell v={r.op_growth_pct} />
+                <td className="py-1.5 px-2.5 text-right text-slate-600">{r.opm_pct == null ? "—" : `${r.opm_pct.toFixed(1)}%`}</td>
+                <td className="py-1.5 px-2.5 text-right font-medium">{fmtNum(r.eps)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      {note && <p className="text-xs text-slate-400 mt-2">{note}</p>}
+      {note && <p className="text-xs text-slate-400 px-4 pb-3 pt-1">{note}</p>}
     </div>
   );
 }
@@ -92,26 +129,19 @@ function EntrySetupBadge({ label, setup, detail }: { label: string; setup: Guide
 
 function TrendTable({ title, rows, unit }: { title: string; rows: GuideTrendRow[]; unit: "%" | "pts" }) {
   return (
-    <div>
-      <h4 className="text-xs font-semibold text-slate-500 mb-1.5">{title}</h4>
+    <div className="rounded-lg overflow-hidden border border-slate-100">
+      <h4 className="text-xs font-semibold text-slate-500 px-2.5 pt-2 pb-1.5 bg-slate-50">{title}</h4>
       <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-slate-500 text-right">
-            <th className="text-left font-medium pb-1">Metric</th>
-            <th className="font-medium pb-1">1Y</th>
-            <th className="font-medium pb-1">3Y</th>
-            <th className="font-medium pb-1">5Y</th>
-          </tr>
-        </thead>
+        <TableHead cols={[{ label: "Metric" }, { label: "1Y", align: "right" }, { label: "3Y", align: "right" }, { label: "5Y", align: "right" }]} />
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.label} className="border-t border-slate-100">
-              <td className="py-1 text-slate-700">{r.label}</td>
-              {([r.y1, r.y3, r.y5] as (number | null)[]).map((v, i) => (
-                <td key={i} className="py-1 text-right">
-                  {v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}${unit === "%" ? "%" : "pts"}`}
-                </td>
-              ))}
+          {rows.map((r, i) => (
+            <tr key={r.label} className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+              <td className="py-1 px-2.5 text-slate-700">{r.label}</td>
+              {unit === "%"
+                ? ([r.y1, r.y3, r.y5] as (number | null)[]).map((v, j) => <PctCell key={j} v={v} />)
+                : ([r.y1, r.y3, r.y5] as (number | null)[]).map((v, j) => (
+                    <PctCell key={j} v={v} suffix="pts" />
+                  ))}
             </tr>
           ))}
         </tbody>
@@ -127,7 +157,7 @@ function TrendTable({ title, rows, unit }: { title: string; rows: GuideTrendRow[
 function FundamentalTrendSection({ ft }: { ft: GuideFundamentalTrend }) {
   const flag = ft.deterioration_flag;
   return (
-    <div className="border border-slate-200 rounded-lg p-4 h-full">
+    <div className="border border-slate-200 rounded-lg p-4 h-full bg-white shadow-sm">
       <h3 className="font-semibold text-sm mb-3">📐 Fundamental Trend (1Y/3Y/5Y)</h3>
       <div className="space-y-4">
         <TrendTable title="Growth (CAGR)" rows={ft.growth} unit="%" />
@@ -148,39 +178,34 @@ function CompoundingChecklistSection({ cc }: { cc: GuideCompoundingChecklist }) 
   const d = cc.dilution;
   const qc = cc.quarterly_concentration;
   return (
-    <details className="border border-slate-200 rounded-lg p-4">
-      <summary className="font-semibold text-sm cursor-pointer">
-        🧬 Compounding Engine Checklist — {cc.passed}/{cc.scored} computed checks pass
+    <details className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm">
+      <summary className="font-semibold text-sm cursor-pointer px-4 pt-4 pb-3 flex items-center gap-2">
+        🧬 Compounding Engine Checklist
+        <SignalChip score={cc.passed} scored={cc.scored} />
+        <span className="text-xs text-slate-400 font-normal">{cc.passed}/{cc.scored} computed checks pass</span>
       </summary>
-      <p className="text-xs text-slate-500 mt-2 mb-3">
+      <p className="text-xs text-slate-500 px-4 mb-3">
         Numbers-only subset of MultibaggerChecklist's 12-point check (point 1 — reading BSE order filings — needs judgment, not a mechanical fetch, so it's skipped here; run the skill locally for that
         plus the bull/bear synthesis).
       </p>
       <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-slate-500 text-left">
-            <th className="pb-1 w-6">#</th>
-            <th className="pb-1">Check</th>
-            <th className="pb-1 w-10 text-center">Pass</th>
-            <th className="pb-1">Detail</th>
-          </tr>
-        </thead>
+        <TableHead cols={[{ label: "#", align: "center" }, { label: "Check" }, { label: "Pass", align: "center" }, { label: "Detail" }]} />
         <tbody>
-          {cc.checks.map((c) => (
-            <tr key={c.n} className="border-t border-slate-100 align-top">
-              <td className="py-1.5 text-slate-400">{c.n}</td>
-              <td className="py-1.5 pr-2">{c.name}</td>
-              <td className="py-1.5 text-center">
-                <Tick pass={c.pass} />
+          {cc.checks.map((c, i) => (
+            <tr key={c.n} className={`align-top ${i % 2 === 1 ? "bg-slate-50/60" : ""}`}>
+              <td className="py-1.5 px-2.5 text-slate-400 text-center">{c.n}</td>
+              <td className="py-1.5 px-2.5">{c.name}</td>
+              <td className="py-1.5 px-2.5 text-center">
+                <PassBadge pass={c.pass} />
               </td>
-              <td className="py-1.5 text-xs text-slate-500">{c.detail}</td>
+              <td className="py-1.5 px-2.5 text-xs text-slate-500">{c.detail}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-xs font-medium mt-2">{cc.pattern_verdict} (mechanical count, not a Claude-written thesis)</p>
+      <p className="text-xs font-medium px-4 py-3">{cc.pattern_verdict} (mechanical count, not a Claude-written thesis)</p>
       {d && (
-        <div className="mt-3">
+        <div className="px-4 pb-2">
           <h4 className="text-xs font-semibold text-slate-500 mb-1">Share-count dilution timeline</h4>
           <p className="text-xs text-slate-600">
             1Y: {d["1Y"].pct == null ? "—" : `${d["1Y"].pct > 0 ? "+" : ""}${d["1Y"].pct}%`} · 3Y: {d["3Y"].pct == null ? "—" : `${d["3Y"].pct > 0 ? "+" : ""}${d["3Y"].pct}%`} · 5Y:{" "}
@@ -189,7 +214,7 @@ function CompoundingChecklistSection({ cc }: { cc: GuideCompoundingChecklist }) 
         </div>
       )}
       {qc && qc.latest_quarter_pct_of_ttm_profit != null && (
-        <p className={`text-xs mt-2 ${qc.concentrated ? "text-amber-700" : "text-slate-500"}`}>
+        <p className={`text-xs px-4 pb-4 ${qc.concentrated ? "text-amber-700" : "text-slate-500"}`}>
           Latest quarter = {qc.latest_quarter_pct_of_ttm_profit}% of trailing-12-month net profit
           {qc.concentrated ? " — CONCENTRATED, treat multi-quarter durability as unproven." : "."}
         </p>
@@ -207,37 +232,101 @@ function RsBenchmarkSection({ rs }: { rs: GuideRsBenchmark | null }) {
     ["12m", "Yearly"],
   ];
   return (
-    <div className="border border-slate-200 rounded-lg p-4 h-full">
+    <div className="border border-slate-200 rounded-lg p-4 h-full bg-white shadow-sm">
       <h3 className="font-semibold text-sm mb-3">📡 RS vs NIFTY 500 (5 timeframes)</h3>
       {!rs ? (
         <p className="text-xs text-slate-400 mt-2">Not enough history to compute.</p>
       ) : (
         <>
-          <table className="w-full text-sm mt-3">
-            <thead>
-              <tr className="text-xs text-slate-500 text-right">
-                <th className="text-left font-medium pb-1">Window</th>
-                <th className="font-medium pb-1">Stock</th>
-                <th className="font-medium pb-1">NIFTY 500</th>
-                <th className="font-medium pb-1">RS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {windows.map(([k, label]) => (
-                <tr key={k} className="border-t border-slate-100">
-                  <td className="py-1 text-slate-700">{label}</td>
-                  <td className="py-1 text-right">{fmtPct(rs.returns[k])}</td>
-                  <td className="py-1 text-right">{fmtPct(rs.benchmark_returns[k])}</td>
-                  <td className={`py-1 text-right font-medium ${rs.rs[k] != null ? (rs.rs[k]! >= 0 ? "text-emerald-700" : "text-red-600") : ""}`}>{fmtPct(rs.rs[k])}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="rounded-lg overflow-hidden border border-slate-100">
+            <table className="w-full text-sm">
+              <TableHead cols={[{ label: "Window" }, { label: "Stock", align: "right" }, { label: "NIFTY 500", align: "right" }, { label: "RS", align: "right" }]} />
+              <tbody>
+                {windows.map(([k, label], i) => (
+                  <tr key={k} className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+                    <td className="py-1 px-2.5 text-slate-700">{label}</td>
+                    <td className="py-1 px-2.5 text-right text-slate-600">{fmtPct(rs.returns[k])}</td>
+                    <td className="py-1 px-2.5 text-right text-slate-600">{fmtPct(rs.benchmark_returns[k])}</td>
+                    <PctCell v={rs.rs[k]} />
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           <p className="text-xs text-slate-500 mt-2">
             RS Score {fmtPct(rs.rs_score, 2)} (weighted 1W 10% / 1M 25% / 3M 30% / 6M 20% / 12M 15%) {rs.rs_new_high ? "· RS Line at a new high" : ""}
           </p>
         </>
       )}
+    </div>
+  );
+}
+
+// StrongStockScreener (SSS) mirrors — Quant Logic's 4-layer pipeline
+// and Viraj Logic's F1-F3/C1-C3 6-rule scoring, applied to the single
+// company Guide is checking rather than screening a whole universe.
+function LogicTable({ checks }: { checks: { layer?: string; key: string; name: string; pass: boolean | null; detail: string }[] }) {
+  let lastLayer: string | undefined;
+  return (
+    <table className="w-full text-sm">
+      <TableHead cols={[{ label: "", align: "center" }, { label: "Check" }, { label: "Pass", align: "center" }, { label: "Detail" }]} />
+      <tbody>
+        {checks.map((c, i) => {
+          const showLayer = c.layer && c.layer !== lastLayer;
+          lastLayer = c.layer;
+          return (
+            <Fragment key={c.key}>
+              {showLayer && (
+                <tr>
+                  <td colSpan={4} className="px-2.5 pt-2.5 pb-1 text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                    {c.layer}
+                  </td>
+                </tr>
+              )}
+              <tr className={i % 2 === 1 ? "bg-slate-50/60" : ""}>
+                <td className="py-1.5 px-2.5 text-center text-xs font-semibold text-slate-400">{c.key}</td>
+                <td className="py-1.5 px-2.5">{c.name}</td>
+                <td className="py-1.5 px-2.5 text-center">
+                  <PassBadge pass={c.pass} />
+                </td>
+                <td className="py-1.5 px-2.5 text-xs text-slate-500">{c.detail}</td>
+              </tr>
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function QuantLogicSection({ ql }: { ql: GuideQuantLogic }) {
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm h-full">
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+        <h3 className="font-semibold text-sm">🧠 QUANT Logic</h3>
+        <SignalChip score={ql.score} scored={ql.scored} />
+      </div>
+      <p className="text-xs text-slate-500 px-4 mb-3">
+        Layer 1 — Universe filter: Market Cap ₹500–20,000 Cr.{" "}
+        {ql.mcap == null ? "Mkt Cap unknown." : ql.in_universe ? <span className="text-emerald-700 font-medium">₹{ql.mcap.toLocaleString("en-IN")} Cr — within range.</span> : <span className="text-amber-700 font-medium">₹{ql.mcap.toLocaleString("en-IN")} Cr — outside range, would be dropped from this universe.</span>}
+      </p>
+      <LogicTable checks={ql.checks} />
+    </div>
+  );
+}
+
+function VirajLogicSection({ vl }: { vl: GuideVirajLogic }) {
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden bg-white shadow-sm h-full">
+      <div className="flex items-center gap-2 px-4 pt-4 pb-3">
+        <h3 className="font-semibold text-sm">🎯 VIRAJ Logic</h3>
+        <SignalChip score={vl.score} scored={vl.scored} />
+      </div>
+      <p className="text-xs text-slate-500 px-4 mb-3">
+        Universe — Chartink "RSI Uptrend" scan: Mkt Cap &gt; ₹500 Cr, Daily/Weekly/Monthly RSI(14) &gt; 66.{" "}
+        {vl.in_universe == null ? "Not enough data to judge." : vl.in_universe ? <span className="text-emerald-700 font-medium">Currently qualifies.</span> : <span className="text-slate-500">Does not currently qualify.</span>}
+      </p>
+      <LogicTable checks={vl.checks} />
     </div>
   );
 }
@@ -326,7 +415,7 @@ export default function Guide() {
             <PeriodTable title="📆 Quarterly Growth (last 3 qtrs)" rows={result.quarterly_table} />
             <PeriodTable title="📅 Annual Growth (last 3 yrs)" rows={result.annual_table} />
 
-            <div className="border border-slate-200 rounded-lg p-4">
+            <div className="border border-slate-200 rounded-lg p-4 bg-white shadow-sm">
               <h3 className="font-semibold text-sm mb-3">🧮 Ratios</h3>
               <div className="grid grid-cols-2 gap-2">
                 <StatBox label="PE" value={fmtNum(r?.pe, 1)} />
@@ -340,7 +429,7 @@ export default function Guide() {
               <p className="text-xs text-slate-400 mt-2">GPM not available on Screener.in. Working Cap. reads "—" for financial companies.</p>
             </div>
 
-            <div className="border border-slate-200 rounded-lg p-4 space-y-4">
+            <div className="border border-slate-200 rounded-lg p-4 space-y-4 bg-white shadow-sm">
               <div>
                 <h3 className="font-semibold text-sm mb-3">📉 RSI</h3>
                 <div className="grid grid-cols-3 gap-2">
@@ -383,6 +472,11 @@ export default function Guide() {
                 detail={gfs?.active ? `Monthly/Weekly RSI ${gfs.monthly_rsi}/${gfs.weekly_rsi}, daily pullback held — stop-loss ₹${gfs.stop_loss}.` : undefined}
               />
             </div>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-4 items-start">
+            <QuantLogicSection ql={result.quant_logic} />
+            <VirajLogicSection vl={result.viraj_logic} />
           </div>
 
           <div className="grid lg:grid-cols-2 gap-4 items-start">

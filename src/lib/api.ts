@@ -176,6 +176,33 @@ export interface GuideRsBenchmark {
   rs_new_high: boolean;
 }
 
+// StrongStockScreener (SSS) mirrors, added 2026-08-30 — Quant Logic's
+// 4-layer pipeline and Viraj Logic's F1-F3/C1-C3 rules, applied to the
+// single company Guide is checking.
+export interface GuideLogicCheck {
+  layer?: string;
+  key: string;
+  name: string;
+  pass: boolean | null;
+  detail: string;
+}
+export interface GuideQuantLogic {
+  in_universe: boolean | null;
+  mcap: number | null;
+  checks: GuideLogicCheck[];
+  score: number;
+  scored: number;
+  momentum: number | null;
+}
+export interface GuideVirajLogic {
+  in_universe: boolean | null;
+  checks: GuideLogicCheck[];
+  score: number;
+  scored: number;
+  dol: number | null;
+  dfl: number | null;
+}
+
 export interface GuideResult {
   ok: boolean;
   ticker: string;
@@ -200,6 +227,8 @@ export interface GuideResult {
   fundamental_trend: GuideFundamentalTrend;
   compounding_checklist: GuideCompoundingChecklist;
   rs_benchmark: GuideRsBenchmark | null;
+  quant_logic: GuideQuantLogic;
+  viraj_logic: GuideVirajLogic;
 }
 
 export interface Bundle {
