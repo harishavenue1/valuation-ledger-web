@@ -93,6 +93,7 @@ export default function MomentumScreeners() {
       { key: "zone", label: "Zone", align: "left" },
       { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.ticker} value={r.price} /> },
       { key: "r_1m", label: "1M %", render: (r) => <Signed v={r.r_1m} digits={1} /> },
+      { key: "rs_1w", label: "Alpha 1W %", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
       { key: "rs_1m", label: "Alpha 1M %", render: (r) => <Signed v={r.rs_1m} digits={1} /> },
       { key: "rs_3m", label: "Alpha 3M %", render: (r) => <Signed v={r.rs_3m} digits={1} /> },
       { key: "rs_6m", label: "Alpha 6M %", render: (r) => <Signed v={r.rs_6m} digits={1} /> },
@@ -198,9 +199,11 @@ export default function MomentumScreeners() {
     ),
     sectorAlpha: (
       <>
-        <b>Alpha</b> = a sector's ETF return minus NIFTY 500's return, over 1M/3M/6M/1Y. <b>Alpha Score</b> is a recency-weighted blend — 40%
-        (1M) / 30% (3M) / 20% (6M) / 10% (1Y). <b>Zone</b> = top third of the ranked list is "Leader", bottom third "Laggard", the rest
-        "Middle". <b>New High?</b> = the sector's price-to-NIFTY500 ratio is at its highest point in the fetched window. 21 sectors are covered
+        <b>Alpha</b> = a sector's ETF return minus NIFTY 500's return, over 1W/1M/3M/6M/1Y. <b>Alpha Score</b> is a recency-weighted blend — 40%
+        (1M) / 30% (3M) / 20% (6M) / 10% (1Y) — <b>Alpha 1W %</b> is shown alongside for context but isn't part of that weighting (rebalancing
+        the other four to fit a 5th would silently shift every sector's score). <b>Zone</b> = top third of the ranked list is "Leader", bottom
+        third "Laggard", the rest "Middle". <b>New High?</b> = the sector's price-to-NIFTY500 ratio is at its highest point in the fetched
+        window. 21 sectors are covered
         via their most liquid NSE-listed ETF, not the raw index (several raw NSE sector indices are stale on this data source) — Media, Consumer
         Durables, Chemicals, Energy, Services, and Capital Markets aren't included: either no liquid ETF exists, or it's too newly listed for a
         trustworthy 1-year number yet.

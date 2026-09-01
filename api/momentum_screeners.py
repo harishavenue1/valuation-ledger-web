@@ -751,6 +751,11 @@ def _run_sector_alpha(symbols, name_map, sector_map):
             skipped.append(sector)
             continue
 
+        # rs_1w added 2026-08-30 ("also for sector alpha tab") —
+        # informational only, same reasoning as sectorStockAlpha's
+        # alpha_1w: NOT folded into rs_score's existing 40/30/20/10
+        # weighting, which would silently shift every sector's score.
+        rs_1w = None if s["r_1w"] is None or bench["r_1w"] is None else round(s["r_1w"] - bench["r_1w"], 2)
         rs_1m = None if s["r_1m"] is None or bench["r_1m"] is None else round(s["r_1m"] - bench["r_1m"], 2)
         rs_3m = None if s["r_3m"] is None or bench["r_3m"] is None else round(s["r_3m"] - bench["r_3m"], 2)
         rs_6m = None if s["r_6m"] is None or bench["r_6m"] is None else round(s["r_6m"] - bench["r_6m"], 2)
@@ -782,7 +787,7 @@ def _run_sector_alpha(symbols, name_map, sector_map):
             "sector_name": sector, "ticker": ticker.replace(".NS", ""),
             "price": s["last_close"], "as_of": s["last_date"],
             "r_1m": s["r_1m"], "r_3m": s["r_3m"], "r_6m": s["r_6m"], "r_1y": s["r_1y"],
-            "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y,
+            "rs_1w": rs_1w, "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y,
             "rs_score": rs_score, "rs_new_high": rs_new_high,
         })
 
