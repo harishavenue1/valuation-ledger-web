@@ -659,7 +659,13 @@ SECTOR_ETF_TICKERS = {
 }
 SEC_BENCHMARK_TICKER = "^CRSLDX"  # NIFTY 500 — same benchmark as Nifty500RelativeStrength above
 SEC_FETCH_YEARS = 2  # comfortably covers the 1Y lookback + MIN_HISTORY check
-SEC_WEIGHTS = {"rs_1m": 0.40, "rs_3m": 0.30, "rs_6m": 0.20, "rs_1y": 0.10}
+# 2026-08-30: rebalanced to fold in rs_1w (Harish: "why 1W score not
+# considered?" — his own choice of the three options offered, keeping
+# the original recency-weighted shape but trimming 1M/6M/1Y to make
+# room). Was {rs_1m: 0.40, rs_3m: 0.30, rs_6m: 0.20, rs_1y: 0.10} before
+# rs_1w existed as a column at all — this DOES shift every sector's
+# already-live rs_score/rank, done deliberately this time (not silently).
+SEC_WEIGHTS = {"rs_1w": 0.10, "rs_1m": 0.35, "rs_3m": 0.30, "rs_6m": 0.15, "rs_1y": 0.10}
 SEC_MIN_HISTORY_DAYS = 250  # need close to a year of real data to be scoreable at all
 
 
@@ -751,17 +757,16 @@ def _run_sector_alpha(symbols, name_map, sector_map):
             skipped.append(sector)
             continue
 
-        # rs_1w added 2026-08-30 ("also for sector alpha tab") —
-        # informational only, same reasoning as sectorStockAlpha's
-        # alpha_1w: NOT folded into rs_score's existing 40/30/20/10
-        # weighting, which would silently shift every sector's score.
+        # rs_1w added 2026-08-30 ("also for sector alpha tab"), folded
+        # into rs_score's weighting the same day per Harish's own
+        # follow-up ("why 1W score not considered?") — see SEC_WEIGHTS.
         rs_1w = None if s["r_1w"] is None or bench["r_1w"] is None else round(s["r_1w"] - bench["r_1w"], 2)
         rs_1m = None if s["r_1m"] is None or bench["r_1m"] is None else round(s["r_1m"] - bench["r_1m"], 2)
         rs_3m = None if s["r_3m"] is None or bench["r_3m"] is None else round(s["r_3m"] - bench["r_3m"], 2)
         rs_6m = None if s["r_6m"] is None or bench["r_6m"] is None else round(s["r_6m"] - bench["r_6m"], 2)
         rs_1y = None if s["r_1y"] is None or bench["r_1y"] is None else round(s["r_1y"] - bench["r_1y"], 2)
 
-        rs_parts = {"rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y}
+        rs_parts = {"rs_1w": rs_1w, "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y}
         available = {k: v for k, v in rs_parts.items() if v is not None}
         if not available:
             skipped.append(sector)
@@ -850,7 +855,9 @@ def _run_sector_alpha(symbols, name_map, sector_map):
 SSA_FETCH_YEARS = 2
 SSA_MIN_HISTORY_DAYS = 250  # ~1Y of real data to be scoreable at all
 SSA_MIN_STOCKS_PER_SECTOR = 3  # need at least this many scoreable stocks for a sector average to mean anything
-SSA_WEIGHTS = {"alpha_1m": 0.40, "alpha_3m": 0.30, "alpha_6m": 0.20, "alpha_1y": 0.10}
+# 2026-08-30: rebalanced to fold in alpha_1w — same rationale/weights
+# as SEC_WEIGHTS above (Harish: "why 1W score not considered?").
+SSA_WEIGHTS = {"alpha_1w": 0.10, "alpha_1m": 0.35, "alpha_3m": 0.30, "alpha_6m": 0.15, "alpha_1y": 0.10}
 
 SSA_THEME_INDEX_URLS = {
     "Defence": "https://archives.nseindia.com/content/indices/ind_niftyindiadefence_list.csv",
@@ -913,19 +920,16 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             skipped.append(sym)  # sector had too few scoreable stocks to average
             continue
 
-        # alpha_1w added 2026-08-30 ("add weekly alpha column") —
-        # informational only, deliberately NOT folded into alpha_score's
-        # weighting (SSA_WEIGHTS): rebalancing those 4 existing weights
-        # to make room for a 5th would silently change alpha_score (and
-        # therefore rank order) for every row already relied on, for a
-        # window this screener never scored on before today.
+        # alpha_1w added 2026-08-30 ("add weekly alpha column"), folded
+        # into alpha_score's weighting the same day per Harish's own
+        # follow-up ("why 1W score not considered?") — see SSA_WEIGHTS.
         alpha_1w = None if r["r_1w"] is None or sec_ret["r_1w"] is None else round(r["r_1w"] - sec_ret["r_1w"], 2)
         alpha_1m = None if r["r_1m"] is None or sec_ret["r_1m"] is None else round(r["r_1m"] - sec_ret["r_1m"], 2)
         alpha_3m = None if r["r_3m"] is None or sec_ret["r_3m"] is None else round(r["r_3m"] - sec_ret["r_3m"], 2)
         alpha_6m = None if r["r_6m"] is None or sec_ret["r_6m"] is None else round(r["r_6m"] - sec_ret["r_6m"], 2)
         alpha_1y = None if r["r_1y"] is None or sec_ret["r_1y"] is None else round(r["r_1y"] - sec_ret["r_1y"], 2)
 
-        parts = {"alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
+        parts = {"alpha_1w": alpha_1w, "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
         available = {k: v for k, v in parts.items() if v is not None}
         if not available:
             skipped.append(sym)
@@ -973,7 +977,7 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             alpha_3m = None if r["r_3m"] is None or theme_ret["r_3m"] is None else round(r["r_3m"] - theme_ret["r_3m"], 2)
             alpha_6m = None if r["r_6m"] is None or theme_ret["r_6m"] is None else round(r["r_6m"] - theme_ret["r_6m"], 2)
             alpha_1y = None if r["r_1y"] is None or theme_ret["r_1y"] is None else round(r["r_1y"] - theme_ret["r_1y"], 2)
-            parts = {"alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
+            parts = {"alpha_1w": alpha_1w, "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y}
             available = {k: v for k, v in parts.items() if v is not None}
             if not available:
                 skipped.append(sym)

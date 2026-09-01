@@ -199,11 +199,10 @@ export default function MomentumScreeners() {
     ),
     sectorAlpha: (
       <>
-        <b>Alpha</b> = a sector's ETF return minus NIFTY 500's return, over 1W/1M/3M/6M/1Y. <b>Alpha Score</b> is a recency-weighted blend — 40%
-        (1M) / 30% (3M) / 20% (6M) / 10% (1Y) — <b>Alpha 1W %</b> is shown alongside for context but isn't part of that weighting (rebalancing
-        the other four to fit a 5th would silently shift every sector's score). <b>Zone</b> = top third of the ranked list is "Leader", bottom
-        third "Laggard", the rest "Middle". <b>New High?</b> = the sector's price-to-NIFTY500 ratio is at its highest point in the fetched
-        window. 21 sectors are covered
+        <b>Alpha</b> = a sector's ETF return minus NIFTY 500's return, over 1W/1M/3M/6M/1Y. <b>Alpha Score</b> is a recency-weighted blend — 10%
+        (1W) / 35% (1M) / 30% (3M) / 15% (6M) / 10% (1Y). <b>Zone</b> = top third of the ranked list is "Leader", bottom third "Laggard", the
+        rest "Middle". <b>New High?</b> = the sector's price-to-NIFTY500 ratio is at its highest point in the fetched window. 21 sectors are
+        covered
         via their most liquid NSE-listed ETF, not the raw index (several raw NSE sector indices are stale on this data source) — Media, Consumer
         Durables, Chemicals, Energy, Services, and Capital Markets aren't included: either no liquid ETF exists, or it's too newly listed for a
         trustworthy 1-year number yet.
@@ -212,9 +211,8 @@ export default function MomentumScreeners() {
     sectorStockAlpha: (
       <>
         The drill-down under Sector Alpha: <b>Alpha</b> = a stock's own return minus <i>its sector's</i> return (not the market's). <b>Alpha
-        Score</b> is a 40/30/20/10% weighted blend of the 1M/3M/6M/1Y alpha columns, same weighting as Sector Alpha. <b>Alpha 1W %</b> is
-        shown alongside those for context but is <i>not</i> folded into Alpha Score — adding a 5th window would mean rebalancing the other
-        four weights, which would silently shift every row's score and rank. "Sector" here is NSE's own industry classification (not the ETF
+        Score</b> is a 10/35/30/15/10% weighted blend of the 1W/1M/3M/6M/1Y alpha columns, same weighting as Sector Alpha. "Sector" here is
+        NSE's own industry classification (not the ETF
         list above) — each industry's return is computed bottom-up as the plain average of its own constituent stocks' returns, so every real
         industry is covered, not just the ones with a liquid ETF. Defence and Manufacturing also appear as separate theme rows, compared
         against <i>that theme's own ETF</i> return instead of an industry average, since those are cross-industry themes (not a single
