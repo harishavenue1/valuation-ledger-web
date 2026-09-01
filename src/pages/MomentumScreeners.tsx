@@ -107,6 +107,7 @@ export default function MomentumScreeners() {
       { key: "sector", label: "Sector", align: "left" },
       { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "r_1m", label: "1M %", render: (r) => <Signed v={r.r_1m} digits={1} /> },
+      { key: "alpha_1w", label: "Alpha 1W %", render: (r) => <Signed v={r.alpha_1w} digits={1} /> },
       { key: "alpha_1m", label: "Alpha 1M %", render: (r) => <Signed v={r.alpha_1m} digits={1} /> },
       { key: "alpha_3m", label: "Alpha 3M %", render: (r) => <Signed v={r.alpha_3m} digits={1} /> },
       { key: "alpha_6m", label: "Alpha 6M %", render: (r) => <Signed v={r.alpha_6m} digits={1} /> },
@@ -207,9 +208,11 @@ export default function MomentumScreeners() {
     ),
     sectorStockAlpha: (
       <>
-        The drill-down under Sector Alpha: <b>Alpha</b> = a stock's own return minus <i>its sector's</i> return (not the market's), same
-        1M/3M/6M/1Y windows and 40/30/20/10% weighting as Sector Alpha. "Sector" here is NSE's own industry classification (not the ETF list
-        above) — each industry's return is computed bottom-up as the plain average of its own constituent stocks' returns, so every real
+        The drill-down under Sector Alpha: <b>Alpha</b> = a stock's own return minus <i>its sector's</i> return (not the market's). <b>Alpha
+        Score</b> is a 40/30/20/10% weighted blend of the 1M/3M/6M/1Y alpha columns, same weighting as Sector Alpha. <b>Alpha 1W %</b> is
+        shown alongside those for context but is <i>not</i> folded into Alpha Score — adding a 5th window would mean rebalancing the other
+        four weights, which would silently shift every row's score and rank. "Sector" here is NSE's own industry classification (not the ETF
+        list above) — each industry's return is computed bottom-up as the plain average of its own constituent stocks' returns, so every real
         industry is covered, not just the ones with a liquid ETF. Defence and Manufacturing also appear as separate theme rows, compared
         against <i>that theme's own ETF</i> return instead of an industry average, since those are cross-industry themes (not a single
         industry) — a stock can legitimately appear twice, once under its industry and once under a theme it also belongs to.

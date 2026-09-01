@@ -700,12 +700,17 @@ def _sec_pct(a, b):
 def _sec_returns_for(data, last_date):
     data = sorted(data, key=lambda r: r["date"])
     last = data[-1]
+    w1 = _sec_nearest_on_or_before(data, last_date - timedelta(days=7))
     m1 = _sec_nearest_on_or_before(data, last_date - timedelta(days=30))
     m3 = _sec_nearest_on_or_before(data, last_date - timedelta(days=90))
     m6 = _sec_nearest_on_or_before(data, last_date - timedelta(days=180))
     y1 = _sec_nearest_on_or_before(data, last_date - timedelta(days=365))
     return {
         "last_close": last["close"], "last_date": last["date"],
+        # r_1w added 2026-08-30 for sectorStockAlpha's "weekly alpha"
+        # column — sectorAlpha (this helper's other caller) doesn't
+        # read this key at all, so its own rows/rs_score are unaffected.
+        "r_1w": _sec_pct(last["close"], w1["close"] if w1 else None),
         "r_1m": _sec_pct(last["close"], m1["close"] if m1 else None),
         "r_3m": _sec_pct(last["close"], m3["close"] if m3 else None),
         "r_6m": _sec_pct(last["close"], m6["close"] if m6 else None),
@@ -888,6 +893,7 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
         if len(items) < SSA_MIN_STOCKS_PER_SECTOR:
             continue
         sector_returns[sec] = {
+            "r_1w": _ssa_sector_avg([r["r_1w"] for r in items]),
             "r_1m": _ssa_sector_avg([r["r_1m"] for r in items]),
             "r_3m": _ssa_sector_avg([r["r_3m"] for r in items]),
             "r_6m": _ssa_sector_avg([r["r_6m"] for r in items]),
@@ -902,6 +908,13 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             skipped.append(sym)  # sector had too few scoreable stocks to average
             continue
 
+        # alpha_1w added 2026-08-30 ("add weekly alpha column") —
+        # informational only, deliberately NOT folded into alpha_score's
+        # weighting (SSA_WEIGHTS): rebalancing those 4 existing weights
+        # to make room for a 5th would silently change alpha_score (and
+        # therefore rank order) for every row already relied on, for a
+        # window this screener never scored on before today.
+        alpha_1w = None if r["r_1w"] is None or sec_ret["r_1w"] is None else round(r["r_1w"] - sec_ret["r_1w"], 2)
         alpha_1m = None if r["r_1m"] is None or sec_ret["r_1m"] is None else round(r["r_1m"] - sec_ret["r_1m"], 2)
         alpha_3m = None if r["r_3m"] is None or sec_ret["r_3m"] is None else round(r["r_3m"] - sec_ret["r_3m"], 2)
         alpha_6m = None if r["r_6m"] is None or sec_ret["r_6m"] is None else round(r["r_6m"] - sec_ret["r_6m"], 2)
@@ -919,7 +932,7 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             "symbol": sym, "name": name_map.get(sym, sym), "sector": sec,
             "price": r["last_close"], "as_of": r["last_date"],
             "r_1m": r["r_1m"], "r_3m": r["r_3m"], "r_6m": r["r_6m"], "r_1y": r["r_1y"],
-            "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
+            "alpha_1w": alpha_1w, "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
             "alpha_score": alpha_score,
         })
 
@@ -950,6 +963,7 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
             if r is None:
                 skipped.append(sym)
                 continue
+            alpha_1w = None if r["r_1w"] is None or theme_ret["r_1w"] is None else round(r["r_1w"] - theme_ret["r_1w"], 2)
             alpha_1m = None if r["r_1m"] is None or theme_ret["r_1m"] is None else round(r["r_1m"] - theme_ret["r_1m"], 2)
             alpha_3m = None if r["r_3m"] is None or theme_ret["r_3m"] is None else round(r["r_3m"] - theme_ret["r_3m"], 2)
             alpha_6m = None if r["r_6m"] is None or theme_ret["r_6m"] is None else round(r["r_6m"] - theme_ret["r_6m"], 2)
@@ -965,7 +979,7 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
                 "symbol": sym, "name": name_map.get(sym, sym), "sector": theme,
                 "price": r["last_close"], "as_of": r["last_date"],
                 "r_1m": r["r_1m"], "r_3m": r["r_3m"], "r_6m": r["r_6m"], "r_1y": r["r_1y"],
-                "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
+                "alpha_1w": alpha_1w, "alpha_1m": alpha_1m, "alpha_3m": alpha_3m, "alpha_6m": alpha_6m, "alpha_1y": alpha_1y,
                 "alpha_score": alpha_score,
             })
 
