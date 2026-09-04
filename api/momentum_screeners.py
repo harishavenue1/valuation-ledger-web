@@ -1333,6 +1333,134 @@ def _run_grandfather_father_son(symbols, name_map, sector_map):
     return {"label": "Grandfather-Father-Son", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── 52wHigh ──────────────────────────────────────────────────────────────
+#
+# NSE 750 stocks currently trading within NSE_52W_BAND_PCT% of their own
+# trailing-52-week CLOSING high — added 2026-09-04 on request. "High"
+# here means the highest daily Close over the window, matching this
+# file's Close-based convention throughout (nseScreener's RSI,
+# sectorAlpha's returns, etc.), not the intraday High — a stock can be
+# well within band on a closing basis while its intraday High that same
+# day was further away. Only needs ~13 months of daily data, so unlike
+# AllTimeHigh below this is a light, fast fetch (reuses the same
+# _ms_fetch_daily helper nseScreener/maBreakout use).
+
+NSE_52W_FETCH_DAYS = 400  # >365 with buffer for weekends/holidays/gaps
+NSE_52W_BAND_PCT = 3.0    # keep stocks within 3% of their 52-week closing high
+NSE_52W_MIN_BARS = 100    # need a real chunk of the year's history to trust the high, not just a recent listing
+
+
+def _run_52w_high(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=NSE_52W_FETCH_DAYS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        cd = g.set_index("date")["Close"].sort_index()
+        if len(cd) < NSE_52W_MIN_BARS or (date.today() - cd.index[-1].date()).days > NSE_STALE_DAYS:
+            skipped.append(sym)
+            continue
+        price = float(cd.iloc[-1])
+        high_52w = float(cd.max())
+        pct_off_high = round((price / high_52w - 1) * 100, 2)
+        if pct_off_high < -NSE_52W_BAND_PCT:
+            continue  # not "skipped" (bad data) — just outside the band, the normal case for most of the universe
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(price, 2), "high_52w": round(high_52w, 2),
+            "pct_off_high": pct_off_high,
+            "new_high": bool(price >= high_52w),
+        })
+
+    rows.sort(key=lambda r: -r["pct_off_high"])  # closest to (or at) the high first
+    return {"label": "52-Week High", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
+# ── allTimeHigh ──────────────────────────────────────────────────────────
+#
+# NSE 750 stocks within ATH_BAND_PCT% of their own all-time closing
+# high — added alongside 52wHigh, same request. Unlike every other
+# screener in this file, this one genuinely needs FULL listing history
+# (not a fixed multi-year window), so it can't reuse _ms_fetch_daily's
+# start_iso pattern or the NSE_FETCH_YEARS constants those use.
+#
+# Pulled as WEEKLY bars over period="max" (via _ms_fetch_weekly_max
+# below), not daily — a straight daily period="max" fetch across 750
+# tickers (many 15-25+ years listed) risks the 300s Vercel cap on
+# bandwidth/parse time alone for data that's mostly just confirming "no,
+# still not the high". Weekly closes are ~1/5th the rows and still find
+# the right week; the deliberate accuracy tradeoff is that "high" here
+# means the highest WEEKLY closing price on record, not the single
+# highest daily close or intraday High — a one-day spike-and-fade close
+# that never became a week's Friday close wouldn't be captured. Good
+# enough for "is this stock near its all-time high", not for pinpointing
+# the exact historical record price to the rupee.
+ATH_BAND_PCT = 3.0     # within 3% of the all-time weekly-closing high
+ATH_MIN_BARS = 52      # need at least ~1 year of weekly bars for "all-time" to mean anything
+
+
+def _ms_fetch_weekly_max(symbols):
+    """Same chunked-download shape as _ms_fetch_daily, but period="max"
+    at weekly resolution instead of a fixed start_iso at daily — see the
+    allTimeHigh comment above for why this screener alone needs it."""
+    tickers = [f"{s}.NS" for s in symbols]
+    frames = []
+    for i in range(0, len(tickers), FETCH_CHUNK):
+        chunk = tickers[i:i + FETCH_CHUNK]
+        try:
+            data = yf.download(chunk, period="max", interval="1wk", group_by="ticker",
+                                threads=True, progress=False, auto_adjust=True)
+        except Exception:
+            continue
+        for t in chunk:
+            try:
+                df = data[t] if isinstance(data.columns, pd.MultiIndex) else data
+            except KeyError:
+                continue
+            df = df.dropna(how="all")
+            if df.empty or "Close" not in df:
+                continue
+            df = df[["Close"]].dropna()
+            if df.empty:
+                continue
+            df["symbol"] = t.replace(".NS", "")
+            frames.append(df)
+    if not frames:
+        return None
+    combined = pd.concat(frames)
+    combined.index.name = "date"
+    return combined.reset_index()
+
+
+def _run_all_time_high(symbols, name_map, sector_map):
+    weekly = _ms_fetch_weekly_max(symbols)
+    if weekly is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in weekly.groupby("symbol"):
+        cw = g.set_index("date")["Close"].sort_index()
+        if len(cw) < ATH_MIN_BARS or (date.today() - cw.index[-1].date()).days > NSE_STALE_DAYS + 5:
+            skipped.append(sym)  # +5 days' slack vs the daily screeners' staleness guard — weekly bars land less precisely on "today"
+            continue
+        price = float(cw.iloc[-1])
+        ath = float(cw.max())
+        pct_off_ath = round((price / ath - 1) * 100, 2)
+        if pct_off_ath < -ATH_BAND_PCT:
+            continue
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(price, 2), "ath": round(ath, 2),
+            "pct_off_ath": pct_off_ath,
+            "new_high": bool(price >= ath),
+        })
+
+    rows.sort(key=lambda r: -r["pct_off_ath"])
+    return {"label": "All-Time High", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1344,6 +1472,8 @@ SCREENER_RUNNERS = {
     "maBreakout": _run_ma_breakout,
     "valueRsiTurnaround": _run_value_rsi_turnaround,
     "grandfatherFatherSon": _run_grandfather_father_son,
+    "52wHigh": _run_52w_high,
+    "allTimeHigh": _run_all_time_high,
 }
 
 

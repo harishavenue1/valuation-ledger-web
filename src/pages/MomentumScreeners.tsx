@@ -21,6 +21,8 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "maBreakout", label: "MA Breakout", emoji: "🚀" },
   { key: "valueRsiTurnaround", label: "Value RSI Turnaround", emoji: "💎" },
   { key: "grandfatherFatherSon", label: "Grandfather-Father-Son", emoji: "👴" },
+  { key: "52wHigh", label: "52-Week High", emoji: "🏔️" },
+  { key: "allTimeHigh", label: "All-Time High", emoji: "🗻" },
 ];
 
 export default function MomentumScreeners() {
@@ -151,6 +153,24 @@ export default function MomentumScreeners() {
       { key: "days_since_support", label: "Days Since Support" },
       { key: "stop_loss", label: "Stop-Loss", render: (r) => fmtNum(r.stop_loss) },
     ],
+    "52wHigh": [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "high_52w", label: "52W High", render: (r) => fmtNum(r.high_52w) },
+      { key: "pct_off_high", label: "% Off High", render: (r) => <Signed v={r.pct_off_high} digits={1} /> },
+      { key: "new_high", label: "New High?", render: (r) => (r.new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
+    allTimeHigh: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "ath", label: "All-Time High", render: (r) => fmtNum(r.ath) },
+      { key: "pct_off_ath", label: "% Off ATH", render: (r) => <Signed v={r.pct_off_ath} digits={1} /> },
+      { key: "new_high", label: "New High?", render: (r) => (r.new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -253,6 +273,24 @@ export default function MomentumScreeners() {
         rule. The strategy's target is Daily RSI reaching back up to 60 — not a price level, so no price target is shown; judge the distance
         from the Daily RSI column itself. Uses the same RSI calculation as Value RSI Turnaround (not the NSE Screener tab's), for the same
         reason: needs the full historical series, not just the latest value.
+      </>
+    ),
+    "52wHigh": (
+      <>
+        No numeric score — every stock currently trading within <b>3% of its own trailing 52-week closing high</b> is shown, closest-to-high
+        first. "High" means the highest <b>daily Close</b> over the last ~52 weeks, not the intraday High — a stock can be within band on a
+        closing basis while today's intraday high was further away. <b>New High?</b> = today's close is at or above every close in that
+        window (a genuine new 52-week high today, not just close to one).
+      </>
+    ),
+    allTimeHigh: (
+      <>
+        Same idea as 52-Week High, over the stock's <b>full listing history</b> instead of 52 weeks: every stock within <b>3% of its own
+        all-time closing high</b> is shown, closest first. Computed on <b>weekly</b> closes (not daily) — a straight daily fetch back to each
+        stock's listing date across 750 tickers risks Vercel's time limit, and weekly closes still find the right week — so "high" here means
+        the highest <b>weekly closing</b> price on record, not the single highest daily close or intraday High; a one-day spike that never
+        became that week's Friday close wouldn't be captured. Good for "is this near its all-time high", not for the exact record price to the
+        rupee. <b>New High?</b> = this week's close is at or above every weekly close on record.
       </>
     ),
   };
