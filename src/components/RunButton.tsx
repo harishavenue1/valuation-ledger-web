@@ -32,6 +32,8 @@ const CLOUD_SCREENERS = new Set([
   "valueRsiTurnaround",
   "grandfatherFatherSon",
   "viraj_screen",
+  "52wHigh",
+  "allTimeHigh",
 ]);
 
 // "Run now" for a screener that can't (or doesn't yet) execute inside
