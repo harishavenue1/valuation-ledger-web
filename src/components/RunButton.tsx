@@ -57,22 +57,28 @@ export default function RunButton({ screener }: { screener: string }) {
 // Takes ~60-100s (a full 750-ticker yfinance pull), so the button
 // stays disabled and shows progress for that whole span rather than
 // pretending it's instant.
+//
+// Status lives in the shared DataCtx (cloudRuns), keyed by screener —
+// not local useState. This button remounts on every Momentum
+// Screeners tab switch (see MomentumScreeners.tsx's key={tab}, added
+// to stop one screener's status leaking onto another's tab); the
+// underlying fetch to Vercel isn't tied to this component's lifetime
+// and keeps running after unmount, so tracking status here alone made
+// switching tabs mid-run look like the run itself had stopped. Lifting
+// it to the provider fixes both: correct per-screener status AND it
+// survives the remount.
 function CloudRunButton({ screener }: { screener: string }) {
-  const { reload } = useData();
-  const [state, setState] = useState<"idle" | "running" | "done" | "error">("idle");
-  const [detail, setDetail] = useState<string | null>(null);
+  const { reload, cloudRuns, setCloudRun } = useData();
+  const { state = "idle", detail = null } = cloudRuns[screener] ?? {};
 
   async function onClick() {
-    setState("running");
-    setDetail(null);
+    setCloudRun(screener, { state: "running", detail: null });
     try {
       const result = await api.runScreenerCloud(screener);
-      setDetail(`${result.pushed} pushed of ${result.scanned} scanned (${result.elapsed_s}s)`);
-      setState("done");
+      setCloudRun(screener, { state: "done", detail: `${result.pushed} pushed of ${result.scanned} scanned (${result.elapsed_s}s)` });
       await reload();
     } catch (e) {
-      setDetail(e instanceof ApiError ? e.message : "request failed");
-      setState("error");
+      setCloudRun(screener, { state: "error", detail: e instanceof ApiError ? e.message : "request failed" });
     }
   }
 

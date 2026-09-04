@@ -12,10 +12,25 @@ import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
 
+// Status of an in-flight/last "Run now" click for a cloud screener
+// (see RunButton.tsx's CloudRunButton). Lives here rather than as
+// component-local useState so it survives the button unmounting —
+// switching Momentum Screener tabs (or navigating to Viraj Screen and
+// back) remounts RunButton, and a run that's still awaiting its fetch
+// on Vercel keeps going regardless; without this, losing the component
+// instance mid-run also lost the only place tracking it, so the next
+// mount started blank at "idle" and looked like the run had stopped.
+export type CloudRunState = "idle" | "running" | "done" | "error";
+export interface CloudRunEntry {
+  state: CloudRunState;
+  detail: string | null;
+}
 interface DataCtx {
   bundle: Bundle;
   setBundle: React.Dispatch<React.SetStateAction<Bundle>>;
   reload: () => Promise<void>;
+  cloudRuns: Record<string, CloudRunEntry>;
+  setCloudRun: (screener: string, entry: CloudRunEntry) => void;
 }
 const Ctx = createContext<DataCtx | null>(null);
 export function useData() {
@@ -39,6 +54,8 @@ const EMPTY: Bundle = {
 export default function App() {
   const [status, setStatus] = useState<"loading" | "authed" | "anon">("loading");
   const [bundle, setBundle] = useState<Bundle>(EMPTY);
+  const [cloudRuns, setCloudRuns] = useState<Record<string, CloudRunEntry>>({});
+  const setCloudRun = (screener: string, entry: CloudRunEntry) => setCloudRuns((prev) => ({ ...prev, [screener]: entry }));
   const navigate = useNavigate();
 
   async function reload() {
@@ -72,7 +89,7 @@ export default function App() {
   }
 
   return (
-    <Ctx.Provider value={{ bundle, setBundle, reload }}>
+    <Ctx.Provider value={{ bundle, setBundle, reload, cloudRuns, setCloudRun }}>
       <div className="min-h-screen flex flex-col">
         <header className="border-b border-slate-200 sticky top-0 bg-white/90 backdrop-blur z-20">
           <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-6">

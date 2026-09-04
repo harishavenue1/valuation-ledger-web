@@ -295,7 +295,12 @@ export default function MomentumScreeners() {
 
       <div className="flex items-center gap-2 mb-3">
         {entry?.as_of && <span className="text-xs text-slate-400">as of {entry.as_of}</span>}
-        <RunButton screener={tab} />
+        {/* key={tab} — remounts fresh per tab so a "Running…"/"Done"
+            status left over from another screener's run doesn't
+            bleed into this one (RunButton keeps its own useState;
+            without a per-tab key React reuses the same instance
+            across tab switches instead of resetting it). */}
+        <RunButton key={tab} screener={tab} />
       </div>
 
       <MethodologyNote>{METHODOLOGY[tab]}</MethodologyNote>
