@@ -8,9 +8,13 @@ the whole ledger in parallel rather than one ticker at a time.
 
 GET /api/refresh_price — the same price-only refresh, but for EVERY
 ticker in the ledger, one at a time, triggered by Vercel Cron (see
-vercel.json's "crons") instead of a browser click — daily, 5:00 AM IST,
-so prices are fresh every morning regardless of whether any machine of
-Harish's is awake. Folded into this file rather than its own
+vercel.json's "crons") instead of a browser click — daily, 3:45 PM IST
+(shortly after NSE market close; moved 2026-09-04 from 5:00 AM IST the
+next day — Watchlist/NSE Screener were showing the prior day's close
+for most of the trading day since that's when this and the other daily
+screener crons used to fire), so prices are fresh the same evening
+regardless of whether any machine of Harish's is awake. Folded into
+this file rather than its own
 cron_refresh_prices.py (a separate file was the original design, but
 the Hobby plan's 12-Serverless-Functions-per-deployment cap was
 already maxed out — hit live 2026-08-30 deploying that as a 13th file)
