@@ -34,6 +34,7 @@ const CLOUD_SCREENERS = new Set([
   "viraj_screen",
   "52wHigh",
   "allTimeHigh",
+  "momentumPersonal",
 ]);
 
 // "Run now" for a screener that can't (or doesn't yet) execute inside

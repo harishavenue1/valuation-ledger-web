@@ -23,6 +23,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "grandfatherFatherSon", label: "Grandfather-Father-Son", emoji: "👴" },
   { key: "52wHigh", label: "52-Week High", emoji: "🏔️" },
   { key: "allTimeHigh", label: "All-Time High", emoji: "🗻" },
+  { key: "momentumPersonal", label: "momentumPersonal", emoji: "🎯" },
 ];
 
 export default function MomentumScreeners() {
@@ -171,6 +172,16 @@ export default function MomentumScreeners() {
       { key: "pct_off_ath", label: "% Off ATH", render: (r) => <Signed v={r.pct_off_ath} digits={1} /> },
       { key: "new_high", label: "New High?", render: (r) => (r.new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
     ],
+    momentumPersonal: [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "weekly_close", label: "Weekly Close", render: (r) => fmtNum(r.weekly_close) },
+      { key: "high_52w", label: "52W High", render: (r) => fmtNum(r.high_52w) },
+      { key: "ma20w", label: "20W MA", render: (r) => fmtNum(r.ma20w) },
+      { key: "pct_above_ma20w", label: "% Above 20W MA", render: (r) => <Signed v={r.pct_above_ma20w} digits={1} /> },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -291,6 +302,21 @@ export default function MomentumScreeners() {
         the highest <b>weekly closing</b> price on record, not the single highest daily close or intraday High; a one-day spike that never
         became that week's Friday close wouldn't be captured. Good for "is this near its all-time high", not for the exact record price to the
         rupee. <b>New High?</b> = this week's close is at or above every weekly close on record.
+      </>
+    ),
+    momentumPersonal: (
+      <>
+        Reproduction of Hitesh Modi's (<a href="https://x.com/imhiteshmodi" target="_blank" rel="noreferrer" className="underline">@imhiteshmodi</a> on X) public
+        "Momentum Portfolio Original Scan" — his live momentum portfolio is up <b>3.23×</b> since July 2022 vs. the Nifty Smallcap 250's 2.28× (self-reported, not
+        independently audited). No numeric score — a stock either qualifies or it doesn't, on <b>weekly closes</b>: <b>this week's close is a fresh 52-week high</b>{" "}
+        (above the 52-week-high reading from a week ago) <b>AND</b> none of the <b>prior 5 weeks</b> was already a new 52-week high — i.e. specifically the{" "}
+        <b>first</b> breakout week, not a stock already 4-5 weeks into an extended new-high streak (that's the <a href="https://chartink.com/screener/mi50-originalkl-scan" target="_blank" rel="noreferrer" className="underline">exact Chartink scan</a> he
+        publishes, not a paraphrase). His own further steps are <b>not</b> replicated here since he describes them as manual/discretionary, not part of the
+        mechanical scan: he picks a personal "top 5" from each week's ~20-30 results and says to "avoid cyclicals" by eye — this tab shows the full qualifying
+        list, same as the 52-Week High/All-Time High tabs, not his actual picks. No market-cap filter (same reasoning as MA Breakout/Value RSI Turnaround — no
+        bulk source for it across 750 tickers; his own ₹500 Cr–₹50,000 Cr band would mostly just exclude true large caps, which rarely show up as fresh
+        breakouts anyway). <b>20W MA / % Above</b> reflect his stated <i>exit</i> rule (sell when weekly close breaks below the 20-week moving average) shown for
+        context on each entry candidate — not used to filter or rank; ranked by furthest above its own 20W MA.
       </>
     ),
   };

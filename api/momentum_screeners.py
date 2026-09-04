@@ -1461,6 +1461,96 @@ def _run_all_time_high(symbols, name_map, sector_map):
     return {"label": "All-Time High", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── momentumPersonal ─────────────────────────────────────────────────────
+#
+# Reproduction of Hitesh Modi's (@imhiteshmodi on X) public "Momentum
+# Portfolio Original Scan" — added 2026-09-04 after researching how he
+# builds his live momentum portfolio (3.23x since Jul 2022 vs Nifty
+# Smallcap 250's 2.28x, self-reported). His actual Chartink screener
+# (chartink.com/screener/mi50-originalkl-scan), read directly rather
+# than guessed at from his tweets' prose:
+#
+#   Stock passes ALL of (every check on WEEKLY CLOSE):
+#     - This week's close > the 52-week-high reading as of 1 week ago
+#       (i.e. a genuine breakout to a fresh 52-week high THIS week)
+#     - Each of the prior 5 weeks' closes was NOT itself a new 52-week
+#       high (same check, one week further back each time)
+#     - Market cap between Rs 500 Cr and Rs 50,000 Cr
+#
+# In plain terms: not just "at a 52-week high" (that's 52wHigh above) —
+# specifically the FIRST week a stock breaks out after NOT already
+# being on a new-high streak, filtering out names 4-5 weeks into an
+# already-extended breakout. His own further steps are NOT replicated
+# here since they're explicitly discretionary, not part of the
+# mechanical scan: he manually picks a personal "top 5" from the
+# scan's ~20-30 results and says to "avoid cyclicals" by eye. This
+# screener shows the FULL qualifying list, same as every other
+# boolean-signal screener in this file (myLTIS, maBreakout, etc.) —
+# read it as "this week's scan output", not "his actual 5 picks".
+#
+# No market-cap filter, same reasoning as maBreakout/valueRsiTurnaround
+# above: no bulk source for it across 750 tickers without a slow
+# per-ticker yfinance .info call each, and this universe's own
+# inclusion bar (NSE Total Market) already excludes true microcaps —
+# his Rs 50,000 Cr upper bound would only additionally exclude true
+# large caps, which rarely show up as "fresh" 52-week breakouts anyway
+# (they're already well-covered, slower-moving names).
+#
+# 20-week MA / % above it are shown for context (his own stated exit
+# rule — "keep exiting with 20 week moving average below close" — is a
+# per-position rule you'd apply once you actually hold something, not
+# part of the entry scan), not used to filter or rank here.
+
+MOMP_LOOKBACK_WEEKS = 52   # the scan's "52" in Max(52, Weekly Close)
+MOMP_CONFIRM_WEEKS = 6     # this week + the 5 prior weeks checked for "not already streaking"
+MOMP_FETCH_YEARS = 3       # comfortably covers 52 weeks + the 6-week lookback + resampling slack
+MOMP_MIN_WEEKLY_BARS = MOMP_LOOKBACK_WEEKS + MOMP_CONFIRM_WEEKS + 2
+
+
+def _run_momentum_personal(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * MOMP_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        cd = g.set_index("date")["Close"].sort_index()
+        if (date.today() - cd.index[-1].date()).days > NSE_STALE_DAYS:
+            skipped.append(sym)
+            continue
+        cw = cd.resample("W-FRI").last().dropna()
+        if len(cw) < MOMP_MIN_WEEKLY_BARS:
+            skipped.append(sym)
+            continue
+
+        roll_max = cw.rolling(MOMP_LOOKBACK_WEEKS, min_periods=MOMP_LOOKBACK_WEEKS).max()
+        # cw.iloc[-1] = this week's close; roll_max.iloc[-2] = what the
+        # 52-week-high indicator read as of last week — matches
+        # Chartink's "Close > 1 week ago Max(52, Weekly Close)" exactly.
+        fresh_high = bool(cw.iloc[-1] > roll_max.iloc[-2])
+        not_already_streaking = all(
+            cw.iloc[-1 - j] < roll_max.iloc[-2 - j] for j in range(1, MOMP_CONFIRM_WEEKS)
+        )
+        if not (fresh_high and not_already_streaking):
+            continue
+
+        weekly_close = float(cw.iloc[-1])
+        ma20w_series = cw.rolling(20, min_periods=20).mean()
+        ma20w = float(ma20w_series.iloc[-1]) if not pd.isna(ma20w_series.iloc[-1]) else None
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(float(cd.iloc[-1]), 2),
+            "weekly_close": round(weekly_close, 2),
+            "high_52w": round(float(roll_max.iloc[-1]), 2),
+            "ma20w": round(ma20w, 2) if ma20w is not None else None,
+            "pct_above_ma20w": round((weekly_close / ma20w - 1) * 100, 2) if ma20w else None,
+        })
+
+    rows.sort(key=lambda r: -(r["pct_above_ma20w"] if r["pct_above_ma20w"] is not None else -999))
+    return {"label": "Momentum (Personal)", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1474,6 +1564,7 @@ SCREENER_RUNNERS = {
     "grandfatherFatherSon": _run_grandfather_father_son,
     "52wHigh": _run_52w_high,
     "allTimeHigh": _run_all_time_high,
+    "momentumPersonal": _run_momentum_personal,
 }
 
 
