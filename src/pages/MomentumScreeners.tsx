@@ -309,14 +309,15 @@ export default function MomentumScreeners() {
         Reproduction of Hitesh Modi's (<a href="https://x.com/imhiteshmodi" target="_blank" rel="noreferrer" className="underline">@imhiteshmodi</a> on X) public
         "Momentum Portfolio Original Scan" — his live momentum portfolio is up <b>3.23×</b> since July 2022 vs. the Nifty Smallcap 250's 2.28× (self-reported, not
         independently audited). No numeric score — a stock either qualifies or it doesn't, on <b>weekly closes</b>: <b>this week's close is a fresh 52-week high</b>{" "}
-        (above the 52-week-high reading from a week ago) <b>AND</b> none of the <b>prior 5 weeks</b> was already a new 52-week high — i.e. specifically the{" "}
-        <b>first</b> breakout week, not a stock already 4-5 weeks into an extended new-high streak (that's the <a href="https://chartink.com/screener/mi50-originalkl-scan" target="_blank" rel="noreferrer" className="underline">exact Chartink scan</a> he
-        publishes, not a paraphrase). His own further steps are <b>not</b> replicated here since he describes them as manual/discretionary, not part of the
-        mechanical scan: he picks a personal "top 5" from each week's ~20-30 results and says to "avoid cyclicals" by eye — this tab shows the full qualifying
-        list, same as the 52-Week High/All-Time High tabs, not his actual picks. No market-cap filter (same reasoning as MA Breakout/Value RSI Turnaround — no
-        bulk source for it across 750 tickers; his own ₹500 Cr–₹50,000 Cr band would mostly just exclude true large caps, which rarely show up as fresh
-        breakouts anyway). <b>20W MA / % Above</b> reflect his stated <i>exit</i> rule (sell when weekly close breaks below the 20-week moving average) shown for
-        context on each entry candidate — not used to filter or rank; ranked by furthest above its own 20W MA.
+        (above the 52-week-high reading from a week ago) <b>AND</b> none of the <b>prior 5 weeks</b> was already a new 52-week high (specifically the{" "}
+        <b>first</b> breakout week, not a stock already 4-5 weeks into an extended new-high streak) <b>AND</b> market cap between ₹500 Cr and ₹50,000 Cr. Unlike
+        every other tab here, this one doesn't recompute the rule against the NSE 750 universe — it queries his{" "}
+        <a href="https://chartink.com/screener/mi50-originalkl-scan" target="_blank" rel="noreferrer" className="underline">actual Chartink scan</a> live (its
+        exact filter, pulled from the page itself, not a paraphrase), since his scan runs on the full ~2,570-stock NSE cash segment — a universe this app's other
+        screeners deliberately don't fetch in full. Price/52W High/20W MA are then looked up only for whatever Chartink returns that week. His own further steps
+        are <b>not</b> replicated: he picks a personal "top 5" from the results and says to "avoid cyclicals" by eye — this tab shows Chartink's full qualifying
+        list, not his actual picks. <b>20W MA / % Above</b> reflect his stated <i>exit</i> rule (sell when weekly close breaks below the 20-week moving average),
+        shown for context — not used to filter or rank; ranked by furthest above its own 20W MA.
       </>
     ),
   };

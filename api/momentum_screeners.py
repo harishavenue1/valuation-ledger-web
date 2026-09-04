@@ -48,6 +48,7 @@ symbols — manual testing only, never set by the real cron trigger."""
 import csv
 import io
 import os
+import re
 import sys
 import time
 import urllib.request
@@ -63,6 +64,7 @@ from http.server import BaseHTTPRequestHandler
 
 import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 
 from _cron_auth import is_authed_cron_or_cookie
@@ -1466,86 +1468,133 @@ def _run_all_time_high(symbols, name_map, sector_map):
 # Reproduction of Hitesh Modi's (@imhiteshmodi on X) public "Momentum
 # Portfolio Original Scan" — added 2026-09-04 after researching how he
 # builds his live momentum portfolio (3.23x since Jul 2022 vs Nifty
-# Smallcap 250's 2.28x, self-reported). His actual Chartink screener
-# (chartink.com/screener/mi50-originalkl-scan), read directly rather
-# than guessed at from his tweets' prose:
+# Smallcap 250's 2.28x, self-reported).
 #
-#   Stock passes ALL of (every check on WEEKLY CLOSE):
-#     - This week's close > the 52-week-high reading as of 1 week ago
-#       (i.e. a genuine breakout to a fresh 52-week high THIS week)
-#     - Each of the prior 5 weeks' closes was NOT itself a new 52-week
-#       high (same check, one week further back each time)
-#     - Market cap between Rs 500 Cr and Rs 50,000 Cr
+# First cut of this screener re-implemented his rule ourselves against
+# this file's usual NSE 750 (Nifty Total Market) universe — logic
+# verified correct (19/20 known-qualifying names matched), but the
+# RESULT COUNT was way off (a handful vs his scan's ~36): his Chartink
+# scan runs on the FULL NSE cash segment (~2,570 listed equities, via
+# nsearchives.nseindia.com/content/equities/EQUITY_L.csv), not the 750
+# this file usually works with. Fetching/scoring 2,570 tickers'
+# history ourselves risked Vercel's 300s cap for a check Chartink
+# already runs for free — so instead of reimplementing the scan against
+# a wider universe, this queries CHARTINK ITSELF for the qualifying
+# symbol list, then only pulls yfinance data (price/52W-high/20W-MA)
+# for THOSE ~30-40 names, not the whole market. Chartink's own
+# scan_clause POST endpoint is anonymous — no chartink_session cookie
+# needed (same finding api/viraj_screen.py's _vj_chartink_scan already
+# made: the cookie gates saved/premium screens, not an ad-hoc
+# scan_clause). MOMP_CHARTINK_CLAUSE below is pulled VERBATIM from
+# chartink.com/screener/mi50-originalkl-scan's own embedded query
+# state (view-source, not reconstructed from the UI's English
+# description of it) — confirmed live 2026-09-04 to return the exact
+# same 36 names as visiting that page.
 #
-# In plain terms: not just "at a 52-week high" (that's 52wHigh above) —
-# specifically the FIRST week a stock breaks out after NOT already
-# being on a new-high streak, filtering out names 4-5 weeks into an
-# already-extended breakout. His own further steps are NOT replicated
-# here since they're explicitly discretionary, not part of the
-# mechanical scan: he manually picks a personal "top 5" from the
-# scan's ~20-30 results and says to "avoid cyclicals" by eye. This
-# screener shows the FULL qualifying list, same as every other
-# boolean-signal screener in this file (myLTIS, maBreakout, etc.) —
-# read it as "this week's scan output", not "his actual 5 picks".
+# Stock passes ALL of (every check on WEEKLY CLOSE, computed by
+# Chartink): this week's close > the 52-week-high reading as of 1 week
+# ago (a genuine fresh breakout) AND none of the prior 5 weeks was
+# itself already a new 52-week high AND market cap between Rs 500 Cr
+# and Rs 50,000 Cr. In plain terms: not just "at a 52-week high"
+# (that's 52wHigh above) — specifically the FIRST week a stock breaks
+# out, filtering out names already 4-5 weeks into an extended streak.
 #
-# No market-cap filter, same reasoning as maBreakout/valueRsiTurnaround
-# above: no bulk source for it across 750 tickers without a slow
-# per-ticker yfinance .info call each, and this universe's own
-# inclusion bar (NSE Total Market) already excludes true microcaps —
-# his Rs 50,000 Cr upper bound would only additionally exclude true
-# large caps, which rarely show up as "fresh" 52-week breakouts anyway
-# (they're already well-covered, slower-moving names).
+# His own further steps are NOT replicated here since they're
+# explicitly discretionary, not part of the mechanical scan: he
+# manually picks a personal "top 5" from the scan's results and says
+# to "avoid cyclicals" by eye. This screener shows Chartink's FULL
+# qualifying list, same convention as every other boolean-signal
+# screener in this file — read it as "this week's scan output", not
+# "his actual 5 picks".
 #
 # 20-week MA / % above it are shown for context (his own stated exit
 # rule — "keep exiting with 20 week moving average below close" — is a
 # per-position rule you'd apply once you actually hold something, not
 # part of the entry scan), not used to filter or rank here.
 
-MOMP_LOOKBACK_WEEKS = 52   # the scan's "52" in Max(52, Weekly Close)
-MOMP_CONFIRM_WEEKS = 6     # this week + the 5 prior weeks checked for "not already streaking"
-MOMP_FETCH_YEARS = 3       # comfortably covers 52 weeks + the 6-week lookback + resampling slack
-MOMP_MIN_WEEKLY_BARS = MOMP_LOOKBACK_WEEKS + MOMP_CONFIRM_WEEKS + 2
+MOMP_CHARTINK_CLAUSE = (
+    "( {cash} (  weekly close >  1 week ago max( 52 ,  weekly close ) and "
+    " 1 week ago close <  2 weeks ago max( 52 ,  weekly close ) and "
+    " 2 weeks ago close <  3 weeks ago max( 52 ,  weekly close ) and "
+    " 3 weeks ago close <  4 weeks ago max( 52 ,  weekly close ) and "
+    " 4 weeks ago close <  5 weeks ago max( 52 ,  weekly close ) and "
+    " 5 weeks ago close <  6 weeks ago max( 52 ,  weekly close ) and "
+    " market cap >=  500 and  market cap <=  50000 ) )"
+)
+MOMP_FETCH_YEARS = 2  # only need ~52 weeks + a 20W-MA warm-up; cheap since this only runs on Chartink's small qualifying list, not the full universe
+
+
+def _ms_chartink_scan(clause):
+    """Anonymous ad-hoc scan_clause POST — same pattern and same
+    verified-cookie-free finding as api/viraj_screen.py's
+    _vj_chartink_scan. Returns the raw list of row dicts (each has at
+    least nsecode/name/close), or None if Chartink's response couldn't
+    be parsed (no csrf token found, non-JSON response, etc.)."""
+    s = requests.Session()
+    h = {"User-Agent": "Mozilla/5.0"}
+    r = s.get("https://chartink.com/screener/", headers=h, timeout=15)
+    csrf_m = re.search(r'meta name="csrf-token" content="([^"]+)"', r.text)
+    if not csrf_m:
+        return None
+    resp = s.post("https://chartink.com/screener/process",
+                   headers={**h, "X-CSRF-TOKEN": csrf_m.group(1), "X-Requested-With": "XMLHttpRequest",
+                            "Content-Type": "application/x-www-form-urlencoded"},
+                   data={"scan_clause": clause}, timeout=20)
+    try:
+        return resp.json().get("data", [])
+    except ValueError:
+        return None
 
 
 def _run_momentum_personal(symbols, name_map, sector_map):
+    # symbols/name_map/sector_map (the NSE 750 universe every other
+    # runner uses) are intentionally NOT the source of truth here —
+    # Chartink's own scan already covers the full NSE cash segment.
+    # name_map/sector_map are still consulted as a bonus enrichment for
+    # whichever qualifying names DO happen to overlap with NSE 750.
+    chartink_rows = _ms_chartink_scan(MOMP_CHARTINK_CLAUSE)
+    if not chartink_rows:
+        return None, "Chartink scan returned no data (endpoint may be down, blocked, or its scan_clause format changed)"
+
+    chartink_symbols = [r["nsecode"] for r in chartink_rows if r.get("nsecode")]
+    chartink_name = {r["nsecode"]: r.get("name") for r in chartink_rows if r.get("nsecode")}
+    if not chartink_symbols:
+        return {"label": "Momentum (Personal)", "push_rows": [], "scanned": 0, "skipped": 0}, None
+
     start = (date.today() - timedelta(days=365 * MOMP_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    daily = _ms_fetch_daily(chartink_symbols, start)
     if daily is None:
-        return None, "no data fetched from yfinance"
+        return None, "Chartink returned qualifying symbols but yfinance fetch failed for all of them"
 
     rows, skipped = [], []
+    fetched = set()
     for sym, g in daily.groupby("symbol"):
+        fetched.add(sym)
         cd = g.set_index("date")["Close"].sort_index()
         if (date.today() - cd.index[-1].date()).days > NSE_STALE_DAYS:
             skipped.append(sym)
             continue
         cw = cd.resample("W-FRI").last().dropna()
-        if len(cw) < MOMP_MIN_WEEKLY_BARS:
-            skipped.append(sym)
-            continue
-
-        roll_max = cw.rolling(MOMP_LOOKBACK_WEEKS, min_periods=MOMP_LOOKBACK_WEEKS).max()
-        # cw.iloc[-1] = this week's close; roll_max.iloc[-2] = what the
-        # 52-week-high indicator read as of last week — matches
-        # Chartink's "Close > 1 week ago Max(52, Weekly Close)" exactly.
-        fresh_high = bool(cw.iloc[-1] > roll_max.iloc[-2])
-        not_already_streaking = all(
-            cw.iloc[-1 - j] < roll_max.iloc[-2 - j] for j in range(1, MOMP_CONFIRM_WEEKS)
-        )
-        if not (fresh_high and not_already_streaking):
+        if len(cw) < 20:
+            skipped.append(sym)  # not enough history for even the 20W MA
             continue
 
         weekly_close = float(cw.iloc[-1])
+        high_52w = float(cw.tail(52).max())
         ma20w_series = cw.rolling(20, min_periods=20).mean()
         ma20w = float(ma20w_series.iloc[-1]) if not pd.isna(ma20w_series.iloc[-1]) else None
         rows.append({
-            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "symbol": sym,
+            "name": name_map.get(sym) or chartink_name.get(sym) or sym,
+            "sector": sector_map.get(sym, ""),
             "price": round(float(cd.iloc[-1]), 2),
             "weekly_close": round(weekly_close, 2),
-            "high_52w": round(float(roll_max.iloc[-1]), 2),
+            "high_52w": round(high_52w, 2),
             "ma20w": round(ma20w, 2) if ma20w is not None else None,
             "pct_above_ma20w": round((weekly_close / ma20w - 1) * 100, 2) if ma20w else None,
         })
+    # A Chartink symbol yfinance couldn't resolve at all (no bars returned) — still worth counting as skipped, not silently dropped
+    skipped.extend(sym for sym in chartink_symbols if sym not in fetched)
 
     rows.sort(key=lambda r: -(r["pct_above_ma20w"] if r["pct_above_ma20w"] is not None else -999))
     return {"label": "Momentum (Personal)", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
