@@ -66,6 +66,7 @@ import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
+from bs4 import BeautifulSoup
 
 from _cron_auth import is_authed_cron_or_cookie
 from _db import get_conn, get_meta, set_meta
@@ -1546,6 +1547,195 @@ def _ms_chartink_scan(clause):
         return None
 
 
+# Fundamentals + chart-check score (F1-F3/C1-C3), added 2026-09-05 on
+# request ("modify momentumPersonal with viraj screen type details") —
+# the identical 6-rule logic api/viraj_screen.py's _vj_fetch_fundamentals/
+# _vj_run_chart_checks/_vj_validate already use, DUPLICATED here rather
+# than imported, same "duplicate, don't cross-import" convention this
+# file's sibling api/_multibagger.py already documents (a future change
+# to one screener's logic shouldn't silently change another's — fix a
+# threshold in both or retire one in favor of the other). Feasible here
+# (unlike smeMomentum) because momentumPersonal's own universe is small
+# — Chartink's scan already caps it to ~30-40 names, not 559+, so a
+# per-symbol Screener.in fetch comfortably fits Vercel's 300s budget,
+# and the chart checks reuse _ms_chartink_scan (already proven live in
+# this exact function) instead of the SME tab's Yahoo-direct workaround.
+MOMP_FUND_DELAY_SECONDS = 1.0  # same Screener.in pacing viraj_screen.py uses
+MOMP_MONTHS = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+               "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
+
+
+def _mp_parse_number(s):
+    if not s:
+        return None
+    try:
+        return float(str(s).strip().replace(",", "").replace("%", ""))
+    except Exception:
+        return None
+
+
+def _mp_yoy(curr, prev):
+    if curr is None or prev is None or prev == 0:
+        return None
+    return round((curr - prev) / abs(prev) * 100, 1)
+
+
+def _mp_parse_quarter_label(label):
+    m = re.match(r"([A-Za-z]{3})[a-z]*\s*(\d{4})", (label or "").strip())
+    if not m or m.group(1).lower() not in MOMP_MONTHS:
+        return None
+    return (int(m.group(2)), MOMP_MONTHS[m.group(1).lower()])
+
+
+def _mp_find_year_ago_index(q_labels, latest_idx):
+    latest = _mp_parse_quarter_label(q_labels[latest_idx])
+    if not latest:
+        return None
+    target = (latest[0] - 1, latest[1])
+    for i, lbl in enumerate(q_labels):
+        if _mp_parse_quarter_label(lbl) == target:
+            return i
+    return None
+
+
+def _mp_fetch_fundamentals(ticker):
+    """Same scrape as api/viraj_screen.py's _vj_fetch_fundamentals, plus
+    market cap (from Screener.in's top-ratios block) which that
+    function doesn't need (viraj_screen.py already gets marketcap from
+    momoindiascreener.in's own listing)."""
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+               "Referer": "https://www.screener.in/"}
+    for url in [f"https://www.screener.in/company/{ticker}/consolidated/",
+                f"https://www.screener.in/company/{ticker}/"]:
+        r = None
+        for attempt in range(3):
+            try:
+                r = requests.get(url, headers=headers, timeout=15)
+            except Exception:
+                time.sleep(2)
+                continue
+            if r.status_code == 429:
+                time.sleep(8 * (attempt + 1))
+                continue
+            break
+        if r is None or r.status_code != 200:
+            continue
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        marketcap = None
+        ul = soup.find("ul", id="top-ratios")
+        if ul:
+            li = ul.find("li")
+            if li:
+                num = li.find("span", class_="number")
+                marketcap = _mp_parse_number(num.get_text(strip=True)) if num else None
+
+        qr = next((s for s in soup.find_all("section")
+                   if s.find("h2") and ("Quarterly" in s.find("h2").text or "Half" in s.find("h2").text)), None)
+        if not qr:
+            continue
+        table = qr.find("table")
+        if not table:
+            continue
+        quarters = [th.get_text(strip=True) for th in table.find("thead").find_all("th")]
+        rows = {}
+        for tr in table.find("tbody").find_all("tr"):
+            cells = tr.find_all("td")
+            if len(cells) < 2:
+                continue
+            rows[cells[0].get_text(strip=True)] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+        sales_row = next((v for k, v in rows.items() if any(x in k.lower() for x in ["sales", "revenue"])), None)
+        if not sales_row or len(sales_row) < 5 or all(v is None for v in sales_row):
+            continue  # template present but Screener.in has no real numbers for this ticker
+        q_labels = quarters[1:]
+        ci = len(sales_row) - 1
+        pi = _mp_find_year_ago_index(q_labels, ci)
+        if pi is None:
+            continue
+        op_row = next((v for k, v in rows.items() if "operating profit" in k.lower()), None)
+        eps_row = next((v for k, v in rows.items() if "eps" in k.lower()), None)
+        s_curr, s_prev = sales_row[ci], sales_row[pi]
+        op_curr = op_row[ci] if op_row and ci < len(op_row) else None
+        op_prev = op_row[pi] if op_row and pi < len(op_row) else None
+        e_curr = eps_row[ci] if eps_row and ci < len(eps_row) else None
+        e_prev = eps_row[pi] if eps_row and pi < len(eps_row) else None
+        sales_g = _mp_yoy(s_curr, s_prev)
+        ebit_g = _mp_yoy(op_curr, op_prev)
+        eps_g = None
+        if e_curr is not None and e_prev is not None:
+            if e_prev < 0 and e_curr > 0:
+                eps_g = "T"
+            elif e_prev > 0 and e_curr > 0:
+                eps_g = _mp_yoy(e_curr, e_prev)
+        dol = round(ebit_g / sales_g, 2) if (ebit_g and sales_g and sales_g != 0) else None
+        dfl = round(eps_g / ebit_g, 2) if (isinstance(eps_g, float) and ebit_g and ebit_g != 0) else None
+        dcl = round(dol * dfl, 2) if (dol and dfl) else None
+        return {"marketcap": marketcap, "sales_g": sales_g, "ebit_g": ebit_g, "eps_g": eps_g,
+                "op_curr": op_curr, "op_prev": op_prev, "dol": dol, "dfl": dfl, "dcl": dcl}
+    return None
+
+
+def _mp_run_chart_checks(tickers):
+    """Same 3 Chartink clauses as api/viraj_screen.py's
+    _vj_run_chart_checks, reusing this file's own _ms_chartink_scan
+    (already proven live for momentumPersonal's own qualifying-list
+    scan above)."""
+    rsi = _ms_chartink_scan("( {cash} ( weekly rsi( 14 ) > 66 ) )")
+    ema200 = _ms_chartink_scan("( {cash} ( latest close > latest ema( close,200 ) ) )")
+    contraction = _ms_chartink_scan("""( {cash} (
+        abs( latest ema(close,10) - latest ema(close,20) ) < abs( 3 days ago ema(close,10) - 3 days ago ema(close,20) )
+        and abs( latest ema(close,10) - latest ema(close,20) ) < abs( 1 days ago ema(close,10) - 1 days ago ema(close,20) )
+    ) )""")
+    rsi_set = {r["nsecode"] for r in (rsi or []) if r.get("nsecode")}
+    ema200_set = {r["nsecode"] for r in (ema200 or []) if r.get("nsecode")}
+    contraction_set = {r["nsecode"] for r in (contraction or []) if r.get("nsecode")}
+    return {t: {"rsi": t in rsi_set, "ema200": t in ema200_set, "contraction": t in contraction_set} for t in tickers}
+
+
+def _mp_validate(fund, chart):
+    """Identical rule set/thresholds to api/viraj_screen.py's
+    _vj_validate."""
+    if not fund:
+        return {"score": 0, "max_score": 0, "rules": {}, "verdict": "NO DATA"}
+    c = chart or {}
+    f1 = bool(fund.get("dol") and fund["dol"] > 1.5)
+    f2 = (isinstance(fund.get("dfl"), float) and fund["dfl"] < 1.2) if fund.get("dfl") is not None else None
+    f3 = bool(fund.get("op_curr") and fund.get("op_prev") and fund["op_curr"] > fund["op_prev"])
+    c1, c2, c3 = c.get("rsi", False), c.get("ema200", False), c.get("contraction", False)
+    rules = {"F1": f1, "F2": f2, "F3": f3, "C1": c1, "C2": c2, "C3": c3}
+    score = sum(1 for v in rules.values() if v is True)
+    max_score = sum(1 for v in rules.values() if v is not None)
+    sales_ok = fund.get("sales_g") and fund["sales_g"] > 0
+    hard_fails = sum([not f1, f2 is False, not f3])
+    if not sales_ok:
+        verdict = "SKIP — sales declining"
+    elif hard_fails >= 2:
+        verdict = "SKIP"
+    elif max_score >= 5 and score == max_score:
+        verdict = "⭐ ENTRY READY"
+    elif max_score >= 1 and score >= max_score - 1 and not c3:
+        verdict = "WATCHLIST — await EMA contraction"
+    elif max_score >= 1 and score >= max_score - 1:
+        verdict = "WATCHLIST"
+    else:
+        verdict = "SKIP"
+    return {"score": score, "max_score": max_score, "rules": rules, "verdict": verdict}
+
+
+def _mp_fmt_pct(v):
+    if v is None:
+        return "—"
+    return v if isinstance(v, str) else f"{v:+.0f}%"
+
+
+def _mp_fmt_num(v):
+    return "—" if v is None else round(v, 2)
+
+
+def _mp_tick(v):
+    return "✅" if v is True else ("❌" if v is False else "—")
+
+
 def _run_momentum_personal(symbols, name_map, sector_map):
     # symbols/name_map/sector_map (the NSE 750 universe every other
     # runner uses) are intentionally NOT the source of truth here —
@@ -1566,6 +1756,13 @@ def _run_momentum_personal(symbols, name_map, sector_map):
     if daily is None:
         return None, "Chartink returned qualifying symbols but yfinance fetch failed for all of them"
 
+    # Viraj-style fundamentals + chart-check score, added 2026-09-05 —
+    # see the module comment above _mp_fetch_fundamentals. Chart checks
+    # are 3 bulk Chartink scans (one round trip each, not per-symbol);
+    # fundamentals are fetched per-symbol below, same 1s-paced loop
+    # viraj_screen.py itself uses.
+    chart_checks = _mp_run_chart_checks(chartink_symbols)
+
     rows, skipped = [], []
     fetched = set()
     for sym, g in daily.groupby("symbol"):
@@ -1583,6 +1780,12 @@ def _run_momentum_personal(symbols, name_map, sector_map):
         high_52w = float(cw.tail(52).max())
         ma20w_series = cw.rolling(20, min_periods=20).mean()
         ma20w = float(ma20w_series.iloc[-1]) if not pd.isna(ma20w_series.iloc[-1]) else None
+
+        fund = _mp_fetch_fundamentals(sym)
+        time.sleep(MOMP_FUND_DELAY_SECONDS)
+        val = _mp_validate(fund, chart_checks.get(sym, {}))
+        r = val["rules"]
+
         rows.append({
             "symbol": sym,
             "name": name_map.get(sym) or chartink_name.get(sym) or sym,
@@ -1592,6 +1795,17 @@ def _run_momentum_personal(symbols, name_map, sector_map):
             "high_52w": round(high_52w, 2),
             "ma20w": round(ma20w, 2) if ma20w is not None else None,
             "pct_above_ma20w": round((weekly_close / ma20w - 1) * 100, 2) if ma20w else None,
+            "marketcap": fund.get("marketcap") if fund else None,
+            "sales_g": _mp_fmt_pct(fund["sales_g"] if fund else None),
+            "ebit_g": _mp_fmt_pct(fund["ebit_g"] if fund else None),
+            "eps_g": _mp_fmt_pct(fund["eps_g"] if fund else None),
+            "dol": _mp_fmt_num(fund["dol"] if fund else None),
+            "dfl": _mp_fmt_num(fund["dfl"] if fund else None),
+            "dcl": _mp_fmt_num(fund["dcl"] if fund else None),
+            "F1": _mp_tick(r.get("F1")), "F2": _mp_tick(r.get("F2")), "F3": _mp_tick(r.get("F3")),
+            "C1": _mp_tick(r.get("C1")), "C2": _mp_tick(r.get("C2")), "C3": _mp_tick(r.get("C3")),
+            "score": f"{val['score']}/{val['max_score']}" if val["max_score"] else "—",
+            "verdict": val["verdict"],
         })
     # A Chartink symbol yfinance couldn't resolve at all (no bars returned) — still worth counting as skipped, not silently dropped
     skipped.extend(sym for sym in chartink_symbols if sym not in fetched)
