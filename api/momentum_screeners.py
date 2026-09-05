@@ -1600,6 +1600,116 @@ def _run_momentum_personal(symbols, name_map, sector_map):
     return {"label": "Momentum (Personal)", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── smeMomentum ──────────────────────────────────────────────────────────────
+#
+# Added 2026-09-05 at Harish's request after a YouTube video arguing for
+# SME-platform stocks as a source of better returns. Deliberately a
+# SEPARATE tab, not folded into the NSE-750 universe every other runner
+# in this file shares — the SME/Emerge platform is a different exchange
+# segment NSE's own Total Market list doesn't include at all, and two
+# real unknowns made blending it into the existing tabs the wrong first
+# move: (1) no archives.nseindia.com-hosted bulk constituent list was
+# found for it (every other universe in this file comes from that static,
+# bot-protection-free subdomain) — the only working source found is
+# nseindia.com's own live Emerge feed, which the rest of this file's
+# comments already flag as normally blocking/timing out from Vercel's
+# datacenter IP; (2) yfinance's daily-history coverage of thinly-traded
+# SME names is unverified (Yahoo itself was rate-limiting test fetches
+# the day this was built). Isolating it to its own tab means neither
+# unknown can degrade the 13 tabs already relied on if either turns out
+# false.
+#
+# Sidesteps unknown (2) entirely for this first cut: rather than pull
+# yfinance daily history to compute RSI/EMA/return ourselves (the
+# pattern every other tab uses), this reads the 1-year and 30-day %
+# change NSE ALREADY computes per Emerge stock straight off the same
+# live feed that supplies the universe — one lightweight JSON call,
+# no bulk price-history fetch at all. Ranked the same way weekendInvesting
+# ranks the main board: pure trailing return, no benchmark, no
+# fundamentals, top 20 + next 20 as a watchlist. A stock missing NSE's
+# own 365-day figure (typically one listed under a year) is left out of
+# the ranked list rather than estimated from its shorter 30-day number.
+
+SME_EMERGE_URL = "https://www.nseindia.com/api/live-analysis-emerge"
+SME_LABEL = "SME Momentum (NSE Emerge)"
+SME_TOP_N = 20
+SME_WATCHLIST_EXTRA = 20
+
+
+def _sme_fetch_universe():
+    """NSE Emerge (SME platform) live snapshot. Unlike every other
+    universe fetch in this file (archives.nseindia.com — plain requests,
+    no bot-protection), this hits nseindia.com's own live API, which
+    normally wants a session cookie first — so a homepage GET bootstraps
+    that cookie before the real request, the standard workaround for
+    nseindia.com's live endpoints. Confirmed working from a residential
+    IP 2026-09-05; NOT yet confirmed reachable from Vercel's datacenter
+    IP — the first live cron/Run-now trigger after deploy is the real
+    test, and the caller surfaces any failure as this screener's own
+    error rather than raising through to the other 13 tabs."""
+    s = requests.Session()
+    h = {"User-Agent": "Mozilla/5.0", "Accept": "application/json,text/html"}
+    s.get("https://www.nseindia.com/", headers=h, timeout=15)
+    r = s.get(SME_EMERGE_URL, headers=h, timeout=20)
+    r.raise_for_status()
+    data = r.json().get("data", [])
+    out = []
+    for row in data:
+        sym = (row.get("symbol") or "").strip()
+        if not sym:
+            continue
+        out.append({
+            "symbol": sym,
+            "price": row.get("lastPrice"),
+            "year_high": row.get("yearHigh"),
+            "year_low": row.get("yearLow"),
+            "pct_30d": row.get("perChange30d"),
+            "pct_365d": row.get("perChange365d"),
+        })
+    return out
+
+
+def _run_sme_momentum(symbols, name_map, sector_map):
+    """Ignores the NSE-750 symbols/name_map/sector_map every other
+    runner uses — see module comment above. name_map is still consulted
+    as a bonus enrichment on the off chance a symbol happens to overlap
+    (it generally won't; SME tickers are a disjoint list from the main
+    board)."""
+    try:
+        universe = _sme_fetch_universe()
+    except Exception as e:
+        return None, f"NSE Emerge universe fetch failed: {e}"
+    if not universe:
+        return None, "NSE Emerge universe was empty"
+
+    rows, skipped = [], []
+    for u in universe:
+        sym = u["symbol"]
+        price, roc_1y = u["price"], u["pct_365d"]
+        if price is None or roc_1y is None:
+            skipped.append(sym)  # typically listed under a year — no trustworthy 365d figure yet
+            continue
+        year_high = u["year_high"]
+        rows.append({
+            "symbol": sym,
+            "name": name_map.get(sym, sym),
+            "sector": "NSE Emerge (SME)",
+            "close": round(float(price), 2),
+            "as_of": date.today().isoformat(),
+            "pct_30d": round(float(u["pct_30d"]), 2) if u["pct_30d"] is not None else None,
+            "roc_1y_pct": round(float(roc_1y), 2),
+            "year_high": year_high,
+            "pct_off_high": round((float(price) / year_high - 1) * 100, 2) if year_high else None,
+        })
+
+    rows.sort(key=lambda r: -r["roc_1y_pct"])
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    top = rows[:SME_TOP_N]
+    watchlist = rows[SME_TOP_N:SME_TOP_N + SME_WATCHLIST_EXTRA]
+    return {"label": SME_LABEL, "push_rows": top + watchlist, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1614,6 +1724,7 @@ SCREENER_RUNNERS = {
     "52wHigh": _run_52w_high,
     "allTimeHigh": _run_all_time_high,
     "momentumPersonal": _run_momentum_personal,
+    "smeMomentum": _run_sme_momentum,
 }
 
 
