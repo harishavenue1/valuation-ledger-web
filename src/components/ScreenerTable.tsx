@@ -56,6 +56,27 @@ export function PriceLink({ symbol, value }: { symbol: string; value: any }) {
   );
 }
 
+// Symbol column -> Screener.in company page, new tab. Same pattern as
+// PriceLink's TradingView link (2026-09-05, "on the price we have
+// anyway trading view link, now can we put screener.in link to
+// symbol") — a small separate icon rather than repointing the Symbol
+// button itself, so this app's own /company/:symbol page (fundamentals,
+// watchlist, Run buttons) stays one click away too, not replaced.
+function ScreenerInLink({ symbol }: { symbol: string }) {
+  return (
+    <a
+      href={`https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => e.stopPropagation()}
+      className="ml-1 text-slate-300 hover:text-indigo-600 no-underline"
+      title={`Open ${symbol} on Screener.in`}
+    >
+      ⧉
+    </a>
+  );
+}
+
 export interface Col {
   key: string;
   label: string;
@@ -251,6 +272,7 @@ export function GenericTable({
                           <button onClick={() => navigate(String(r.symbol))} className="hover:underline">
                             {r.symbol}
                           </button>
+                          <ScreenerInLink symbol={sym} />
                         </>
                       ) : c.render ? (
                         c.render(r)
