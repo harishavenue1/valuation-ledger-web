@@ -1626,14 +1626,15 @@ def _run_momentum_personal(symbols, name_map, sector_map):
 # live feed that supplies the universe — one lightweight JSON call,
 # no bulk price-history fetch at all. Ranked the same way weekendInvesting
 # ranks the main board: pure trailing return, no benchmark, no
-# fundamentals, top 20 + next 20 as a watchlist. A stock missing NSE's
-# own 365-day figure (typically one listed under a year) is left out of
-# the ranked list rather than estimated from its shorter 30-day number.
+# fundamentals — but unlike weekendInvesting's top-20 cap (which mirrors
+# Alok Jain's actual 20-stock equal-weight portfolio rule), there's no
+# equivalent rule here, so every scored stock is kept, full list, no cut
+# line at all. A stock missing NSE's own 365-day figure (typically one
+# listed under a year) is left out of the ranked list rather than
+# estimated from its shorter 30-day number.
 
 SME_EMERGE_URL = "https://www.nseindia.com/api/live-analysis-emerge"
 SME_LABEL = "SME Momentum (NSE Emerge)"
-SME_TOP_N = 20
-SME_WATCHLIST_EXTRA = 20
 
 
 def _sme_fetch_universe():
@@ -1705,9 +1706,7 @@ def _run_sme_momentum(symbols, name_map, sector_map):
     rows.sort(key=lambda r: -r["roc_1y_pct"])
     for i, r in enumerate(rows, 1):
         r["rank"] = i
-    top = rows[:SME_TOP_N]
-    watchlist = rows[SME_TOP_N:SME_TOP_N + SME_WATCHLIST_EXTRA]
-    return {"label": SME_LABEL, "push_rows": top + watchlist, "scanned": len(rows), "skipped": len(skipped)}, None
+    return {"label": SME_LABEL, "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 SCREENER_RUNNERS = {
