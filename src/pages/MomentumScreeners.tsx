@@ -336,9 +336,10 @@ export default function MomentumScreeners() {
         A separate universe from every other tab here: the <b>NSE Emerge (SME) platform</b>, not the NSE 750 main-board list — added after a
         YouTube video's case for SME-platform stocks as a source of better returns. Ranked the same way <b>weekendInvesting</b> ranks the main
         board — pure trailing <b>1-year price return</b>, no benchmark, no fundamentals — except the return itself is read straight off NSE's
-        own Emerge live feed rather than computed from a yfinance price history fetch (unverified for these thinly-traded names). Top 20 =
-        rank-1 list, next 20 shown as a watchlist. A stock listed under a year (no trustworthy 1-year figure from NSE yet) is left out
-        entirely rather than estimated from its 30-day number, which is shown for context only. <b>Read the risk side too, not just the
+        own Emerge live feed rather than computed from a yfinance price history fetch (unverified for these thinly-traded names). Unlike
+        weekendInvesting's top-20 cap (which mirrors an actual 20-stock portfolio rule), there's no equivalent rule here — every scored stock
+        is shown, full list, no cut line. A stock listed under a year (no trustworthy 1-year figure from NSE yet) is left out entirely rather
+        than estimated from its 30-day number, which is shown for context only. <b>Read the risk side too, not just the
         return</b>: SME stocks trade in far lower volumes than main-board names, have looser disclosure requirements, and can move sharply on
         very little news — a return number here says nothing about how easily a position could actually be exited.
       </>
