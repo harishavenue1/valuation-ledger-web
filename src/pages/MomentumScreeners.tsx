@@ -477,13 +477,15 @@ export default function MomentumScreeners() {
       </p>
 
       {/* 15 tabs (up from the original 4) no longer fit one row at any
-          reasonable width — this used to be a plain flex row with no
-          wrap/scroll, so it just overflowed the page ("icons are too
-          wide... not a better view", 2026-09-05). overflow-x-auto +
-          flex-shrink-0 + whitespace-nowrap makes it a horizontal
-          scroll strip instead of breaking layout — every tab stays
-          reachable and full-width, nothing shortened or hidden. */}
-      <div className="flex gap-1 mb-4 border-b border-slate-200 overflow-x-auto">
+          reasonable width. First tried a horizontal scroll strip
+          (overflow-x-auto), but that was reverted the same day
+          ("instead of slider lets keep tabs stacked up") — flex-wrap
+          instead, so tabs wrap onto as many rows as needed. Each
+          button keeps its own border-b-2 active-underline (still
+          correct per-row once wrapped); the container's border-b only
+          shows below the LAST row, which is fine — it's just the
+          divider before the table, not a per-row rule. */}
+      <div className="flex flex-wrap gap-1 mb-4 border-b border-slate-200">
         {TABS.map((t) => {
           const e = bundle.momentum_screeners[t.key];
           const active = tab === t.key;
@@ -491,7 +493,7 @@ export default function MomentumScreeners() {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
-              className={`text-sm px-2.5 py-2 border-b-2 -mb-px font-medium whitespace-nowrap flex-shrink-0 ${
+              className={`text-sm px-2.5 py-2 border-b-2 font-medium whitespace-nowrap ${
                 active ? "border-indigo-600 text-indigo-600" : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >
