@@ -342,6 +342,8 @@ export default function MomentumScreeners() {
         than estimated from its 30-day number, which is shown for context only. <b>Read the risk side too, not just the
         return</b>: SME stocks trade in far lower volumes than main-board names, have looser disclosure requirements, and can move sharply on
         very little news — a return number here says nothing about how easily a position could actually be exited.
+        {" "}<b>Unlike every other tab here, this doesn't refresh on a schedule</b> — NSE's SME data feed times out from Vercel, so this
+        runs as a local script (the SmeMomentum skill) whenever it's asked for, not automatically.
       </>
     ),
   };

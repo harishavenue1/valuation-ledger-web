@@ -35,7 +35,17 @@ const CLOUD_SCREENERS = new Set([
   "52wHigh",
   "allTimeHigh",
   "momentumPersonal",
-  "smeMomentum",
+  // smeMomentum deliberately NOT here — confirmed live 2026-09-05 that
+  // nseindia.com's Emerge feed (the only source for this data) times
+  // out from Vercel's datacenter IP, so it can't run there at all. It
+  // runs locally instead (~/.claude/skills/SmeMomentum), pushed the
+  // same way every screener's script worked pre-Vercel-migration. See
+  // LocalOnlyNote below — it gets its own component rather than falling
+  // through to LocalRunButton, whose "queues a request... picked up by
+  // a local poller" framing would be actively misleading here: no
+  // poller exists (that path is dead code for every OTHER screener
+  // too, per LocalRunButton's own comment), so a "Run now" click would
+  // just sit queued forever with no explanation.
 ]);
 
 // "Run now" for a screener that can't (or doesn't yet) execute inside
@@ -53,7 +63,20 @@ const MAX_POLL_MS = 15 * 60_000;
 
 export default function RunButton({ screener }: { screener: string }) {
   if (CLOUD_SCREENERS.has(screener)) return <CloudRunButton screener={screener} />;
+  if (screener === "smeMomentum") return <LocalOnlyNote />;
   return <LocalRunButton screener={screener} />;
+}
+
+// smeMomentum has no Vercel path and no local poller watching
+// run_requests (see the CLOUD_SCREENERS comment above) — a "Run now"
+// button here would just queue a request nothing ever picks up. Says
+// so plainly instead of pretending a click does something.
+function LocalOnlyNote() {
+  return (
+    <span className="text-xs text-slate-400" title="nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac">
+      Refreshed manually via the SmeMomentum skill, not on a schedule
+    </span>
+  );
 }
 
 // Runs synchronously on Vercel, awaited directly — no queue, no
