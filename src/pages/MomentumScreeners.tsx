@@ -5,6 +5,27 @@ import RunButton from "../components/RunButton";
 import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
+// F1-F3/C1-C3/score/verdict arrive pre-formatted as strings from
+// sme_momentum_screener.py, same convention as VirajScreen.tsx's own
+// rows (that page has its own near-identical Tick/verdict styling —
+// duplicated here in miniature rather than shared, since the two pages
+// don't otherwise share a component and the styling is tiny).
+function SmeTick({ v }: { v: string }) {
+  const cls = v === "✅" ? "bg-emerald-50 text-emerald-700" : v === "❌" ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-400";
+  return <span className={`inline-flex items-center justify-center w-6 h-6 rounded ${cls}`}>{v}</span>;
+}
+function SmeVerdict({ v }: { v: string }) {
+  const cls = v.includes("ENTRY READY")
+    ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+    : v.includes("WATCHLIST")
+      ? "bg-amber-50 text-amber-700 border-amber-300"
+      : "bg-slate-100 text-slate-500 border-slate-300";
+  return <span className={`inline-block text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${cls}`}>{v}</span>;
+}
+function fmtMktCap(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
+}
+
 // Each of these 5 screeners now scans NSE 750 (Nifty Total Market) and
 // pushes independently from its own local skill script — see
 // api/momentum_screeners.py. Row shape differs per screener (its own
@@ -187,11 +208,28 @@ export default function MomentumScreeners() {
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
+      { key: "marketcap", label: "Mkt Cap", render: (r) => fmtMktCap(r.marketcap) },
       { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
       { key: "pct_30d", label: "30D %", render: (r) => <Signed v={r.pct_30d} digits={1} /> },
       { key: "roc_1y_pct", label: "1Y Return %", render: (r) => <Signed v={r.roc_1y_pct} digits={1} /> },
       { key: "year_high", label: "52W High", render: (r) => fmtNum(r.year_high) },
+      { key: "year_low", label: "52W Low", render: (r) => fmtNum(r.year_low) },
+      { key: "diff_from_high", label: "₹ Off High", render: (r) => fmtNum(r.diff_from_high) },
       { key: "pct_off_high", label: "% Off High", render: (r) => <Signed v={r.pct_off_high} digits={1} /> },
+      { key: "sales_g", label: "Sales G%" },
+      { key: "ebit_g", label: "EBIT G%" },
+      { key: "eps_g", label: "EPS G%" },
+      { key: "dol", label: "DOL" },
+      { key: "dfl", label: "DFL" },
+      { key: "dcl", label: "DCL" },
+      { key: "F1", label: "F1", render: (r) => <SmeTick v={r.F1} /> },
+      { key: "F2", label: "F2", render: (r) => <SmeTick v={r.F2} /> },
+      { key: "F3", label: "F3", render: (r) => <SmeTick v={r.F3} /> },
+      { key: "C1", label: "C1", render: (r) => <SmeTick v={r.C1} /> },
+      { key: "C2", label: "C2", render: (r) => <SmeTick v={r.C2} /> },
+      { key: "C3", label: "C3", render: (r) => <SmeTick v={r.C3} /> },
+      { key: "score", label: "Score" },
+      { key: "verdict", label: "Verdict", render: (r) => <SmeVerdict v={r.verdict} /> },
     ],
   };
 
@@ -344,6 +382,16 @@ export default function MomentumScreeners() {
         very little news — a return number here says nothing about how easily a position could actually be exited.
         {" "}<b>Unlike every other tab here, this doesn't refresh on a schedule</b> — NSE's SME data feed times out from Vercel, so this
         runs as a local script (the SmeMomentum skill) whenever it's asked for, not automatically.
+        <br /><br />
+        <b>Sales G% / EBIT G% / EPS G% / DOL / DFL / DCL / F1-F3 / C1-C3 / Score / Verdict</b> are the same 6-rule check the{" "}
+        <b>Viraj Screen</b> tab uses (see its own methodology note for the exact rules) — <b>F1</b> DOL &gt; 1.5, <b>F2</b> DFL &lt; 1.2,{" "}
+        <b>F3</b> rising operating profit (from Screener.in), <b>C1</b> weekly RSI &gt; 66, <b>C2</b> price above 200-day EMA,{" "}
+        <b>C3</b> 10/20-day EMA gap narrowing (from Yahoo Finance's own price history, computed here — Chartink, which the Viraj tab uses for
+        this, doesn't reliably cover the SME segment). Two real, checked-not-guessed coverage gaps: only <b>~77%</b> of SME stocks have real
+        quarterly numbers on Screener.in (the rest show "—" for every fundamentals column, not a zero), and only <b>~43%</b> have price history
+        on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
+        than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
+        ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
       </>
     ),
   };
