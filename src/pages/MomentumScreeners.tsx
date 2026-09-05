@@ -13,11 +13,18 @@ import { useWatchlist } from "../lib/useWatchlist";
 // page — duplicated here in miniature rather than shared, since these
 // generic-table tabs don't otherwise share a component with that page
 // and the styling is tiny.
-function VirajTick({ v }: { v: string }) {
+function VirajTick({ v }: { v?: string }) {
   const cls = v === "✅" ? "bg-emerald-50 text-emerald-700" : v === "❌" ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-400";
-  return <span className={`inline-flex items-center justify-center w-6 h-6 rounded ${cls}`}>{v}</span>;
+  return <span className={`inline-flex items-center justify-center w-6 h-6 rounded ${cls}`}>{v ?? "—"}</span>;
 }
-function VirajVerdict({ v }: { v: string }) {
+// v can be undefined here even on a "new" row shape — a row pushed
+// before this Viraj-column addition landed (stale cache, or a run that
+// failed and left old data in place) simply won't carry a verdict
+// field at all. A crash here (v.includes on undefined) takes down the
+// WHOLE page, not just this cell — this app has no error boundary — so
+// this must degrade to "—" rather than throw.
+function VirajVerdict({ v }: { v?: string }) {
+  if (!v) return <span className="text-slate-400">—</span>;
   const cls = v.includes("ENTRY READY")
     ? "bg-emerald-50 text-emerald-700 border-emerald-300"
     : v.includes("WATCHLIST")
