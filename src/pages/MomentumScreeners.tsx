@@ -24,6 +24,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "52wHigh", label: "52-Week High", emoji: "🏔️" },
   { key: "allTimeHigh", label: "All-Time High", emoji: "🗻" },
   { key: "momentumPersonal", label: "momentumPersonal", emoji: "🎯" },
+  { key: "smeMomentum", label: "SME Momentum", emoji: "🌱" },
 ];
 
 export default function MomentumScreeners() {
@@ -182,6 +183,16 @@ export default function MomentumScreeners() {
       { key: "ma20w", label: "20W MA", render: (r) => fmtNum(r.ma20w) },
       { key: "pct_above_ma20w", label: "% Above 20W MA", render: (r) => <Signed v={r.pct_above_ma20w} digits={1} /> },
     ],
+    smeMomentum: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
+      { key: "pct_30d", label: "30D %", render: (r) => <Signed v={r.pct_30d} digits={1} /> },
+      { key: "roc_1y_pct", label: "1Y Return %", render: (r) => <Signed v={r.roc_1y_pct} digits={1} /> },
+      { key: "year_high", label: "52W High", render: (r) => fmtNum(r.year_high) },
+      { key: "pct_off_high", label: "% Off High", render: (r) => <Signed v={r.pct_off_high} digits={1} /> },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -318,6 +329,18 @@ export default function MomentumScreeners() {
         are <b>not</b> replicated: he picks a personal "top 5" from the results and says to "avoid cyclicals" by eye — this tab shows Chartink's full qualifying
         list, not his actual picks. <b>20W MA / % Above</b> reflect his stated <i>exit</i> rule (sell when weekly close breaks below the 20-week moving average),
         shown for context — not used to filter or rank; ranked by furthest above its own 20W MA.
+      </>
+    ),
+    smeMomentum: (
+      <>
+        A separate universe from every other tab here: the <b>NSE Emerge (SME) platform</b>, not the NSE 750 main-board list — added after a
+        YouTube video's case for SME-platform stocks as a source of better returns. Ranked the same way <b>weekendInvesting</b> ranks the main
+        board — pure trailing <b>1-year price return</b>, no benchmark, no fundamentals — except the return itself is read straight off NSE's
+        own Emerge live feed rather than computed from a yfinance price history fetch (unverified for these thinly-traded names). Top 20 =
+        rank-1 list, next 20 shown as a watchlist. A stock listed under a year (no trustworthy 1-year figure from NSE yet) is left out
+        entirely rather than estimated from its 30-day number, which is shown for context only. <b>Read the risk side too, not just the
+        return</b>: SME stocks trade in far lower volumes than main-board names, have looser disclosure requirements, and can move sharply on
+        very little news — a return number here says nothing about how easily a position could actually be exited.
       </>
     ),
   };
