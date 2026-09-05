@@ -35,6 +35,7 @@ const CLOUD_SCREENERS = new Set([
   "52wHigh",
   "allTimeHigh",
   "momentumPersonal",
+  "smeMomentum",
 ]);
 
 // "Run now" for a screener that can't (or doesn't yet) execute inside
