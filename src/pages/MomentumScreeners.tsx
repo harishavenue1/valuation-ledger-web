@@ -35,6 +35,9 @@ function VirajVerdict({ v }: { v?: string }) {
 function fmtMktCap(v: number | null | undefined): string {
   return v === null || v === undefined ? "—" : `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 0 })} Cr`;
 }
+function fmtVol(v: number | null | undefined): string {
+  return v === null || v === undefined ? "—" : v.toLocaleString("en-IN");
+}
 
 // Each of these 5 screeners now scans NSE 750 (Nifty Total Market) and
 // pushes independently from its own local skill script — see
@@ -56,6 +59,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "allTimeHigh", label: "All-Time High", emoji: "🗻" },
   { key: "momentumPersonal", label: "momentumPersonal", emoji: "🎯" },
   { key: "smeMomentum", label: "SME Momentum", emoji: "🌱" },
+  { key: "volumeRockers", label: "Volume Rockers", emoji: "🚨" },
 ];
 
 export default function MomentumScreeners() {
@@ -256,6 +260,18 @@ export default function MomentumScreeners() {
       { key: "score", label: "Score" },
       { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
+    volumeRockers: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "ltp", label: "LTP", render: (r) => <PriceLink symbol={r.symbol} value={r.ltp} /> },
+      { key: "day_vol", label: "Day Vol.", render: (r) => fmtVol(r.day_vol) },
+      { key: "month_vol_avg", label: "Month Vol. Avg", render: (r) => fmtVol(r.month_vol_avg) },
+      { key: "turnover_cr", label: "Turnover (₹ Cr)", render: (r) => fmtNum(r.turnover_cr, 1) },
+      { key: "day_chg_pct", label: "Day Chg %", render: (r) => <Signed v={r.day_chg_pct} digits={1} /> },
+      { key: "vol_change_times", label: "Volume Change ×", render: (r) => <span className="font-semibold">{fmtNum(r.vol_change_times, 1)}×</span> },
+    ],
   };
 
   // 2026-08-30, "add a note on how the calculation for score is
@@ -425,6 +441,20 @@ export default function MomentumScreeners() {
         on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
         than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
         ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
+      </>
+    ),
+    volumeRockers: (
+      <>
+        Today's up-movers with the biggest volume spike vs. their own recent trading — same idea as a shared "Biggest Action of the Day / Top
+        20 High Volume &amp; High Gain Stocks" reference table. Two conditions: <b>Day Chg %</b> must be positive (a gainer — this screen
+        deliberately excludes decliners, even ones with a bigger volume spike), <b>and</b> there's enough history for a trailing baseline.
+        Ranked by <b>Volume Change ×</b> = today's volume ÷ the average of the <b>prior 22 trading days'</b> volume (roughly one trading month,
+        deliberately excluding today itself — including it would let a huge spike day inflate its own baseline and understate its own ratio).
+        Top 20 shown. <b>Turnover (₹ Cr)</b> = today's volume × LTP, in crores — an approximation of true turnover (the sum of every trade's
+        price × quantity through the day), which isn't recoverable from a single end-of-day bar; volume × close is the standard stand-in when
+        only daily bars are available. No market-cap or minimum-volume floor, same reasoning as MA Breakout/Value RSI Turnaround elsewhere in
+        this app: no bulk market-cap source across 750 stocks, and the NSE 750 universe's own inclusion bar already excludes true microcaps in
+        practice.
       </>
     ),
   };

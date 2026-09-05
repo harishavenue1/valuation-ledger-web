@@ -84,7 +84,7 @@ def _ms_get_universe_symbols():
     return [(r["Symbol"].strip(), r["Company Name"].strip(), r["Industry"].strip()) for r in rows]
 
 
-def _ms_fetch_daily(symbols, start_iso, need_hl=False, need_ohlc=False):
+def _ms_fetch_daily(symbols, start_iso, need_hl=False, need_ohlc=False, need_volume=False):
     """Shared chunked-yfinance-download helper — identical pattern all 4
     original scripts used with their own local parquet cache, just
     without the cache (this runs once per cron trigger, nothing to
@@ -92,8 +92,13 @@ def _ms_fetch_daily(symbols, start_iso, need_hl=False, need_ohlc=False):
     ATR/chandelier-stop math needs them; the other 3 only use Close).
     need_ohlc=True keeps Open too (maBreakout computes its EMAs on
     OHLC4 = (O+H+L+C)/4 per Harish's standing EMA rule — see
-    feedback_ema_ohlc4_source.md — not Close alone)."""
+    feedback_ema_ohlc4_source.md — not Close alone). need_volume=True
+    (added 2026-09-05 for volumeRockers) keeps Volume — no other
+    screener in this file needed it before, so it was never fetched at
+    all until now."""
     cols = ["Open", "High", "Low", "Close"] if need_ohlc else (["Close", "High", "Low"] if need_hl else ["Close"])
+    if need_volume:
+        cols = cols + ["Volume"]
     tickers = [f"{s}.NS" for s in symbols]
     frames = []
     for i in range(0, len(tickers), FETCH_CHUNK):
@@ -1923,6 +1928,91 @@ def _run_sme_momentum(symbols, name_map, sector_map):
     return {"label": SME_LABEL, "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── volumeRockers ────────────────────────────────────────────────────────────
+#
+# Added 2026-09-05 on request — "add one last tab for volume rockers",
+# reproducing a "Biggest Action of the Day / Top 20 High Volume & High
+# Gain Stocks" table shared as a screenshot (Nifty Millionaire /
+# Datawrapper source, not a video/podcast this time — no methodology to
+# verify against, so this is a straightforward "today's up-movers with
+# the biggest volume spike vs their own recent average" screen, the
+# plain reading of the screenshot's own column names). Runs on the
+# regular NSE 750 universe like most tabs here (not a special universe
+# like smeMomentum) — Volume just wasn't a column any existing screener
+# needed before, so _ms_fetch_daily never fetched it until now.
+#
+# Definition: today's Close > yesterday's Close (a gainer — the
+# screenshot's rows are all positive %, so this filters out decliners
+# rather than showing every stock's volume ratio regardless of
+# direction) AND has enough history for a trailing ~1-month volume
+# baseline. Ranked by Volume Change Times = today's volume ÷ the
+# average of the PRIOR ~22 trading days' volume (one trading month,
+# deliberately excluding today itself so a huge spike day doesn't
+# inflate its own baseline and understate its own ratio). Turnover
+# (₹ Cr) = today's volume × today's close, in crores — an approximation
+# of the screenshot's own "Turnover Value" (true turnover would be the
+# sum of every trade's price×quantity through the day, which isn't
+# available from a daily OHLCV bar; volume×close is the standard
+# approximation used when only end-of-day bars are available). No
+# market-cap or absolute-volume floor — same reasoning as maBreakout/
+# valueRsiTurnaround elsewhere in this file: no bulk market-cap source
+# across 750 stocks, and the NSE 750 universe's own inclusion bar
+# already excludes true microcaps in practice.
+
+VR_LOOKBACK_TRADING_DAYS = 22  # ~1 trading month, for the volume baseline
+VR_FETCH_DAYS_BUFFER = 55      # calendar days back — comfortably covers 22 trading days + today with holidays/weekends
+VR_MIN_HISTORY_DAYS = VR_LOOKBACK_TRADING_DAYS + 2
+VR_TOP_N = 20
+
+
+def _run_volume_rockers(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=VR_FETCH_DAYS_BUFFER)).isoformat()
+    daily = _ms_fetch_daily(symbols, start, need_volume=True)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        g = g.sort_values("date")
+        if len(g) < VR_MIN_HISTORY_DAYS:
+            skipped.append(sym)
+            continue
+        last, prev = g.iloc[-1], g.iloc[-2]
+        if (date.today() - last["date"].date()).days > NSE_STALE_DAYS:
+            skipped.append(sym)
+            continue
+        ltp, prev_close = float(last["Close"]), float(prev["Close"])
+        day_vol = float(last["Volume"])
+        if prev_close <= 0 or day_vol <= 0:
+            skipped.append(sym)
+            continue
+        hist_vol = g["Volume"].iloc[-(VR_LOOKBACK_TRADING_DAYS + 1):-1]  # prior ~22 sessions, excluding today
+        month_vol_avg = float(hist_vol.mean()) if len(hist_vol) >= 10 else None
+        if not month_vol_avg or month_vol_avg <= 0:
+            skipped.append(sym)
+            continue
+
+        rows.append({
+            "symbol": sym,
+            "name": name_map.get(sym, sym),
+            "sector": sector_map.get(sym, ""),
+            "ltp": round(ltp, 2),
+            "as_of": last["date"].date().isoformat(),
+            "day_vol": int(day_vol),
+            "month_vol_avg": int(round(month_vol_avg)),
+            "turnover_cr": round(day_vol * ltp / 1e7, 2),
+            "day_chg_pct": round((ltp / prev_close - 1) * 100, 2),
+            "vol_change_times": round(day_vol / month_vol_avg, 1),
+        })
+
+    gainers = [r for r in rows if r["day_chg_pct"] > 0]
+    gainers.sort(key=lambda r: -r["vol_change_times"])
+    top = gainers[:VR_TOP_N]
+    for i, r in enumerate(top, 1):
+        r["rank"] = i
+    return {"label": "Volume Rockers", "push_rows": top, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -1938,6 +2028,7 @@ SCREENER_RUNNERS = {
     "allTimeHigh": _run_all_time_high,
     "momentumPersonal": _run_momentum_personal,
     "smeMomentum": _run_sme_momentum,
+    "volumeRockers": _run_volume_rockers,
 }
 
 
