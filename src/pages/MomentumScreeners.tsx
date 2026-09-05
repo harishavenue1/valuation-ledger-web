@@ -5,16 +5,19 @@ import RunButton from "../components/RunButton";
 import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
-// F1-F3/C1-C3/score/verdict arrive pre-formatted as strings from
-// sme_momentum_screener.py, same convention as VirajScreen.tsx's own
-// rows (that page has its own near-identical Tick/verdict styling —
-// duplicated here in miniature rather than shared, since the two pages
-// don't otherwise share a component and the styling is tiny).
-function SmeTick({ v }: { v: string }) {
+// F1-F3/C1-C3/score/verdict arrive pre-formatted as strings — same
+// Viraj-style 6-rule scoring used by smeMomentum (sme_momentum_screener.py,
+// a local script) and momentumPersonal (api/momentum_screeners.py's
+// _run_momentum_personal, both added 2026-09-05). VirajScreen.tsx has
+// its own near-identical Tick/verdict styling for its own dedicated
+// page — duplicated here in miniature rather than shared, since these
+// generic-table tabs don't otherwise share a component with that page
+// and the styling is tiny.
+function VirajTick({ v }: { v: string }) {
   const cls = v === "✅" ? "bg-emerald-50 text-emerald-700" : v === "❌" ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-400";
   return <span className={`inline-flex items-center justify-center w-6 h-6 rounded ${cls}`}>{v}</span>;
 }
-function SmeVerdict({ v }: { v: string }) {
+function VirajVerdict({ v }: { v: string }) {
   const cls = v.includes("ENTRY READY")
     ? "bg-emerald-50 text-emerald-700 border-emerald-300"
     : v.includes("WATCHLIST")
@@ -198,11 +201,26 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
+      { key: "marketcap", label: "Mkt Cap", render: (r) => fmtMktCap(r.marketcap) },
       { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "weekly_close", label: "Weekly Close", render: (r) => fmtNum(r.weekly_close) },
       { key: "high_52w", label: "52W High", render: (r) => fmtNum(r.high_52w) },
       { key: "ma20w", label: "20W MA", render: (r) => fmtNum(r.ma20w) },
       { key: "pct_above_ma20w", label: "% Above 20W MA", render: (r) => <Signed v={r.pct_above_ma20w} digits={1} /> },
+      { key: "sales_g", label: "Sales G%" },
+      { key: "ebit_g", label: "EBIT G%" },
+      { key: "eps_g", label: "EPS G%" },
+      { key: "dol", label: "DOL" },
+      { key: "dfl", label: "DFL" },
+      { key: "dcl", label: "DCL" },
+      { key: "F1", label: "F1", render: (r) => <VirajTick v={r.F1} /> },
+      { key: "F2", label: "F2", render: (r) => <VirajTick v={r.F2} /> },
+      { key: "F3", label: "F3", render: (r) => <VirajTick v={r.F3} /> },
+      { key: "C1", label: "C1", render: (r) => <VirajTick v={r.C1} /> },
+      { key: "C2", label: "C2", render: (r) => <VirajTick v={r.C2} /> },
+      { key: "C3", label: "C3", render: (r) => <VirajTick v={r.C3} /> },
+      { key: "score", label: "Score" },
+      { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
     smeMomentum: [
       { key: "rank", label: "Rank" },
@@ -222,14 +240,14 @@ export default function MomentumScreeners() {
       { key: "dol", label: "DOL" },
       { key: "dfl", label: "DFL" },
       { key: "dcl", label: "DCL" },
-      { key: "F1", label: "F1", render: (r) => <SmeTick v={r.F1} /> },
-      { key: "F2", label: "F2", render: (r) => <SmeTick v={r.F2} /> },
-      { key: "F3", label: "F3", render: (r) => <SmeTick v={r.F3} /> },
-      { key: "C1", label: "C1", render: (r) => <SmeTick v={r.C1} /> },
-      { key: "C2", label: "C2", render: (r) => <SmeTick v={r.C2} /> },
-      { key: "C3", label: "C3", render: (r) => <SmeTick v={r.C3} /> },
+      { key: "F1", label: "F1", render: (r) => <VirajTick v={r.F1} /> },
+      { key: "F2", label: "F2", render: (r) => <VirajTick v={r.F2} /> },
+      { key: "F3", label: "F3", render: (r) => <VirajTick v={r.F3} /> },
+      { key: "C1", label: "C1", render: (r) => <VirajTick v={r.C1} /> },
+      { key: "C2", label: "C2", render: (r) => <VirajTick v={r.C2} /> },
+      { key: "C3", label: "C3", render: (r) => <VirajTick v={r.C3} /> },
       { key: "score", label: "Score" },
-      { key: "verdict", label: "Verdict", render: (r) => <SmeVerdict v={r.verdict} /> },
+      { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
   };
 
@@ -367,6 +385,14 @@ export default function MomentumScreeners() {
         are <b>not</b> replicated: he picks a personal "top 5" from the results and says to "avoid cyclicals" by eye — this tab shows Chartink's full qualifying
         list, not his actual picks. <b>20W MA / % Above</b> reflect his stated <i>exit</i> rule (sell when weekly close breaks below the 20-week moving average),
         shown for context — not used to filter or rank; ranked by furthest above its own 20W MA.
+        <br /><br />
+        <b>Mkt Cap / Sales G% / EBIT G% / EPS G% / DOL / DFL / DCL / F1-F3 / C1-C3 / Score / Verdict</b> are a separate layer, added on top of
+        Hitesh Modi's own scan (not part of it) — the same Viraj Screen 6-rule check (see that tab's own methodology note for the exact rules),
+        run against whichever names his scan returns that week. <b>F1</b> DOL &gt; 1.5, <b>F2</b> DFL &lt; 1.2, <b>F3</b> rising operating profit
+        (from Screener.in), <b>C1</b> weekly RSI &gt; 66, <b>C2</b> price above 200-day EMA, <b>C3</b> 10/20-day EMA gap narrowing (both from
+        Chartink, same as the Viraj tab). Unlike smeMomentum's version of this same check, Chartink's chart-check scans work fine here — this
+        scan's own universe is main-board NSE stocks, not the SME segment Chartink doesn't reliably cover. A stock still shows{" "}
+        <b>"NO DATA"</b> if Screener.in simply doesn't have its fundamentals.
       </>
     ),
     smeMomentum: (
