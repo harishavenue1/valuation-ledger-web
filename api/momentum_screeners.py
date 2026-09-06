@@ -2368,6 +2368,107 @@ def _run_global_currencies(symbols, name_map, sector_map):
     return {"label": "Global Currencies", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── strategicAlpha ───────────────────────────────────────────────────────────
+#
+# Added 2026-09-06 — "one more page to be built as a strategic alpha
+# summary", from the YouTube channel of that name (Strategic Alpha /
+# Suyog Dhavan)'s "Weekly Community Connect" format. Full transcript
+# pulled and reviewed (not guessed at, same standard as sectorAlpha's
+# own build) — v1 covers the REPEATABLE structural signals the video
+# tracks every week, not that week's one-off calls (specific stock
+# picks like "Bordal Chemicals", specific price levels like "gold above
+# $4,300", or "country rotation" — explicitly described in the video as
+# a "proprietary system" with no method disclosed, so not reproducible
+# here). Two more pieces of the video's own recurring framework are
+# deliberately NOT built yet: Factor Rotation (Nifty500 Momentum50/
+# Value50/Quality50 vs Nifty 500 — no direct Yahoo ticker found for any
+# of the three, several tried) and Market Breadth (% of NSE stocks
+# above their own 30-week MA — needs a full NSE-750 fetch + per-stock
+# computation, a bigger lift saved for a follow-up rather than faked
+# with a rough stand-in). Granular sector rotation is already covered
+# by sectorAlpha/sectorStockAlpha elsewhere in this file.
+#
+# Rule replicated as literally as the transcript states it: "closed
+# below 200 day exponential moving average" — daily Close vs a 200-day
+# EMA on Close (not this account's own OHLC4 standing rule, which only
+# applies to screens THIS account invented itself, not a replica of
+# someone else's stated rule — same reasoning maBreakout/Viraj-style
+# ports elsewhere already follow).
+
+SA_ASSET_UNIVERSE = {
+    "Nifty 50": "^NSEI",
+    "Nifty 500": "^CRSLDX",
+    "Dollar Index": "DX-Y.NYB",
+    "Bitcoin": "BTC-USD",
+    "Commodity Index (DBC)": "DBC",
+    "Gold (COMEX)": "GC=F",
+    "Silver (COMEX)": "SI=F",
+}
+SA_EMA_PERIOD = 200
+SA_RATIO_LOOKBACK_DAYS = 20  # ~1 trading month, for the Nifty 500-vs-Nifty 50 ratio trend
+
+
+def _sa_trend_row(label, ticker, hist):
+    if hist is None or len(hist) < SA_EMA_PERIOD + 10:
+        return None
+    close = hist["Close"].dropna()
+    if len(close) < SA_EMA_PERIOD + 10:
+        return None
+    ema200 = close.ewm(span=SA_EMA_PERIOD, adjust=False).mean()
+    last_close = float(close.iloc[-1])
+    last_ema = float(ema200.iloc[-1])
+    last_date = close.index[-1]
+    return {
+        "asset": label,
+        "symbol": ticker,
+        "as_of": last_date.date().isoformat() if hasattr(last_date, "date") else str(last_date),
+        "close": round(last_close, 2),
+        "ema200": round(last_ema, 2),
+        "pct_above_ema200": round((last_close / last_ema - 1) * 100, 2),
+        "trend": "Bull" if last_close > last_ema else "Bear",
+    }
+
+
+def _run_strategic_alpha(symbols, name_map, sector_map):
+    hist = {label: _gxc_fetch_history(ticker) for label, ticker in SA_ASSET_UNIVERSE.items()}
+
+    rows, skipped = [], []
+    for label, ticker in SA_ASSET_UNIVERSE.items():
+        row = _sa_trend_row(label, ticker, hist[label])
+        if row is None:
+            skipped.append(label)
+            continue
+        rows.append(row)
+
+    # Nifty 500 vs Nifty 50 relative-strength ratio — the video's own
+    # stated rule: "if the ratio is moving up, Nifty 500 is
+    # outperforming Nifty [50], which means opportunities lie outside
+    # Nifty" (i.e. broader-market leadership vs large-cap leadership).
+    n50, n500 = hist.get("Nifty 50"), hist.get("Nifty 500")
+    if n50 is not None and n500 is not None:
+        common_idx = n50.index.intersection(n500.index)
+        if len(common_idx) > SA_RATIO_LOOKBACK_DAYS:
+            ratio = (n500["Close"].reindex(common_idx) / n50["Close"].reindex(common_idx)).dropna()
+            if len(ratio) > SA_RATIO_LOOKBACK_DAYS:
+                now, then = float(ratio.iloc[-1]), float(ratio.iloc[-1 - SA_RATIO_LOOKBACK_DAYS])
+                direction = "Nifty 500 leading — opportunities outside Nifty 50" if now > then else "Nifty 50 leading"
+                rows.append({
+                    "asset": "Nifty 500 / Nifty 50 ratio",
+                    "symbol": "—",
+                    "as_of": str(ratio.index[-1].date()),
+                    "close": round(now, 4),
+                    "ema200": None,
+                    "pct_above_ema200": round((now / then - 1) * 100, 2),
+                    "trend": direction,
+                })
+            else:
+                skipped.append("Nifty 500 / Nifty 50 ratio")
+        else:
+            skipped.append("Nifty 500 / Nifty 50 ratio")
+
+    return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -2387,6 +2488,7 @@ SCREENER_RUNNERS = {
     "technicalSummary": _run_technical_summary,
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
+    "strategicAlpha": _run_strategic_alpha,
 }
 
 

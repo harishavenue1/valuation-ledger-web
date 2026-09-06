@@ -11,6 +11,7 @@ import MomentumScreeners from "./pages/MomentumScreeners";
 import TechnicalSummary from "./pages/TechnicalSummary";
 import PortfolioAllocation from "./pages/PortfolioAllocation";
 import GlobalMacro from "./pages/GlobalMacro";
+import StrategicAlpha from "./pages/StrategicAlpha";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -132,6 +133,9 @@ export default function App() {
               <NavLink to="/global-macro" className={({ isActive }) => navClass(isActive)}>
                 🌍 Global Macro
               </NavLink>
+              <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
+                🎯 Strategic Alpha
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -164,6 +168,7 @@ export default function App() {
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
+            <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
