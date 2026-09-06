@@ -151,6 +151,12 @@ export default function PortfolioAllocation() {
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
+  // Re-ranked 1..N per section — rows arrive already sorted by
+  // % of portfolio (the push's own order), so re-numbering in place is
+  // enough; no re-sort needed.
+  const stockRows = useMemo(() => rows.filter((r) => !r.is_fund).map((r, i) => ({ ...r, rank: i + 1 })), [rows]);
+  const fundRows = useMemo(() => rows.filter((r) => r.is_fund).map((r, i) => ({ ...r, rank: i + 1 })), [rows]);
+
   const COLS: Col[] = useMemo(
     () => [
       { key: "rank", label: "Rank" },
@@ -247,12 +253,33 @@ export default function PortfolioAllocation() {
         </div>
       )}
 
+      {/* Split into Stocks / Funds & ETFs 2026-09-06 ("also split the
+          segment to stocks vs ETFs") — is_fund comes pre-computed from
+          the push (same fund-detection signal HoldingsTracker's own
+          fetch_holdings_metrics.py validated: no parseable sector/P&L
+          fundamentals on Screener.in), not re-derived here. Rank is
+          recomputed per section (1..N within Stocks, 1..N within
+          Funds & ETFs) rather than keeping the whole-portfolio rank
+          from the push, which would otherwise show gaps like 1, 3, 7
+          in a filtered table. */}
+      <h2 className="text-sm font-medium text-slate-700 mb-2">📈 Stocks ({stockRows.length})</h2>
+      <div className="mb-6">
+        <GenericTable
+          rows={stockRows}
+          cols={COLS}
+          navigate={(t) => navigate(`/company/${t}`)}
+          watchlist={watchlist}
+          emptyMessage="No individual stock holdings."
+        />
+      </div>
+
+      <h2 className="text-sm font-medium text-slate-700 mb-2">🧺 Funds &amp; ETFs ({fundRows.length})</h2>
       <GenericTable
-        rows={rows}
+        rows={fundRows}
         cols={COLS}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
-        emptyMessage="No holdings data yet — ask Claude to run the PortfolioAllocation skill."
+        emptyMessage="No fund/ETF holdings."
       />
     </div>
   );

@@ -664,6 +664,22 @@ SECTOR_ETF_TICKERS = {
     # SEC_MIN_HISTORY_DAYS but doesn't have a full year yet — its 1Y
     # alpha will read "—" until its first anniversary; 1M/3M/6M work now.
     "Internet": "INTERNET.NS",
+    # Added 2026-09-06 from Harish's own TradingView "ETFs" watchlist
+    # (tradingview.com/watchlists/72838035) — 5 themes his watchlist
+    # tracks that this file didn't cover yet, all Groww/Motilal Oswal
+    # thematic ETFs (confirmed live reachable via yfinance before
+    # adding, same as every ticker in this dict). Capital Markets and
+    # Power are freshly listed (104/222 days as of the date added) —
+    # under SEC_MIN_HISTORY_DAYS for now, so they'll simply be skipped
+    # (same "skipped.append(sector); continue" path every under-aged
+    # ticker already takes below) until they age in, same as Internet's
+    # own early days above. Railways and Tourism & Hospitality already
+    # clear the 1Y bar. Chemicals is close (236 days) but not there yet.
+    "Railways": "GROWWRAIL.NS",
+    "Chemicals": "GROWWCHEM.NS",
+    "Power": "GROWWPOWER.NS",
+    "Tourism & Hospitality": "MOTOUR.NS",
+    "Capital Markets": "MOCAPITAL.NS",
 }
 SEC_BENCHMARK_TICKER = "^CRSLDX"  # NIFTY 500 — same benchmark as Nifty500RelativeStrength above
 SEC_FETCH_YEARS = 2  # comfortably covers the 1Y lookback + MIN_HISTORY check
