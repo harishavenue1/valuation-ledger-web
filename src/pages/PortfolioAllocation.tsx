@@ -23,28 +23,35 @@ import { useWatchlist } from "../lib/useWatchlist";
 
 // 8-slot categorical palette, dataviz skill's validated reference
 // instance (adjacent-pairlist: worst CVD ΔE 9.1, worst normal-vision
-// ΔE 19.6 — both clear the floors). Capped at 8 sectors + "Other" for
-// the rest, matching the palette's own documented series cap.
+// ΔE 19.6 — both clear the floors). Used for the biggest 8 sectors;
+// see extraColor() below for what a 9th+ sector gets.
 const SECTOR_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
-const OTHER_COLOR = "#94a3a8"; // slate-400-ish — deliberately outside the categorical set, reads as "everything else"
 
 interface SectorSlice {
-  sector: string; // display label — "Other (6)" for the overflow slice, not a real sector name
+  sector: string; // the real sector name — every slice is a real sector, there is no "Other" bucket
   pct: number;
   color: string;
-  sectors: string[]; // the REAL sector name(s) this slice represents — >1 only for the Other slice
+  sectors: string[]; // kept as an array (always length 1) so the click-to-filter code below stays generic
 }
 
-// Why "Other" ends up as big as it does (2026-09-06, "why others 19%")
-// — this app's categorical palette caps at 8 colors (validated
-// adjacent-pair set, see the dataviz skill's own reference palette);
-// a real portfolio easily spans more sectors than that (14, in the
-// screenshot that prompted the question), so the smallest ones past
-// the top 8 get folded into one slice rather than adding a 9th+ color
-// past what the palette actually validates. Clicking it (like any
-// slice, see onSelect below) filters the tables to exactly those
-// folded-in sectors — the real answer to "why" is "click it and look",
-// not a number this component can explain on its own.
+// 2026-09-06 — "display all the allocation dont combine like others":
+// a real portfolio easily spans more sectors than the validated
+// 8-color palette (14, in the screenshot that first prompted the
+// "why is Other 19%" question), and folding the smaller ones into one
+// gray slice was hiding exactly the breakdown this chart exists to
+// show. Every sector now gets its own slice and its own color — for
+// the 9th sector onward, generated with the golden-angle hue step
+// (137.508°), which is the standard way to keep an open-ended series
+// of colors visually spread apart without picking each one by hand.
+// These extra hues aren't run through the dataviz skill's CVD
+// validator (that check is for a fixed, shippable palette; this is an
+// unbounded, portfolio-dependent tail) — the legend text/swatch pairing
+// still carries identity even where two extra hues land close together.
+function extraColor(i: number): string {
+  const hue = (i * 137.508) % 360;
+  return `hsl(${hue.toFixed(1)}, 60%, 48%)`;
+}
+
 function buildSectorSlices(rows: any[]): SectorSlice[] {
   const bySector = new Map<string, number>();
   for (const r of rows) {
@@ -52,13 +59,12 @@ function buildSectorSlices(rows: any[]): SectorSlice[] {
     bySector.set(sec, (bySector.get(sec) ?? 0) + (r.pct_of_portfolio ?? 0));
   }
   const sorted = Array.from(bySector.entries()).sort((a, b) => b[1] - a[1]);
-  const top = sorted.slice(0, SECTOR_COLORS.length).map(([sector, pct], i) => ({ sector, pct, color: SECTOR_COLORS[i], sectors: [sector] }));
-  const rest = sorted.slice(SECTOR_COLORS.length);
-  if (rest.length) {
-    const restPct = rest.reduce((s, [, pct]) => s + pct, 0);
-    top.push({ sector: `Other (${rest.length})`, pct: restPct, color: OTHER_COLOR, sectors: rest.map(([sec]) => sec) });
-  }
-  return top;
+  return sorted.map(([sector, pct], i) => ({
+    sector,
+    pct,
+    color: i < SECTOR_COLORS.length ? SECTOR_COLORS[i] : extraColor(i - SECTOR_COLORS.length),
+    sectors: [sector],
+  }));
 }
 
 // Plain SVG donut — no charting library in this app's dependency tree,
