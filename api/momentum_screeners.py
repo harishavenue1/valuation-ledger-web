@@ -1607,7 +1607,13 @@ def _mp_fetch_fundamentals(ticker):
     """Same scrape as api/viraj_screen.py's _vj_fetch_fundamentals, plus
     market cap (from Screener.in's top-ratios block) which that
     function doesn't need (viraj_screen.py already gets marketcap from
-    momoindiascreener.in's own listing)."""
+    momoindiascreener.in's own listing). Returns None if Screener.in
+    has no real quarterly numbers for this ticker at all — see
+    _mp_fetch_sector_fallback below for why sector is looked up
+    SEPARATELY rather than folded in here: that gate would also hide a
+    ticker's sector whenever its fundamentals happen to be missing,
+    which is exactly backwards for a fallback whose whole point is
+    covering names outside the NSE 750 sector_map."""
     headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
                "Referer": "https://www.screener.in/"}
     for url in [f"https://www.screener.in/company/{ticker}/consolidated/",
@@ -1677,6 +1683,41 @@ def _mp_fetch_fundamentals(ticker):
         dcl = round(dol * dfl, 2) if (dol and dfl) else None
         return {"marketcap": marketcap, "sales_g": sales_g, "ebit_g": ebit_g, "eps_g": eps_g,
                 "op_curr": op_curr, "op_prev": op_prev, "dol": dol, "dfl": dfl, "dcl": dcl}
+    return None
+
+
+def _mp_fetch_sector_fallback(ticker):
+    """Added 2026-09-06 ("why sector is empty for many rows"): Chartink's
+    scan covers the full ~2,570-stock NSE cash segment, so a good chunk
+    of momentumPersonal's qualifying names simply aren't in the NSE 750
+    (Nifty Total Market) universe sector_map is built from at all — not
+    a bug, just a bigger universe than the one every other tab's
+    sector_map covers. Only called for exactly those rows (see
+    _run_momentum_personal), from Screener.in's own peer-comparison
+    breadcrumb (Broad Sector > Sector > Broad Industry > Industry, e.g.
+    Industrials > Capital Goods > Electrical Equipment > Heavy
+    Electrical Equipment) — "Sector" is the level used, closest in
+    granularity to NSE's own Industry tag. A separate fetch from
+    _mp_fetch_fundamentals on purpose: that function returns None
+    whenever Screener.in has no quarterly numbers for a ticker, which
+    would hide sector too for exactly the names most likely to need
+    this fallback in the first place."""
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+               "Referer": "https://www.screener.in/"}
+    for url in [f"https://www.screener.in/company/{ticker}/consolidated/",
+                f"https://www.screener.in/company/{ticker}/"]:
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        soup = BeautifulSoup(r.text, "html.parser")
+        sector_a = soup.find("a", attrs={"title": "Sector"})
+        if sector_a:
+            text = sector_a.get_text(strip=True)
+            if text:
+                return text
     return None
 
 
@@ -1791,10 +1832,18 @@ def _run_momentum_personal(symbols, name_map, sector_map):
         val = _mp_validate(fund, chart_checks.get(sym, {}))
         r = val["rules"]
 
+        # sector_map only covers the NSE 750 — a good chunk of
+        # Chartink's ~2,570-stock scan falls outside it. Only pay for
+        # the extra Screener.in fetch when actually needed.
+        sector = sector_map.get(sym)
+        if not sector:
+            sector = _mp_fetch_sector_fallback(sym) or ""
+            time.sleep(MOMP_FUND_DELAY_SECONDS)
+
         rows.append({
             "symbol": sym,
             "name": name_map.get(sym) or chartink_name.get(sym) or sym,
-            "sector": sector_map.get(sym, ""),
+            "sector": sector,
             "price": round(float(cd.iloc[-1]), 2),
             "weekly_close": round(weekly_close, 2),
             "high_52w": round(high_52w, 2),
