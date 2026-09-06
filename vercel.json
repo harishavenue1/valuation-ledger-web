@@ -26,6 +26,7 @@
     { "path": "/api/momentum_screeners?screener=volumeRockers", "schedule": "35 10 * * *" },
     { "path": "/api/momentum_screeners?screener=globalCountryEtfs", "schedule": "37 10 * * *" },
     { "path": "/api/momentum_screeners?screener=globalCurrencies", "schedule": "38 10 * * *" },
+    { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
     { "path": "/api/momentum_screeners?screener=technicalSummary", "schedule": "42 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=myLongTermInvestingStrategy", "schedule": "40 23 * * 6" },
     { "path": "/api/momentum_screeners?screener=weekendInvesting", "schedule": "45 23 * * 6" },
