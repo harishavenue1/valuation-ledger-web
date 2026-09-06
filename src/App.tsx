@@ -96,9 +96,18 @@ export default function App() {
     <Ctx.Provider value={{ bundle, setBundle, reload, cloudRuns, setCloudRun }}>
       <div className="min-h-screen flex flex-col">
         <header className="border-b border-slate-200 sticky top-0 bg-white/90 backdrop-blur z-20">
-          <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-6">
-            <span className="font-semibold tracking-tight text-lg text-indigo-600">🧮 Valuation Ledger</span>
-            <nav className="flex gap-4 text-sm">
+          <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-4">
+            <span className="font-semibold tracking-tight text-base text-indigo-600 flex-shrink-0">🧮 Valuation Ledger</span>
+            {/* 2026-09-06 — "headers are distorted make it display with
+                no slider but fit in a single row": 13 nav items no
+                longer fit at text-sm/gap-4 with full labels once
+                Portfolio Allocation/Global Macro/Strategic Alpha were
+                added — trimmed every label to its shortest
+                unambiguous form (dropping repeated/generic words like
+                "Tracker", "Screen(ers)", "Summary", "Allocation") and
+                tightened text size/gaps rather than adding a scrollbar
+                or wrapping to a second row. */}
+            <nav className="flex gap-2.5 text-xs whitespace-nowrap">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
@@ -106,16 +115,16 @@ export default function App() {
                 Companies
               </NavLink>
               <NavLink to="/guidance-tracker" className={({ isActive }) => navClass(isActive)}>
-                📋 Guidance Tracker
+                📋 Guidance
               </NavLink>
               <NavLink to="/viraj-screen" className={({ isActive }) => navClass(isActive)}>
-                🎯 Viraj Screen
+                🎯 Viraj
               </NavLink>
               <NavLink to="/momentum-screeners" className={({ isActive }) => navClass(isActive)}>
-                📈 Momentum Screeners
+                📈 Momentum
               </NavLink>
               <NavLink to="/technical-summary" className={({ isActive }) => navClass(isActive)}>
-                🏆 Technical Summary
+                🏆 Technical
               </NavLink>
               {/* External link, not a route — 2026-09-06, "instead of
                   building page contents from chartink we can have link
@@ -125,16 +134,16 @@ export default function App() {
                   see the Technical Summary conversation). Just opens it
                   in a new tab, no data of ours involved. */}
               <a href="https://chartink.com/dashboard/163999" target="_blank" rel="noopener noreferrer" className={navClass(false)}>
-                🌬️ Market Breadth ↗
+                🌬️ Breadth ↗
               </a>
               <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
-                💼 Portfolio Allocation
+                💼 Portfolio
               </NavLink>
               <NavLink to="/global-macro" className={({ isActive }) => navClass(isActive)}>
-                🌍 Global Macro
+                🌍 Macro
               </NavLink>
               <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
-                📡 Strategic Alpha
+                📡 Strategic
               </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
