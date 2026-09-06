@@ -331,7 +331,10 @@ export default function PortfolioAllocation() {
           // this fund's unknown purchase date can't honestly give).
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
-              <span className="text-xs text-slate-500" title="1-year COMEX gold/silver futures return — a proxy for MCX, not literal MCX pricing">
+              <span
+                className="text-xs text-slate-500"
+                title="1-year COMEX gold/silver futures return (USD), converted to its INR-equivalent using USDINR's own 1Y move — MCX itself has no fetchable price history, this is the closest honest proxy"
+              >
                 MCX-proxy 1Y <Signed v={r.commodity_benchmark_1y} digits={1} />
               </span>
             );
@@ -392,7 +395,8 @@ export default function PortfolioAllocation() {
         line up — except known sector-tracking ETFs (BANKBEES, PHARMABEES, METALIETF, MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in
         has no sector data for at all and are mapped directly to a real sector instead. <b>Gold/Silver</b> funds get their own "Gold"/"Silver"
         label and no equity Sector Leader (no stock leads a commodity) — instead, <b>Sector Leader</b> shows that commodity's own 1-year
-        COMEX gold/silver return as a rough MCX proxy (not literal MCX pricing), and <b>Outperformance</b> stays "—" for these two on purpose:
+COMEX gold/silver return, converted to its INR-equivalent using USDINR's own 1-year move (MCX itself has no fetchable price history — this
+        is the closest honest proxy, not literal MCX pricing). <b>Outperformance</b> stays "—" for these two on purpose:
         it needs both sides measured over the same window, and a fund's P&amp;L% is since its own unknown purchase date, not a clean 1-year
         figure. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
