@@ -63,20 +63,36 @@ const CLOUD_SCREENERS = new Set([
 const POLL_MS = 20_000;
 const MAX_POLL_MS = 15 * 60_000;
 
+// Screeners with no Vercel path and no local poller watching
+// run_requests (see the CLOUD_SCREENERS comment above) — a "Run now"
+// button for these would just queue a request nothing ever picks up.
+// Each gets a plain note instead of pretending a click does something,
+// with its own reason (why it can't be automated) as the tooltip.
+const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = {
+  smeMomentum: {
+    skill: "SmeMomentum",
+    reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",
+  },
+  // Added 2026-09-06 — Kite holdings are only reachable through the
+  // mcp__kite__get_holdings MCP tool, callable from an interactive
+  // Claude session, never from an unattended Vercel cron (no Kite API
+  // credentials are stored anywhere in this account, by design).
+  portfolioAllocation: {
+    skill: "PortfolioAllocation",
+    reason: "Kite holdings only come from an interactive Claude session (the mcp__kite__get_holdings MCP tool) — no credentials are stored server-side, so refresh by asking Claude to run the PortfolioAllocation skill",
+  },
+};
+
 export default function RunButton({ screener }: { screener: string }) {
   if (CLOUD_SCREENERS.has(screener)) return <CloudRunButton screener={screener} />;
-  if (screener === "smeMomentum") return <LocalOnlyNote />;
+  if (LOCAL_ONLY_SCREENERS[screener]) return <LocalOnlyNote {...LOCAL_ONLY_SCREENERS[screener]} />;
   return <LocalRunButton screener={screener} />;
 }
 
-// smeMomentum has no Vercel path and no local poller watching
-// run_requests (see the CLOUD_SCREENERS comment above) — a "Run now"
-// button here would just queue a request nothing ever picks up. Says
-// so plainly instead of pretending a click does something.
-function LocalOnlyNote() {
+function LocalOnlyNote({ skill, reason }: { skill: string; reason: string }) {
   return (
-    <span className="text-xs text-slate-400" title="nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac">
-      Refreshed manually via the SmeMomentum skill, not on a schedule
+    <span className="text-xs text-slate-400" title={reason}>
+      Refreshed manually via the {skill} skill, not on a schedule
     </span>
   );
 }

@@ -9,6 +9,7 @@ import GuidanceTracker from "./pages/GuidanceTracker";
 import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
 import TechnicalSummary from "./pages/TechnicalSummary";
+import PortfolioAllocation from "./pages/PortfolioAllocation";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -124,6 +125,9 @@ export default function App() {
               <a href="https://chartink.com/dashboard/163999" target="_blank" rel="noopener noreferrer" className={navClass(false)}>
                 🌬️ Market Breadth ↗
               </a>
+              <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
+                💼 Portfolio Allocation
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -154,6 +158,7 @@ export default function App() {
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
+            <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
