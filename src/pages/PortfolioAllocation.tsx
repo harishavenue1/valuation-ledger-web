@@ -122,18 +122,6 @@ function SectorDonut({ slices }: { slices: SectorSlice[] }) {
   );
 }
 
-function LeaderCell({ leader }: { leader: any }) {
-  if (!leader) return <span className="text-slate-300">—</span>;
-  return (
-    <div className="text-xs">
-      <div className="font-semibold text-slate-700">{leader.symbol}</div>
-      <div className="text-slate-400">
-        Alpha <Signed v={leader.alpha_score} digits={1} />
-      </div>
-    </div>
-  );
-}
-
 export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
@@ -141,12 +129,25 @@ export default function PortfolioAllocation() {
   const entry = bundle.momentum_screeners["portfolioAllocation"];
   const rows = entry?.rows ?? [];
   const leaderRows = bundle.momentum_screeners["technicalSummary"]?.rows ?? [];
+  // sectorStockAlpha carries the FULL NSE-750 (+ theme) list, every
+  // stock's own alpha_score vs its sector — not just the leader
+  // technicalSummary keeps. Joined by symbol (not sector) to read a
+  // held stock's own alpha, so Outperformance below can be computed as
+  // "how far behind the leader is this specific holding", not just
+  // "who currently leads this sector".
+  const myAlphaRows = bundle.momentum_screeners["sectorStockAlpha"]?.rows ?? [];
 
   const leaderBySector = useMemo(() => {
     const m = new Map<string, any>();
     for (const l of leaderRows) if (l.sector) m.set(l.sector, l);
     return m;
   }, [leaderRows]);
+
+  const myAlphaBySymbol = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of myAlphaRows) if (r.symbol && r.alpha_score !== null && r.alpha_score !== undefined) m.set(r.symbol, r.alpha_score);
+    return m;
+  }, [myAlphaRows]);
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
@@ -167,16 +168,29 @@ export default function PortfolioAllocation() {
         label: "Sector Leader",
         render: (r) => {
           const leader = leaderBySector.get(r.sector);
+          if (!leader) return <span className="text-slate-300">—</span>;
+          const isLeader = leader.symbol === r.symbol;
           return (
-            <div className="flex items-center gap-1">
-              <LeaderCell leader={leader} />
-              {leader && leader.symbol === r.symbol && <span title="You hold the current sector leader">🏆</span>}
-            </div>
+            <span className="font-semibold text-slate-700">
+              {leader.symbol}
+              {isLeader && <span className="ml-1" title="You hold the current sector leader">🏆</span>}
+            </span>
           );
         },
       },
+      {
+        key: "outperformance",
+        label: "Outperformance",
+        render: (r) => {
+          const leader = leaderBySector.get(r.sector);
+          const myAlpha = myAlphaBySymbol.get(r.symbol);
+          if (!leader || myAlpha === undefined) return <span className="text-slate-300">—</span>;
+          const gap = leader.alpha_score - myAlpha;
+          return <Signed v={gap} digits={1} />;
+        },
+      },
     ],
-    [leaderBySector]
+    [leaderBySector, myAlphaBySymbol]
   );
 
   return (
@@ -198,9 +212,14 @@ export default function PortfolioAllocation() {
         is the allocation weight, not the underlying rupee amounts. <b>P&amp;L %</b> = unrealized gain/loss vs. Kite's own average buy price.{" "}
         <b>Sector Leader</b> is a live join against the <b>Technical Summary</b> page's own stored data (not recomputed here) — whichever
         stock currently has the highest alpha vs. its sector, for the same sector this holding is tagged with. A 🏆 means you already hold
-        that sector's current leader. Sector here comes from Screener.in's own peer-comparison breadcrumb, same source and same "Sector"
-        granularity Technical Summary uses, so the two line up. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for
-        exactly what's fetched and how.
+        that sector's current leader. <b>Outperformance</b> = the leader's Alpha Score minus this specific holding's own Alpha Score — a
+        second live join, this time against the <b>Stocks vs Sector</b> tab's full stored list (not just its own sector's leader, every
+        scored NSE-750 stock), matched by symbol. Reads as "how far behind the leader is this exact holding, in alpha terms" — 0 (or blank,
+        for the leader itself) means you're not leaving anything on the table in that sector; a large positive number means the leader is
+        pulling well ahead of what you're holding. Shows "—" when either side of the join has nothing to match (a holding outside the
+        NSE-750 universe Stocks vs Sector scores, most often — funds/ETFs, or a small-cap Stocks vs Sector doesn't cover). Sector here comes
+        from Screener.in's own peer-comparison breadcrumb, same source and same "Sector" granularity both of those tabs use, so all three
+        line up. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
 
       {rows.length > 0 && (
