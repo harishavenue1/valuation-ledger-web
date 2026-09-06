@@ -231,7 +231,12 @@ export default function MomentumScreeners() {
       { key: "C2", label: "C2", render: (r) => <VirajTick v={r.C2} /> },
       { key: "C3", label: "C3", render: (r) => <VirajTick v={r.C3} /> },
       { key: "score", label: "Score" },
-      { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
+      // Verdict column dropped 2026-09-06 ("remove the verdict column
+      // so values can be seen in a single line for same row") — the
+      // Score column plus F1-F3/C1-C3 already say the same thing, this
+      // was just the widest cell (a pill with wrapping text like
+      // "WATCHLIST — await EMA contraction") forcing the row to wrap.
+      // verdict is still pushed and stored — just not rendered here.
     ],
     smeMomentum: [
       { key: "rank", label: "Rank" },
