@@ -2118,6 +2118,205 @@ def _run_volume_rockers(symbols, name_map, sector_map):
     return {"label": "Volume Rockers", "push_rows": top, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── globalCountryEtfs / globalCurrencies ────────────────────────────────────
+#
+# Added 2026-09-06 — "our currency and country level skill we have to
+# built on page... which currency and country etfs are outperforming,
+# on weekly, monthly, qtr, biannual, yearly basis". Ports Harish's own
+# ~/.claude/skills/MacroRegimeRadar (local, yfinance-only, no auth —
+# same low-risk profile as every other yfinance-based tab in this file,
+# unlike smeMomentum/portfolioAllocation) to Vercel-native, so it shows
+# up as a page in this app instead of only a local Excel export.
+#
+# Two independent screener keys, both porting that skill's own tickers
+# and formulas VERBATIM (not reimplemented by hand) — deliberately kept
+# as two separate keys/sections rather than one merged table, since
+# they answer two different questions with two different universes:
+#   - globalCountryEtfs: scripts/global_alpha_scan.py's own 51-country/
+#     region ETF universe (real tradable tickers — EWJ, EWZ, INDA, SPY,
+#     etc.), ranked by alpha vs India (INDA) — "which country ETFs are
+#     outperforming". TIMEFRAMES extended with 1W (the original script
+#     only had 1M/3M/6M/1Y) to match "weekly...yearly" exactly, same
+#     "why not 1W" addition already made twice elsewhere in this file
+#     (RS_WEIGHTS, SEC_WEIGHTS/SSA_WEIGHTS).
+#   - globalCurrencies: scripts/macro_regime_radar.py's Part 3
+#     CURRENCY_EQUITY_UNIVERSE (12 countries), FX return ONLY (not the
+#     local-index/USD-equivalent columns that script also computes) —
+#     the local-index side would mostly just duplicate
+#     globalCountryEtfs for the same 12 countries, so this stays
+#     focused on "which currencies are strengthening".
+
+GCE_ETF_UNIVERSE = {
+    "India (benchmark)": ("INDA", "Benchmark"),
+    "South Korea": ("EWY", "Asia-Pacific"),
+    "Taiwan": ("EWT", "Asia-Pacific"),
+    "Peru": ("EPU", "Americas"),
+    "Chile": ("ECH", "Americas"),
+    "Colombia": ("GXG", "Americas"),
+    "Austria": ("EWO", "Europe"),
+    "Israel": ("EIS", "Middle East/Africa"),
+    "Netherlands": ("EWN", "Europe"),
+    "Spain": ("EWP", "Europe"),
+    "Poland": ("EPOL", "Europe"),
+    "South Africa": ("EZA", "Middle East/Africa"),
+    "Norway": ("NORW", "Europe"),
+    "Japan": ("EWJ", "Asia-Pacific"),
+    "Brazil": ("EWZ", "Americas"),
+    "Canada": ("EWC", "Americas"),
+    "Italy": ("EWI", "Europe"),
+    "Thailand": ("THD", "Asia-Pacific"),
+    "Greece": ("GREK", "Europe"),
+    "Mexico": ("EWW", "Americas"),
+    "Singapore": ("EWS", "Asia-Pacific"),
+    "Ireland": ("EIRL", "Europe"),
+    "UK": ("EWU", "Europe"),
+    "Belgium": ("EWK", "Europe"),
+    "Switzerland": ("EWL", "Europe"),
+    "Sweden": ("EWD", "Europe"),
+    "Malaysia": ("EWM", "Asia-Pacific"),
+    "Australia": ("EWA", "Asia-Pacific"),
+    "France": ("EWQ", "Europe"),
+    "Turkey": ("TUR", "Middle East/Africa"),
+    "Hong Kong": ("EWH", "Asia-Pacific"),
+    "Argentina": ("ARGT", "Americas"),
+    "Germany": ("EWG", "Europe"),
+    "New Zealand": ("ENZL", "Asia-Pacific"),
+    "Vietnam": ("VNM", "Asia-Pacific"),
+    "Saudi Arabia": ("KSA", "Middle East/Africa"),
+    "Philippines": ("EPHE", "Asia-Pacific"),
+    "China": ("MCHI", "Asia-Pacific"),
+    "Indonesia": ("EIDO", "Asia-Pacific"),
+    "USA": ("SPY", "Americas"),
+    "World (ACWI)": ("ACWI", "Global/Broad"),
+    "Emerging Markets (EEM)": ("EEM", "Global/Broad"),
+    "Developed ex-US (EFA)": ("EFA", "Global/Broad"),
+    "World ex-US (ACWX)": ("ACWX", "Global/Broad"),
+    "Asia ex-Japan (AAXJ)": ("AAXJ", "Global/Broad"),
+    "Latin America (ILF)": ("ILF", "Global/Broad"),
+    "Europe (VGK)": ("VGK", "Global/Broad"),
+    "Frontier Markets (FM)": ("FM", "Global/Broad"),
+    "Qatar": ("QAT", "Middle East/Africa"),
+    "UAE": ("UAE", "Middle East/Africa"),
+    "Kuwait": ("KWT", "Middle East/Africa"),
+}
+GCE_TIMEFRAMES = [("1w", 7), ("1m", 30), ("3m", 91), ("6m", 182), ("1y", 365)]
+GCE_MIN_ALPHA_1Y_TAG = 20  # same "not worth tagging below this" bar as the original script
+
+
+def _gxc_fetch_history(ticker, period="2y"):
+    try:
+        df = yf.Ticker(ticker).history(period=period, auto_adjust=True)
+        if df is None or df.empty:
+            return None
+        df.index = df.index.tz_localize(None) if df.index.tz is not None else df.index
+        return df
+    except Exception:
+        return None
+
+
+def _gxc_pct_return(df, days):
+    if df is None or len(df) < 2:
+        return None
+    close = df["Close"].dropna()
+    if len(close) < 2:
+        return None
+    end = close.iloc[-1]
+    cutoff = close.index[-1] - pd.Timedelta(days=days)
+    prior = close[close.index <= cutoff]
+    start = prior.iloc[-1] if len(prior) else close.iloc[0]
+    if start == 0 or pd.isna(start):
+        return None
+    return (end / start - 1.0) * 100.0
+
+
+def _gce_classify(alpha_1y, alpha_3m):
+    if alpha_1y is None or alpha_1y < GCE_MIN_ALPHA_1Y_TAG:
+        return None
+    if alpha_3m is None:
+        return "Unclear"
+    if alpha_3m >= 5:
+        return "Accelerating"
+    if alpha_3m < 0:
+        return "Cooling"
+    return "Steady"
+
+
+def _run_global_country_etfs(symbols, name_map, sector_map):
+    hist = {label: _gxc_fetch_history(ticker) for label, (ticker, _region) in GCE_ETF_UNIVERSE.items()}
+    india_hist = hist.get("India (benchmark)")
+
+    rows, skipped = [], []
+    for label, (ticker, region) in GCE_ETF_UNIVERSE.items():
+        if label == "India (benchmark)":
+            continue
+        h = hist[label]
+        row = {"country": label, "symbol": ticker, "sector": region}
+        alphas = {}
+        for tf, days in GCE_TIMEFRAMES:
+            r = _gxc_pct_return(h, days)
+            i = _gxc_pct_return(india_hist, days)
+            row[f"r_{tf}"] = round(r, 1) if r is not None else None
+            alpha = None if (r is None or i is None) else round(r - i, 1)
+            row[f"alpha_{tf}"] = alpha
+            alphas[tf] = alpha
+        if row["alpha_1y"] is None:
+            skipped.append(label)
+        row["tag"] = _gce_classify(alphas.get("1y"), alphas.get("3m"))
+        rows.append(row)
+
+    rows.sort(key=lambda r: (r["alpha_1y"] is None, -(r["alpha_1y"] if r["alpha_1y"] is not None else -999)))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return {"label": "Global Country ETFs", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
+# country, FX ticker, whether FX ticker is quoted as "USD per 1 unit of
+# local" (True -> rising = local currency APPRECIATING, e.g. EURUSD=X;
+# False -> ticker is "local units per 1 USD", rising = local currency
+# DEPRECIATING, must be inverted, e.g. USDINR=X) — identical semantics
+# and identical universe to macro_regime_radar.py's own
+# CURRENCY_EQUITY_UNIVERSE (the index/idx_ticker columns from that
+# tuple aren't needed here, see module comment above).
+GCU_CURRENCY_UNIVERSE = [
+    ("India", "USDINR=X", False),
+    ("Brazil", "USDBRL=X", False),
+    ("Mexico", "USDMXN=X", False),
+    ("Indonesia", "USDIDR=X", False),
+    ("South Africa", "USDZAR=X", False),
+    ("Turkey", "USDTRY=X", False),
+    ("China", "USDCNY=X", False),
+    ("Japan", "USDJPY=X", False),
+    ("South Korea", "USDKRW=X", False),
+    ("Germany", "EURUSD=X", True),
+    ("UK", "GBPUSD=X", True),
+    ("Australia", "AUDUSD=X", True),
+]
+
+
+def _run_global_currencies(symbols, name_map, sector_map):
+    fx_hist = {}
+    for _country, fx_ticker, _is_direct in GCU_CURRENCY_UNIVERSE:
+        if fx_ticker not in fx_hist:
+            fx_hist[fx_ticker] = _gxc_fetch_history(fx_ticker)
+
+    rows, skipped = [], []
+    for country, fx_ticker, is_direct in GCU_CURRENCY_UNIVERSE:
+        h = fx_hist.get(fx_ticker)
+        row = {"country": country, "symbol": fx_ticker}
+        for tf, days in GCE_TIMEFRAMES:
+            raw = _gxc_pct_return(h, days)
+            ret = raw if (raw is None or is_direct) else -raw
+            row[f"r_{tf}"] = round(ret, 2) if ret is not None else None
+        if row["r_1m"] is None:
+            skipped.append(country)
+        rows.append(row)
+
+    rows.sort(key=lambda r: (r["r_1m"] is None, -(r["r_1m"] if r["r_1m"] is not None else -999)))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return {"label": "Global Currencies", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -2135,6 +2334,8 @@ SCREENER_RUNNERS = {
     "smeMomentum": _run_sme_momentum,
     "volumeRockers": _run_volume_rockers,
     "technicalSummary": _run_technical_summary,
+    "globalCountryEtfs": _run_global_country_etfs,
+    "globalCurrencies": _run_global_currencies,
 }
 
 
