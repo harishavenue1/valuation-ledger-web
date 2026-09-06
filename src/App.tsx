@@ -134,7 +134,7 @@ export default function App() {
                 🌍 Global Macro
               </NavLink>
               <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
-                🎯 Strategic Alpha
+                📡 Strategic Alpha
               </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist

@@ -56,7 +56,7 @@ export default function StrategicAlpha() {
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
-        <h1 className="text-xl font-semibold">🧭 Strategic Alpha Summary</h1>
+        <h1 className="text-xl font-semibold">📡 Strategic Alpha Summary</h1>
         <span className="ml-auto">
           <RunButton screener="strategicAlpha" />
         </span>
