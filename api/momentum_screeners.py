@@ -886,11 +886,20 @@ def _ssa_fetch_theme_symbols(url):
     return {r["Symbol"].strip() for r in rows}
 
 
-def _run_sector_stock_alpha(symbols, name_map, sector_map):
+def _ssa_build_rows(symbols, name_map, sector_map):
+    """Core per-stock alpha-vs-sector computation — shared by
+    _run_sector_stock_alpha (the full list) and _run_technical_summary
+    (a sector-leaders-only digest, added 2026-09-06). Unlike most pairs
+    of screeners in this file (deliberately kept independent, see
+    api/_multibagger.py's own comment on that), these two are meant to
+    always agree on what a stock's alpha actually is — technicalSummary
+    is a FILTER of this same computation, not an independent screen —
+    so this is factored out rather than duplicated. Returns (rows,
+    skipped); NOT sorted/ranked — each caller ranks it their own way."""
     start = (date.today() - timedelta(days=365 * SSA_FETCH_YEARS)).isoformat()
     daily = _ms_fetch_daily(symbols, start)
     if daily is None:
-        return None, "no data fetched from yfinance"
+        return None, None
 
     per_stock = {}
     for sym, g in daily.groupby("symbol"):
@@ -1000,10 +1009,57 @@ def _run_sector_stock_alpha(symbols, name_map, sector_map):
                 "alpha_score": alpha_score,
             })
 
+    return rows, skipped
+
+
+def _run_sector_stock_alpha(symbols, name_map, sector_map):
+    rows, skipped = _ssa_build_rows(symbols, name_map, sector_map)
+    if rows is None:
+        return None, "no data fetched from yfinance"
     rows.sort(key=lambda r: -r["alpha_score"])
     for i, r in enumerate(rows, 1):
         r["rank"] = i
     return {"label": "Stocks vs Sector", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
+# ── technicalSummary ─────────────────────────────────────────────────────────
+#
+# Added 2026-09-06 at request — a condensed weekly digest of Stocks vs
+# Sector's per-sector leader: exactly ONE stock per sector/theme (the
+# highest alpha_score in that group), not that tab's full ~700-stock
+# list across every sector. "just a summary of technical returns and
+# performance only... it has a lot of data" was the framing — the
+# fewer-rows, sector-leaders-only ask, not fewer columns (Stocks vs
+# Sector's own columns are already pure technical returns/alpha, so
+# this reuses that row shape as-is). Shares _ssa_build_rows rather than
+# recomputing alpha a different way, so the two never disagree on what
+# a stock's alpha actually is.
+#
+# Deliberately its own weekly cron (Saturday, matching the other
+# weekly screeners) rather than a live-derived view of Stocks vs
+# Sector's own daily-refreshed data — "should be only a weekly
+# refresh" was explicit, and a purely-derived frontend view would
+# update as often as the underlying daily data does, not weekly. Lives
+# on its OWN standalone page (technical-summary), not a 16th Momentum
+# Screeners tab — that page's tab strip was flagged as too cluttered
+# the same day this was requested.
+
+def _run_technical_summary(symbols, name_map, sector_map):
+    rows, skipped = _ssa_build_rows(symbols, name_map, sector_map)
+    if rows is None:
+        return None, "no data fetched from yfinance"
+
+    best_per_sector = {}
+    for r in rows:
+        sec = r["sector"]
+        if sec not in best_per_sector or r["alpha_score"] > best_per_sector[sec]["alpha_score"]:
+            best_per_sector[sec] = r
+
+    leaders = list(best_per_sector.values())
+    leaders.sort(key=lambda r: -r["alpha_score"])
+    for i, r in enumerate(leaders, 1):
+        r["rank"] = i
+    return {"label": "Technical Summary", "push_rows": leaders, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 # ── maBreakout ───────────────────────────────────────────────────────────────
@@ -2078,6 +2134,7 @@ SCREENER_RUNNERS = {
     "momentumPersonal": _run_momentum_personal,
     "smeMomentum": _run_sme_momentum,
     "volumeRockers": _run_volume_rockers,
+    "technicalSummary": _run_technical_summary,
 }
 
 
