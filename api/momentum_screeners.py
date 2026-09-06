@@ -857,19 +857,21 @@ def _run_sector_alpha(symbols, name_map, sector_map):
 # ticker, no mapping guesswork, full coverage of every real industry
 # in the universe rather than just the 12 with a liquid ETF proxy.
 #
-# Theme groups (added same day, on request): Defence and Manufacturing
-# are cross-industry THEMES (a defence stock might be tagged Capital
-# Goods or IT by industry; a themed constituent list cuts across
-# several industries at once), so they can't be built the industry-
-# average way at all — there's no single-industry bucket to average
-# into. Instead these use each theme's REAL NSE index constituent list
-# (found live on the archives. subdomain — nseindia.com's main site
-# times out to any fetch here, same as usual, but the static archives
-# host works, same trick this file already uses for the Total Market
-# list) and compare each constituent's own return against that THEME'S
-# ETF return (SECTOR_ETF_TICKERS' GROWWDEFNC.NS/MAKEINDIA.NS — same
-# tickers sectorAlpha already uses, so the two tabs agree on what
-# "Defence" and "Manufacturing" mean). A stock CAN appear twice — once
+# Theme groups (added same day, on request; Internet added 2026-09-06):
+# Defence, Manufacturing, and Internet are cross-industry THEMES (a
+# defence stock might be tagged Capital Goods or IT by industry; an
+# internet-first company like Zomato/ETERNAL or Nykaa/FSN gets NSE's
+# broader "Consumer Services" tag; a themed constituent list cuts
+# across several industries at once), so they can't be built the
+# industry-average way at all — there's no single-industry bucket to
+# average into. Instead these use each theme's REAL NSE index
+# constituent list (found live on the archives. subdomain — nseindia.com's
+# main site times out to any fetch here, same as usual, but the static
+# archives host works, same trick this file already uses for the Total
+# Market list) and compare each constituent's own return against that
+# THEME'S ETF return (SECTOR_ETF_TICKERS' GROWWDEFNC.NS/MAKEINDIA.NS/
+# INTERNET.NS — same tickers sectorAlpha already uses, so the tabs
+# agree on what each theme means). A stock CAN appear twice — once
 # under its industry, once under a theme it also belongs to — that's
 # not a bug, a stock genuinely can be both. MNC/Commodities/
 # Consumption/CPSE/EV & New Age Auto were also asked for but have no
@@ -886,6 +888,23 @@ SSA_WEIGHTS = {"alpha_1w": 0.10, "alpha_1m": 0.35, "alpha_3m": 0.30, "alpha_6m":
 SSA_THEME_INDEX_URLS = {
     "Defence": "https://archives.nseindia.com/content/indices/ind_niftyindiadefence_list.csv",
     "Manufacturing": "https://archives.nseindia.com/content/indices/ind_niftyindiamanufacturing_list.csv",
+    # Added 2026-09-06 — "some are mapped to consumer services when
+    # actual company is linked to internet" (Harish, after cross-
+    # checking his TradingView ETF watchlist's constituents). NSE's own
+    # Industry tag lumps internet-first companies (Zomato/ETERNAL,
+    # Nykaa/FSN, Swiggy, Paytm, PolicyBazaar, ...) under "Consumer
+    # Services" — real, but the coarser of two true classifications;
+    # this theme (same pattern as Defence/Manufacturing above) uses the
+    # REAL constituent list of the index INTERNET.NS actually tracks —
+    # confirmed live: it's called "Nifty India Digital" on NSE's own
+    # archives host, not "Nifty India Internet" (that exact filename
+    # 404s; this is the real one) — 51 members, includes exactly the
+    # companies above. A stock still appears under its NSE industry too
+    # (e.g. ETERNAL both under "Consumer Services" and this theme) —
+    # not a bug, same as Defence/Manufacturing already work; a company
+    # genuinely can belong to both a broad industry classification and
+    # a narrower cross-industry theme.
+    "Internet": "https://archives.nseindia.com/content/indices/ind_niftyindiadigital_list.csv",
 }
 
 
