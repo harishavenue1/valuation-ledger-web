@@ -10,6 +10,7 @@ import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
 import TechnicalSummary from "./pages/TechnicalSummary";
 import PortfolioAllocation from "./pages/PortfolioAllocation";
+import GlobalMacro from "./pages/GlobalMacro";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -128,6 +129,9 @@ export default function App() {
               <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
                 💼 Portfolio Allocation
               </NavLink>
+              <NavLink to="/global-macro" className={({ isActive }) => navClass(isActive)}>
+                🌍 Global Macro
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -159,6 +163,7 @@ export default function App() {
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
+            <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />

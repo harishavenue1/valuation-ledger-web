@@ -37,6 +37,8 @@ const CLOUD_SCREENERS = new Set([
   "momentumPersonal",
   "volumeRockers",
   "technicalSummary",
+  "globalCountryEtfs",
+  "globalCurrencies",
   // smeMomentum deliberately NOT here — confirmed live 2026-09-05 that
   // nseindia.com's Emerge feed (the only source for this data) times
   // out from Vercel's datacenter IP, so it can't run there at all. It
