@@ -143,8 +143,13 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
       </svg>
       {/* Legend — always present for ≥2 series per the dataviz skill's
           own accessibility rule, so sector identity never rides on
-          color alone. */}
-      <div className="flex flex-col gap-1 text-xs">
+          color alone. Two columns (2026-09-06, "enough space on right
+          side... utilize to show side by side, instead of increasing
+          row height") — with every sector now shown individually
+          (no "Other" fold, see buildSectorSlices above) a single
+          column ran long enough to blow out the card's height well
+          past the donut's own, wasting the width beside it instead. */}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs flex-1 min-w-0">
         {slices.map((sl, i) => {
           const isSelected = selected === sl.sector;
           return (
