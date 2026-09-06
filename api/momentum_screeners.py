@@ -857,26 +857,30 @@ def _run_sector_alpha(symbols, name_map, sector_map):
 # ticker, no mapping guesswork, full coverage of every real industry
 # in the universe rather than just the 12 with a liquid ETF proxy.
 #
-# Theme groups (added same day, on request; Internet added 2026-09-06):
-# Defence, Manufacturing, and Internet are cross-industry THEMES (a
-# defence stock might be tagged Capital Goods or IT by industry; an
-# internet-first company like Zomato/ETERNAL or Nykaa/FSN gets NSE's
-# broader "Consumer Services" tag; a themed constituent list cuts
-# across several industries at once), so they can't be built the
-# industry-average way at all — there's no single-industry bucket to
-# average into. Instead these use each theme's REAL NSE index
-# constituent list (found live on the archives. subdomain — nseindia.com's
-# main site times out to any fetch here, same as usual, but the static
-# archives host works, same trick this file already uses for the Total
-# Market list) and compare each constituent's own return against that
-# THEME'S ETF return (SECTOR_ETF_TICKERS' GROWWDEFNC.NS/MAKEINDIA.NS/
-# INTERNET.NS — same tickers sectorAlpha already uses, so the tabs
-# agree on what each theme means). A stock CAN appear twice — once
-# under its industry, once under a theme it also belongs to — that's
-# not a bug, a stock genuinely can be both. MNC/Commodities/
-# Consumption/CPSE/EV & New Age Auto were also asked for but have no
-# discoverable constituent-list filename on the archives host (several
-# naming patterns tried, all 404) — left out rather than guessed at.
+# Theme groups (added same day, on request; Internet + Tourism &
+# Hospitality added 2026-09-06): Defence, Manufacturing, Internet, and
+# Tourism & Hospitality are cross-industry THEMES (a defence stock
+# might be tagged Capital Goods or IT by industry; an internet-first
+# company like Zomato/ETERNAL or Nykaa/FSN gets NSE's broader "Consumer
+# Services" tag; a themed constituent list cuts across several
+# industries at once), so they can't be built the industry-average way
+# at all — there's no single-industry bucket to average into. Instead
+# these use each theme's REAL NSE index constituent list (found live on
+# the archives. subdomain — nseindia.com's main site times out to any
+# fetch here, same as usual, but the static archives host works, same
+# trick this file already uses for the Total Market list) and compare
+# each constituent's own return against that THEME'S ETF return
+# (SECTOR_ETF_TICKERS' GROWWDEFNC.NS/MAKEINDIA.NS/INTERNET.NS/MOTOUR.NS
+# — same tickers sectorAlpha already uses, so the tabs agree on what
+# each theme means). A stock CAN appear twice — once under its
+# industry, once under a theme it also belongs to — that's not a bug, a
+# stock genuinely can be both. MNC/Commodities/Consumption/CPSE/EV & New
+# Age Auto were also asked for but have no discoverable constituent-
+# list filename on the archives host (several naming patterns tried,
+# all 404) — left out rather than guessed at; Infrastructure, Railways,
+# and Capital Markets (checked 2026-09-06, "not only internet, also
+# others which might have mapped and not matching") hit the same
+# 404-on-every-naming-pattern dead end.
 
 SSA_FETCH_YEARS = 2
 SSA_MIN_HISTORY_DAYS = 250  # ~1Y of real data to be scoreable at all
@@ -905,6 +909,18 @@ SSA_THEME_INDEX_URLS = {
     # genuinely can belong to both a broad industry classification and
     # a narrower cross-industry theme.
     "Internet": "https://archives.nseindia.com/content/indices/ind_niftyindiadigital_list.csv",
+    # Added 2026-09-06, same request extended to every ETF-mapped
+    # sector, not just Internet — checked each of the 5 newly-added
+    # (2026-09-06) TradingView-watchlist themes for a real NSE
+    # constituent list. Only Tourism & Hospitality has one ("Nifty
+    # India Tourism" — 15 members: hotels, QSR, aviation, travel
+    # agencies), confirmed live. Railways, Capital Markets, and
+    # Infrastructure (already asked about in the original round, per
+    # the module comment below) have no discoverable filename on the
+    # archives host either — several patterns tried, all 404 — so they
+    # stay without a theme override, same as MNC/Commodities/
+    # Consumption/CPSE/EV & New Age Auto below.
+    "Tourism & Hospitality": "https://archives.nseindia.com/content/indices/ind_niftyindiatourism_list.csv",
 }
 
 
