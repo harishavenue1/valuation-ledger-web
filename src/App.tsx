@@ -114,6 +114,16 @@ export default function App() {
               <NavLink to="/technical-summary" className={({ isActive }) => navClass(isActive)}>
                 🏆 Technical Summary
               </NavLink>
+              {/* External link, not a route — 2026-09-06, "instead of
+                  building page contents from chartink we can have link
+                  to it saying marketBreath" (a market-breadth dashboard
+                  someone else maintains on Chartink; scraping its
+                  widgets was looked into and deliberately not pursued —
+                  see the Technical Summary conversation). Just opens it
+                  in a new tab, no data of ours involved. */}
+              <a href="https://chartink.com/dashboard/163999" target="_blank" rel="noopener noreferrer" className={navClass(false)}>
+                🌬️ Market Breadth ↗
+              </a>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
