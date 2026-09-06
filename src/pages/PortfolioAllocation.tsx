@@ -29,11 +29,22 @@ const SECTOR_COLORS = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#
 const OTHER_COLOR = "#94a3a8"; // slate-400-ish — deliberately outside the categorical set, reads as "everything else"
 
 interface SectorSlice {
-  sector: string;
+  sector: string; // display label — "Other (6)" for the overflow slice, not a real sector name
   pct: number;
   color: string;
+  sectors: string[]; // the REAL sector name(s) this slice represents — >1 only for the Other slice
 }
 
+// Why "Other" ends up as big as it does (2026-09-06, "why others 19%")
+// — this app's categorical palette caps at 8 colors (validated
+// adjacent-pair set, see the dataviz skill's own reference palette);
+// a real portfolio easily spans more sectors than that (14, in the
+// screenshot that prompted the question), so the smallest ones past
+// the top 8 get folded into one slice rather than adding a 9th+ color
+// past what the palette actually validates. Clicking it (like any
+// slice, see onSelect below) filters the tables to exactly those
+// folded-in sectors — the real answer to "why" is "click it and look",
+// not a number this component can explain on its own.
 function buildSectorSlices(rows: any[]): SectorSlice[] {
   const bySector = new Map<string, number>();
   for (const r of rows) {
@@ -41,11 +52,11 @@ function buildSectorSlices(rows: any[]): SectorSlice[] {
     bySector.set(sec, (bySector.get(sec) ?? 0) + (r.pct_of_portfolio ?? 0));
   }
   const sorted = Array.from(bySector.entries()).sort((a, b) => b[1] - a[1]);
-  const top = sorted.slice(0, SECTOR_COLORS.length).map(([sector, pct], i) => ({ sector, pct, color: SECTOR_COLORS[i] }));
+  const top = sorted.slice(0, SECTOR_COLORS.length).map(([sector, pct], i) => ({ sector, pct, color: SECTOR_COLORS[i], sectors: [sector] }));
   const rest = sorted.slice(SECTOR_COLORS.length);
   if (rest.length) {
     const restPct = rest.reduce((s, [, pct]) => s + pct, 0);
-    top.push({ sector: `Other (${rest.length})`, pct: restPct, color: OTHER_COLOR });
+    top.push({ sector: `Other (${rest.length})`, pct: restPct, color: OTHER_COLOR, sectors: rest.map(([sec]) => sec) });
   }
   return top;
 }
@@ -54,8 +65,13 @@ function buildSectorSlices(rows: any[]): SectorSlice[] {
 // and one pie/donut for one page doesn't justify adding one. Segments
 // as <path> arcs computed from cumulative percentages; hover swaps a
 // centered label instead of a floating tooltip (simpler to keep inside
-// the circle, no positioning math against page scroll).
-function SectorDonut({ slices }: { slices: SectorSlice[] }) {
+// the circle, no positioning math against page scroll). Click-to-filter
+// added 2026-09-06 ("on clicking sector on pie chart or the list...
+// only show those records from table") — clicking a slice or its
+// legend row selects it (click again, or the center label, to clear);
+// `selected` is controlled by the parent so both tables below filter
+// off the same click.
+function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; selected: string | null; onSelect: (sector: string | null) => void }) {
   const [hover, setHover] = useState<number | null>(null);
   const size = 220;
   const r = 90;
@@ -77,46 +93,68 @@ function SectorDonut({ slices }: { slices: SectorSlice[] }) {
     return { ...sl, i, d: `M ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2}` };
   });
 
-  const active = hover !== null ? slices[hover] : null;
+  const selectedSlice = selected !== null ? slices.find((sl) => sl.sector === selected) ?? null : null;
+  const active = (hover !== null ? slices[hover] : null) ?? selectedSlice;
+
+  function toggle(sector: string) {
+    onSelect(selected === sector ? null : sector);
+  }
 
   return (
     <div className="flex items-center gap-6">
       <svg width={size} height={size} className="flex-shrink-0">
-        {arcs.map((a) => (
-          <path
-            key={a.sector}
-            d={a.d}
-            fill="none"
-            stroke={a.color}
-            strokeWidth={hover === a.i ? strokeWidth + 6 : strokeWidth}
-            onMouseEnter={() => setHover(a.i)}
-            onMouseLeave={() => setHover(null)}
-            style={{ cursor: "pointer", transition: "stroke-width 120ms" }}
-          />
-        ))}
-        <text x={cx} y={cy - 6} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">
-          {active ? `${fmtNum(active.pct, 1)}%` : "Sectors"}
-        </text>
-        <text x={cx} y={cy + 12} textAnchor="middle" className="fill-slate-400 text-[10px]">
-          {active ? active.sector : `${slices.length} sectors`}
-        </text>
+        {arcs.map((a) => {
+          const isSelected = selected === a.sector;
+          const dimmed = selected !== null && !isSelected;
+          return (
+            <path
+              key={a.sector}
+              d={a.d}
+              fill="none"
+              stroke={a.color}
+              strokeWidth={hover === a.i || isSelected ? strokeWidth + 6 : strokeWidth}
+              opacity={dimmed ? 0.35 : 1}
+              onMouseEnter={() => setHover(a.i)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => toggle(a.sector)}
+              style={{ cursor: "pointer", transition: "stroke-width 120ms, opacity 120ms" }}
+            />
+          );
+        })}
+        <g onClick={() => onSelect(null)} style={{ cursor: selected ? "pointer" : "default" }}>
+          <text x={cx} y={cy - 6} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">
+            {active ? `${fmtNum(active.pct, 1)}%` : "Sectors"}
+          </text>
+          <text x={cx} y={cy + 12} textAnchor="middle" className="fill-slate-400 text-[10px]">
+            {active ? active.sector : `${slices.length} sectors`}
+          </text>
+          {selected && (
+            <text x={cx} y={cy + 26} textAnchor="middle" className="fill-indigo-500 text-[9px] underline">
+              clear
+            </text>
+          )}
+        </g>
       </svg>
       {/* Legend — always present for ≥2 series per the dataviz skill's
           own accessibility rule, so sector identity never rides on
           color alone. */}
       <div className="flex flex-col gap-1 text-xs">
-        {slices.map((sl, i) => (
-          <div
-            key={sl.sector}
-            className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer ${hover === i ? "bg-slate-100" : ""}`}
-            onMouseEnter={() => setHover(i)}
-            onMouseLeave={() => setHover(null)}
-          >
-            <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sl.color }} />
-            <span className="text-slate-600">{sl.sector}</span>
-            <span className="ml-auto font-semibold tabular-nums text-slate-700">{fmtNum(sl.pct, 1)}%</span>
-          </div>
-        ))}
+        {slices.map((sl, i) => {
+          const isSelected = selected === sl.sector;
+          return (
+            <div
+              key={sl.sector}
+              className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer ${isSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : hover === i ? "bg-slate-100" : ""}`}
+              onMouseEnter={() => setHover(i)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => toggle(sl.sector)}
+            >
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sl.color }} />
+              <span className={isSelected ? "text-indigo-700 font-medium" : "text-slate-600"}>{sl.sector}</span>
+              <span className="ml-auto font-semibold tabular-nums text-slate-700">{fmtNum(sl.pct, 1)}%</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -151,11 +189,29 @@ export default function PortfolioAllocation() {
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
+  // Selecting a donut slice/legend row filters both tables below to
+  // just that slice's real sector(s) — `selectedSector` holds the
+  // slice's DISPLAY label ("Other (6)" included), resolved back to the
+  // real sector name(s) it represents via sectorSlices itself (the
+  // Other slice maps to several real sectors, every other slice to
+  // exactly one).
+  const [selectedSector, setSelectedSector] = useState<string | null>(null);
+  const selectedRealSectors = useMemo(() => {
+    if (selectedSector === null) return null;
+    return sectorSlices.find((sl) => sl.sector === selectedSector)?.sectors ?? null;
+  }, [selectedSector, sectorSlices]);
+
   // Re-ranked 1..N per section — rows arrive already sorted by
   // % of portfolio (the push's own order), so re-numbering in place is
   // enough; no re-sort needed.
-  const stockRows = useMemo(() => rows.filter((r) => !r.is_fund).map((r, i) => ({ ...r, rank: i + 1 })), [rows]);
-  const fundRows = useMemo(() => rows.filter((r) => r.is_fund).map((r, i) => ({ ...r, rank: i + 1 })), [rows]);
+  const stockRows = useMemo(() => {
+    const filtered = selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [rows, selectedRealSectors]);
+  const fundRows = useMemo(() => {
+    const filtered = selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
+  }, [rows, selectedRealSectors]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -249,7 +305,7 @@ export default function PortfolioAllocation() {
       {rows.length > 0 && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg">
           <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
-          <SectorDonut slices={sectorSlices} />
+          <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
         </div>
       )}
 
@@ -262,6 +318,17 @@ export default function PortfolioAllocation() {
           Funds & ETFs) rather than keeping the whole-portfolio rank
           from the push, which would otherwise show gaps like 1, 3, 7
           in a filtered table. */}
+      {selectedSector && (
+        <div className="flex items-center gap-2 mb-3 text-xs">
+          <span className="text-slate-500">Filtered to:</span>
+          <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full font-medium">
+            {selectedSector}
+            <button onClick={() => setSelectedSector(null)} className="hover:text-indigo-900" title="Clear filter">
+              ✕
+            </button>
+          </span>
+        </div>
+      )}
       <h2 className="text-sm font-medium text-slate-700 mb-2">📈 Stocks ({stockRows.length})</h2>
       <div className="mb-6">
         <GenericTable
