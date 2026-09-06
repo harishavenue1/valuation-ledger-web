@@ -8,6 +8,7 @@ import Detail from "./pages/Detail";
 import GuidanceTracker from "./pages/GuidanceTracker";
 import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
+import TechnicalSummary from "./pages/TechnicalSummary";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -110,6 +111,9 @@ export default function App() {
               <NavLink to="/momentum-screeners" className={({ isActive }) => navClass(isActive)}>
                 📈 Momentum Screeners
               </NavLink>
+              <NavLink to="/technical-summary" className={({ isActive }) => navClass(isActive)}>
+                🏆 Technical Summary
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -139,6 +143,7 @@ export default function App() {
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
+            <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
