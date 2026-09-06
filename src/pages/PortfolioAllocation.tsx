@@ -160,6 +160,98 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
   );
 }
 
+// Added 2026-09-06 — "add a table summary showing allocation to ETF &
+// Stocks, Profit % from each segment, how much profit / 100 from which
+// segment". Three different numbers per segment, deliberately not
+// conflated into one:
+//   - Allocation % — simple sum of pct_of_portfolio within the segment.
+//   - Segment P&L % — the WEIGHTED average P&L% within that segment
+//     only (weighted by each holding's own pct_of_portfolio, i.e. by
+//     position size, not a naive average of the P&L% numbers — a 0.9%
+//     holding up 40% shouldn't count the same as an 11.6% holding down
+//     0.2%). Reads as "how is the Stocks sleeve doing on its own", not
+//     relative to the whole portfolio.
+//   - Contribution (pp) — Segment P&L weighted down again by the
+//     segment's OWN share of the total portfolio (pct_of_portfolio_i ×
+//     pnl_pct_i ÷ 100, summed): the literal "per ₹100 of portfolio, how
+//     much of that is stocks vs ETFs' actual gain/loss" figure — the
+//     two segments' contributions sum to the whole portfolio's own
+//     weighted P&L%, which Allocation %/Segment P&L% alone don't show
+//     (a segment can have a great P&L% and still contribute little if
+//     it's a small slice, or vice versa).
+interface SegmentStat {
+  label: string;
+  allocationPct: number;
+  weightedPnlPct: number | null;
+  contributionPct: number | null;
+}
+
+function statsForSegment(segRows: any[], label: string): SegmentStat {
+  const allocationPct = segRows.reduce((s, r) => s + (r.pct_of_portfolio ?? 0), 0);
+  const withPnl = segRows.filter((r) => r.pnl_pct !== null && r.pnl_pct !== undefined);
+  const weightSum = withPnl.reduce((s, r) => s + (r.pct_of_portfolio ?? 0), 0);
+  const weightedPnlPct = weightSum > 0 ? withPnl.reduce((s, r) => s + r.pct_of_portfolio * r.pnl_pct, 0) / weightSum : null;
+  const contributionPct = withPnl.length > 0 ? withPnl.reduce((s, r) => s + (r.pct_of_portfolio * r.pnl_pct) / 100, 0) : null;
+  return { label, allocationPct, weightedPnlPct, contributionPct };
+}
+
+function SegmentSummary({ rows }: { rows: any[] }) {
+  const stocks = statsForSegment(
+    rows.filter((r) => !r.is_fund),
+    "📈 Stocks"
+  );
+  const funds = statsForSegment(
+    rows.filter((r) => r.is_fund),
+    "🧺 Funds & ETFs"
+  );
+  const total: SegmentStat = {
+    label: "Total Portfolio",
+    allocationPct: stocks.allocationPct + funds.allocationPct,
+    weightedPnlPct: (stocks.contributionPct ?? 0) + (funds.contributionPct ?? 0),
+    contributionPct: null, // not meaningful for the total row itself — it IS the sum of the two segments' contributions, shown as weightedPnlPct instead
+  };
+
+  return (
+    <div className="mb-6 p-4 border border-slate-200 rounded-lg overflow-x-auto">
+      <h2 className="text-sm font-medium text-slate-700 mb-3">Segment Summary</h2>
+      <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
+        <thead className="text-slate-500 text-xs">
+          <tr>
+            <th className="text-left px-2 py-1.5">Segment</th>
+            <th className="text-right px-2 py-1.5">Allocation %</th>
+            <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
+            <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this segment's own gain/loss">
+              Contribution (pp)
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {[stocks, funds].map((s) => (
+            <tr key={s.label} className="border-t border-slate-100">
+              <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                <Signed v={s.weightedPnlPct} digits={1} />
+              </td>
+              <td className="px-2 py-1.5 text-right tabular-nums">
+                <Signed v={s.contributionPct} digits={2} />
+              </td>
+            </tr>
+          ))}
+          <tr className="border-t border-slate-300 font-semibold">
+            <td className="px-2 py-1.5 text-slate-800">{total.label}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(total.allocationPct, 1)}%</td>
+            <td className="px-2 py-1.5 text-right tabular-nums">
+              <Signed v={total.weightedPnlPct} digits={1} />
+            </td>
+            <td className="px-2 py-1.5 text-right text-slate-300">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
@@ -304,6 +396,8 @@ export default function PortfolioAllocation() {
         it needs both sides measured over the same window, and a fund's P&amp;L% is since its own unknown purchase date, not a clean 1-year
         figure. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
+
+      {rows.length > 0 && <SegmentSummary rows={rows} />}
 
       {rows.length > 0 && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg">
