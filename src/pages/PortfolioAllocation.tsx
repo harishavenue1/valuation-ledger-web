@@ -215,19 +215,21 @@ export default function PortfolioAllocation() {
 
   const COLS: Col[] = useMemo(
     () => [
-      { key: "rank", label: "Rank" },
-      { key: "symbol", label: "Symbol", align: "left" },
-      { key: "name", label: "Name", align: "left" },
-      { key: "sector", label: "Sector", align: "left" },
+      { key: "rank", label: "Rank", width: 55 },
+      { key: "symbol", label: "Symbol", align: "left", width: 130 },
+      { key: "name", label: "Name", align: "left", width: 130 },
+      { key: "sector", label: "Sector", align: "left", width: 230 },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
+        width: 110,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      { key: "pnl_pct", label: "P&L %", width: 90, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
         key: "sector_leader",
         label: "Sector Leader",
+        width: 160,
         render: (r) => {
           // Gold/Silver have no equity leader (no stock "leads" a
           // commodity) — the pushed row instead carries a 1Y COMEX
@@ -256,6 +258,7 @@ export default function PortfolioAllocation() {
       {
         key: "outperformance",
         label: "Outperformance",
+        width: 130,
         render: (r) => {
           const leader = leaderBySector.get(r.sector);
           const myAlpha = myAlphaBySymbol.get(r.symbol);

@@ -82,6 +82,17 @@ export interface Col {
   label: string;
   render?: (row: Record<string, any>) => React.ReactNode;
   align?: "left" | "right" | "center";
+  // Optional fixed pixel width — set on EVERY column to make two
+  // separate GenericTable instances with the same column list line up
+  // (e.g. Portfolio Allocation's Stocks / Funds & ETFs tables, added
+  // 2026-09-06: "the table column widths are not matching" — each
+  // table otherwise auto-sizes its own columns off its own data, same
+  // root cause Summary.tsx's own two-section table already documented
+  // and fixed with table-layout: fixed + explicit widths). Omit on
+  // every column (the default everywhere else) to keep the existing
+  // auto-fit behavior — this only switches on when ALL columns specify
+  // one, not applied partially.
+  width?: number;
 }
 
 export const NSE_SCREENER_COLS: Col[] = [
@@ -189,6 +200,8 @@ export function GenericTable({
     return copy;
   }, [filtered, sortKey, sortDir]);
 
+  const fixedWidths = cols.every((c) => c.width !== undefined);
+
   function clickHeader(key: string) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     else {
@@ -231,11 +244,14 @@ export function GenericTable({
           overlaps the first row instead of sticking to the page
           (verified live 2026-08-23 before landing the original fix). */}
       <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
-        <table className="w-full text-sm border-collapse">
+        <table
+          className={fixedWidths ? "text-sm border-collapse" : "w-full text-sm border-collapse"}
+          style={fixedWidths ? { tableLayout: "fixed", width: cols.reduce((sum, c) => sum + (c.width ?? 0), 0) } : undefined}
+        >
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
               {cols.map((c) => (
-                <th key={c.key} className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}>
+                <th key={c.key} className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`} style={fixedWidths ? { width: c.width } : undefined}>
                   <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
                     {c.label} {sortKey === c.key ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
@@ -265,7 +281,11 @@ export function GenericTable({
               return (
                 <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
                   {cols.map((c) => (
-                    <td key={c.key} className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"}`}>
+                    <td
+                      key={c.key}
+                      className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"}`}
+                      style={fixedWidths ? { width: c.width } : undefined}
+                    >
                       {c.key === "symbol" ? (
                         <>
                           {watchlist && <WatchlistStar active={watchlist.set.has(sym)} onToggle={watchlist.toggle} symbol={sym} />}
