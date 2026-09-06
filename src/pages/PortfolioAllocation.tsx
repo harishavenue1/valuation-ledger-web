@@ -212,7 +212,7 @@ function SegmentSummary({ rows }: { rows: any[] }) {
   };
 
   return (
-    <div className="mb-6 p-4 border border-slate-200 rounded-lg overflow-x-auto">
+    <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
       <h2 className="text-sm font-medium text-slate-700 mb-3">Segment Summary</h2>
       <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
         <thead className="text-slate-500 text-xs">
@@ -401,12 +401,19 @@ COMEX gold/silver return, converted to its INR-equivalent using USDINR's own 1-y
         figure. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
 
-      {rows.length > 0 && <SegmentSummary rows={rows} />}
-
+      {/* Side by side 2026-09-06 ("enough space wasted in summary and
+          allocations, lets combine") — both are compact (a small table,
+          a donut+legend) and were each taking a full-width row on
+          their own; a 2-column grid on wide screens uses the same
+          horizontal space the Stocks/Funds tables below already fill,
+          stacking back to one column on narrow viewports. */}
       {rows.length > 0 && (
-        <div className="mb-6 p-4 border border-slate-200 rounded-lg">
-          <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
-          <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <SegmentSummary rows={rows} />
+          <div className="p-4 border border-slate-200 rounded-lg">
+            <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
+            <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
+          </div>
         </div>
       )}
 
