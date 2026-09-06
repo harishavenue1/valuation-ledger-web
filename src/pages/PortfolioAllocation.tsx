@@ -167,6 +167,19 @@ export default function PortfolioAllocation() {
         key: "sector_leader",
         label: "Sector Leader",
         render: (r) => {
+          // Gold/Silver have no equity leader (no stock "leads" a
+          // commodity) — the pushed row instead carries a 1Y COMEX
+          // gold/silver return as context (see the PortfolioAllocation
+          // skill's own reasoning for why it's shown here, not forced
+          // into Outperformance, which needs a same-window comparison
+          // this fund's unknown purchase date can't honestly give).
+          if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
+            return (
+              <span className="text-xs text-slate-500" title="1-year COMEX gold/silver futures return — a proxy for MCX, not literal MCX pricing">
+                MCX-proxy 1Y <Signed v={r.commodity_benchmark_1y} digits={1} />
+              </span>
+            );
+          }
           const leader = leaderBySector.get(r.sector);
           if (!leader) return <span className="text-slate-300">—</span>;
           const isLeader = leader.symbol === r.symbol;
@@ -219,7 +232,12 @@ export default function PortfolioAllocation() {
         pulling well ahead of what you're holding. Shows "—" when either side of the join has nothing to match (a holding outside the
         NSE-750 universe Stocks vs Sector scores, most often — funds/ETFs, or a small-cap Stocks vs Sector doesn't cover). Sector here comes
         from Screener.in's own peer-comparison breadcrumb, same source and same "Sector" granularity both of those tabs use, so all three
-        line up. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
+        line up — except known sector-tracking ETFs (BANKBEES, PHARMABEES, METALIETF, MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in
+        has no sector data for at all and are mapped directly to a real sector instead. <b>Gold/Silver</b> funds get their own "Gold"/"Silver"
+        label and no equity Sector Leader (no stock leads a commodity) — instead, <b>Sector Leader</b> shows that commodity's own 1-year
+        COMEX gold/silver return as a rough MCX proxy (not literal MCX pricing), and <b>Outperformance</b> stays "—" for these two on purpose:
+        it needs both sides measured over the same window, and a fund's P&amp;L% is since its own unknown purchase date, not a clean 1-year
+        figure. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
 
       {rows.length > 0 && (
