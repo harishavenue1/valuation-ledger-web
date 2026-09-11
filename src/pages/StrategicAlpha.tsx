@@ -35,7 +35,23 @@ import { Col, GenericTable, MethodologyNote, Signed } from "../components/Screen
 // instead of duplicated as their own rows).
 const COLS: Col[] = [
   { key: "asset", label: "Asset", align: "left" },
-  { key: "close", label: "Close", render: (r) => (r.close != null ? r.close.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—") },
+  {
+    // 2026-09-11 ("give tradingview to close price itself so column is
+    // saved") — the Close cell IS the TradingView link now, freeing up
+    // the dedicated Chart column below.
+    key: "close",
+    label: "Close",
+    render: (r) => {
+      const text = r.close != null ? r.close.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—";
+      return r.tradingview_url ? (
+        <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 underline whitespace-nowrap">
+          {text}
+        </a>
+      ) : (
+        text
+      );
+    },
+  },
   { key: "ema200", label: "200D EMA", render: (r) => (r.ema200 != null ? r.ema200.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
   { key: "pct_above_ema200", label: "% vs EMA200", render: (r) => <Signed v={r.pct_above_ema200} digits={2} /> },
   {
@@ -58,18 +74,6 @@ const COLS: Col[] = [
   { key: "pct_vs_ema50d", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_vs_ema50d} digits={2} /> },
   { key: "ema33w", label: "33W EMA", render: (r) => (r.ema33w != null ? r.ema33w.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
   { key: "pct_vs_ema33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33w} digits={2} /> },
-  {
-    key: "tradingview_url",
-    label: "Chart",
-    render: (r) =>
-      r.tradingview_url ? (
-        <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 underline whitespace-nowrap">
-          TradingView ↗
-        </a>
-      ) : (
-        <span className="text-slate-300">—</span>
-      ),
-  },
   { key: "as_of", label: "As of", align: "left" },
 ];
 
@@ -101,10 +105,11 @@ export default function StrategicAlpha() {
         standing convention, 33-week on OHLC4 of weekly-resampled bars, so they're not directly comparable to the 200D EMA's Close-only basis.
         The <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is outperforming Nifty
         50, i.e. opportunities lie in the broader market rather than large-caps — it's a derived ratio, not a single tradable symbol, so it has
-        no EMA or chart link, and its "% vs EMA200" column is repurposed to show the ratio's own change over the last ~20 trading days.{" "}
+        no EMA or chart link (its Close cell isn't clickable), and its "% vs EMA200" column is repurposed to show the ratio's own change over
+        the last ~20 trading days. Every other row's <b>Close</b> price is itself the TradingView link.{" "}
         <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — no MCX or literal spot feed is fetchable from here, so these
-        same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their <b>Chart</b> links point to
-        the actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the
+        same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their Close cell links to the
+        actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the
         INR-adjusted version of the same two. <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
         it's left out rather than faked with a rough stand-in — same principle as everything below. <b>Not built</b>: Factor Rotation
         (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
