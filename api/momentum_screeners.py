@@ -1136,17 +1136,23 @@ def _run_technical_summary(symbols, name_map, sector_map):
 #     the actual cross-up event, not just "currently above" (which
 #     would also match a stock that's been trending for a year).
 #
-# Added 2026-09-11: a FLOOR on top of the existing 20% ceiling — "if
-# the stock moves more than 5% over the 200EMA or 33WEMA line only
-# then list on page" (MAB_MIN_PCT_ABOVE). Narrows the qualifying band
-# from [0%, 20%] above the line to [5%, 20%] — a stock that's barely
-# poked above the EMA (0-5%) no longer qualifies on its own, even if
-# the cross itself was recent; it needs to have actually moved.
+# Added 2026-09-11, then corrected same day: "its not a ceiling rule,
+# its a rule to filter strong stocks which cross 200DEMA (in a day) or
+# 33WEMA (end of week) with 5% strong move" — NOT a floor on how far
+# CURRENT price sits above the EMA (that was the first, wrong reading).
+# The 5% has to be the size of the actual crossing bar itself: the one
+# day (for the 200D EMA) or one week (for the 33W EMA) where price
+# went from below the line to above it must itself be a >5% up-move —
+# a strong breakout candle, not a slow drift that happens to have
+# left the line 5%+ behind by today. MAB_MIN_CROSS_MOVE_PCT. The
+# existing 20% ceiling (MAB_MAX_PCT_ABOVE, current distance from the
+# line, the original "not too extended" consolidation check from
+# 2026-08-30) is unrelated and unchanged.
 #
 # EMAs are computed on OHLC4 = (Open+High+Low+Close)/4, not Close
 # alone, per Harish's standing rule (feedback_ema_ohlc4_source.md) —
-# but the above/below CHECK compares the real Close against that
-# OHLC4-based EMA line, not OHLC4 against itself (same memory: "SMA/
+# but the above/below CHECK, and this crossing-bar move %, both compare
+# real Close values, not OHLC4 against itself (same memory: "SMA/
 # RSI/trigger comparisons stay on Close"). The weekly OHLC4 is built
 # from real weekly O/H/L/C (first/max/min/last of the week), not an
 # average of daily OHLC4 values — the standard way to build a weekly
@@ -1155,7 +1161,7 @@ def _run_technical_summary(symbols, name_map, sector_map):
 MAB_FETCH_YEARS = 3
 MAB_MIN_HISTORY_DAYS = 250
 MAB_RECENCY_WEEKS = 8
-MAB_MIN_PCT_ABOVE = 5.0  # added 2026-09-11 — "if the stock moves more than 5% over the 200EMA or 33WEMA line only then list on page"
+MAB_MIN_CROSS_MOVE_PCT = 5.0  # the crossing day's/week's own Close-vs-prior-Close move, not current distance from the EMA
 MAB_MAX_PCT_ABOVE = 20.0
 MAB_DAILY_EMA_PERIOD = 200
 MAB_WEEKLY_EMA_PERIOD = 33
@@ -1163,13 +1169,14 @@ MAB_WEEKLY_EMA_PERIOD = 33
 
 def _mab_analyze(close, ohlc4, ema_period, recency_periods):
     """close/ohlc4: same-length, same-index pd.Series, ascending. EMA is
-    computed on ohlc4; the above/below check and the %-above figure
-    compare the real close against that EMA line. Returns None if the
-    stock doesn't currently qualify: not above the EMA right now,
-    crossed too long ago (or the cross predates our fetch window
-    entirely, so recency can't be confirmed), price hasn't cleared
-    MAB_MIN_PCT_ABOVE% past the EMA yet, or price has run more than
-    MAB_MAX_PCT_ABOVE% past it."""
+    computed on ohlc4; the above/below check, the crossing-bar move %,
+    and the %-above figure all compare real close values against that
+    OHLC4-based EMA line. Returns None if the stock doesn't currently
+    qualify: not above the EMA right now, crossed too long ago (or the
+    cross predates our fetch window entirely, so recency can't be
+    confirmed), the actual crossing bar wasn't itself a
+    MAB_MIN_CROSS_MOVE_PCT%+ up-move, or price has run more than
+    MAB_MAX_PCT_ABOVE% past the line since."""
     if len(close) < ema_period + recency_periods + 20:  # buffer before the recency window, so a real prior "below" can actually be observed
         return None
     ema = ohlc4.ewm(span=ema_period, adjust=False).mean()
@@ -1184,13 +1191,19 @@ def _mab_analyze(close, ohlc4, ema_period, recency_periods):
     periods_since_cross = len(above) - 1 - i
     if periods_since_cross > recency_periods:
         return None
+    # `i` is the exact bar where price crossed from below the EMA to
+    # above it (above[i] True, above[i-1] False) — the crossing bar's
+    # own move is close[i] vs close[i-1], the prior (still-below) bar.
+    cross_move_pct = round((float(close.iloc[i]) / float(close.iloc[i - 1]) - 1) * 100, 2)
+    if cross_move_pct < MAB_MIN_CROSS_MOVE_PCT:
+        return None
     last_close = float(close.iloc[-1])
     last_ema = float(ema.iloc[-1])
     pct_above = round((last_close / last_ema - 1) * 100, 2)
-    if pct_above < MAB_MIN_PCT_ABOVE or pct_above > MAB_MAX_PCT_ABOVE:
+    if pct_above > MAB_MAX_PCT_ABOVE:
         return None
     return {"ema": round(last_ema, 2), "pct_above": pct_above, "periods_since_cross": periods_since_cross,
-            "fresh": periods_since_cross <= 1}
+            "fresh": periods_since_cross <= 1, "cross_move_pct": cross_move_pct}
 
 
 def _run_ma_breakout(symbols, name_map, sector_map):
@@ -1229,9 +1242,11 @@ def _run_ma_breakout(symbols, name_map, sector_map):
             "ema200d": d200["ema"] if d200 else None,
             "pct_above_200d": d200["pct_above"] if d200 else None,
             "days_since_cross_200d": d200["periods_since_cross"] if d200 else None,
+            "cross_move_pct_200d": d200["cross_move_pct"] if d200 else None,
             "ema33w": w33["ema"] if w33 else None,
             "pct_above_33w": w33["pct_above"] if w33 else None,
             "weeks_since_cross_33w": w33["periods_since_cross"] if w33 else None,
+            "cross_move_pct_33w": w33["cross_move_pct"] if w33 else None,
             "fresh_this_week": bool((d200 and d200["fresh"]) or (w33 and w33["fresh"])),
         })
 
