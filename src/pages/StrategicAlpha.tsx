@@ -54,7 +54,14 @@ const COLS: Col[] = [
   },
   { key: "ema200", label: "200D EMA", render: (r) => (r.ema200 != null ? r.ema200.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
   { key: "pct_above_ema200", label: "% vs EMA200", render: (r) => <Signed v={r.pct_above_ema200} digits={2} /> },
+  { key: "ema50d", label: "50D EMA", render: (r) => (r.ema50d != null ? r.ema50d.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
+  { key: "pct_vs_ema50d", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_vs_ema50d} digits={2} /> },
+  { key: "ema33w", label: "33W EMA", render: (r) => (r.ema33w != null ? r.ema33w.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
+  { key: "pct_vs_ema33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33w} digits={2} /> },
+  { key: "as_of", label: "As of", align: "left" },
   {
+    // 2026-09-11 ("move trend to last column") — was originally right
+    // after % vs EMA200; moved to the very end of the table.
     key: "trend",
     label: "Trend",
     render: (r) =>
@@ -70,11 +77,6 @@ const COLS: Col[] = [
         <span className="text-xs text-slate-600">{r.trend ?? "—"}</span>
       ),
   },
-  { key: "ema50d", label: "50D EMA", render: (r) => (r.ema50d != null ? r.ema50d.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
-  { key: "pct_vs_ema50d", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_vs_ema50d} digits={2} /> },
-  { key: "ema33w", label: "33W EMA", render: (r) => (r.ema33w != null ? r.ema33w.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
-  { key: "pct_vs_ema33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33w} digits={2} /> },
-  { key: "as_of", label: "As of", align: "left" },
 ];
 
 export default function StrategicAlpha() {
