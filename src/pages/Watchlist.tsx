@@ -35,6 +35,23 @@ export default function Watchlist() {
   const [refreshing, setRefreshing] = useState(false);
 
   const tickers = bundle.watchlist.tickers;
+  // 2026-09-11 ("split watchlist into 2 parts actual owned in
+  // portfolio vs nonPortfolio") — "owned" is read from
+  // bundle.momentum_screeners.portfolioAllocation, the same live-Kite-
+  // holdings snapshot Portfolio Allocation itself renders (on-request
+  // only, see PortfolioAllocation skill — so "owned" here is only as
+  // fresh as that screener's own last refresh, same staleness every
+  // other page reading it already accepts). Matched by symbol only
+  // (portfolioAllocation's own symbols are already series-suffix-
+  // stripped via clean_symbol, same plain-NSE-ticker format every
+  // other screener's `symbol` field uses) — includes funds/ETFs, not
+  // just stocks, since a watchlisted GOLDCASE/BANKBEES etc. should
+  // still count as "owned" if it's actually held.
+  const ownedSymbols = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of bundle.momentum_screeners.portfolioAllocation?.rows ?? []) if (r.symbol) s.add(r.symbol);
+    return s;
+  }, [bundle.momentum_screeners.portfolioAllocation]);
   const nseRows = bundle.momentum_screeners.nseScreener?.rows ?? [];
   const nseBySymbol = useMemo(() => {
     const m = new Map<string, Record<string, any>>();
@@ -97,6 +114,8 @@ export default function Watchlist() {
   // math, which should read the same as "couldn't find it" rather
   // than silently passing as fully resolved.
   const stillPartial = outsideNse750.filter((t) => liveDetail[t]?.rsi_d == null);
+  const ownedRows = rows.filter((r) => ownedSymbols.has(String(r.symbol)));
+  const notOwnedRows = rows.filter((r) => !ownedSymbols.has(String(r.symbol)));
 
   useEffect(() => {
     if (!outsideKey || outsideKey === lastFetchedKey.current) return;
@@ -156,7 +175,7 @@ export default function Watchlist() {
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Columns match the NSE Screener tab. Tickers outside NSE 750 get their price/name from Screener.in (auto-fetched) and RSI/returns from a live yfinance lookup instead. Tap ★ on any
-        screener page to add a stock; tap it again here (or there) to remove it.
+        screener page to add a stock; tap it again here (or there) to remove it. Split below by whether it's an actual Kite holding (from Portfolio Allocation's last refresh) or a pure watch item.
       </p>
 
       {tickers.length === 0 ? (
@@ -165,13 +184,28 @@ export default function Watchlist() {
         </div>
       ) : (
         <>
+          <div className="flex items-center gap-2 mb-1 mt-2">
+            <h2 className="text-base font-semibold">💼 Owned ({ownedRows.length})</h2>
+          </div>
           <GenericTable
-            rows={rows}
+            rows={ownedRows}
             cols={NSE_SCREENER_COLS}
             navigate={(t) => navigate(`/company/${t}`)}
             watchlist={watchlist}
-            emptyMessage="Nothing to show yet — Refresh, or run the NSE Screener."
+            emptyMessage="None of your watchlist is currently in your portfolio."
           />
+
+          <div className="flex items-center gap-2 mb-1 mt-8">
+            <h2 className="text-base font-semibold">☆ Not Owned ({notOwnedRows.length})</h2>
+          </div>
+          <GenericTable
+            rows={notOwnedRows}
+            cols={NSE_SCREENER_COLS}
+            navigate={(t) => navigate(`/company/${t}`)}
+            watchlist={watchlist}
+            emptyMessage="Everything on your watchlist is currently in your portfolio."
+          />
+
           {detailLoading && (
             <p className="text-xs text-slate-400 mt-2">⏳ Fetching live details for {outsideNse750.length} off-universe ticker{outsideNse750.length > 1 ? "s" : ""}…</p>
           )}
