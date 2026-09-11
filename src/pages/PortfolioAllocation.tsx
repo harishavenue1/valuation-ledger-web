@@ -15,23 +15,16 @@ import { useWatchlist } from "../lib/useWatchlist";
 // MCP tool, callable only in an interactive session, never from an
 // unattended Vercel cron (see RunButton.tsx's LOCAL_ONLY_SCREENERS).
 //
-// 2026-09-11 fix ("how is this ... outperformance is wrong") — Sector
-// Leader and Outperformance BOTH now derive from sectorStockAlpha
-// alone (bundle.momentum_screeners.sectorStockAlpha — the full NSE-750
-// list, refreshed daily), not from technicalSummary. They originally
-// joined technicalSummary (a WEEKLY snapshot, by original design — see
-// that page's own "should be only a weekly refresh" request) for the
-// leader's identity/alpha_score, while Outperformance's other side
-// (myAlpha) came from sectorStockAlpha (daily). Caught live: STLTECH
-// showed as its own sector's 🏆 leader yet Outperformance read -8.4 —
-// technicalSummary's stored alpha_score for STLTECH (129.69, as of
-// Sat 2026-09-10) was being subtracted from sectorStockAlpha's fresher
-// one for the SAME stock (138.07, today) — a stock compared against a
-// stale copy of itself, not a real gap. Deriving the leader from
-// sectorStockAlpha's own rows (highest alpha_score per sector, TODAY)
-// instead guarantees a held sector leader always nets exactly 0, and
-// every other gap is a same-day comparison. Technical Summary the PAGE
-// stays weekly, unchanged — this page just no longer depends on it.
+// 2026-09-11: originally had a "Sector Leader"/"Outperformance" pair of
+// columns here (a live join against technicalSummary/sectorStockAlpha —
+// briefly also fixed the same day for comparing a held sector leader
+// against a stale copy of itself). Replaced outright per "instead of
+// leader and outperf, can we add company's latest qtr sales growth and
+// eps growth" — those two columns are now pushed directly by the
+// PortfolioAllocation skill (qtr_sales_growth_pct/qtr_eps_growth_pct,
+// read off Screener.in's own Quarterly Results table), not computed
+// here, so this page no longer joins against either of those other
+// screeners at all.
 
 // 8-slot categorical palette, dataviz skill's validated reference
 // instance (adjacent-pairlist: worst CVD ΔE 9.1, worst normal-vision
@@ -281,28 +274,6 @@ export default function PortfolioAllocation() {
   const watchlist = useWatchlist();
   const entry = bundle.momentum_screeners["portfolioAllocation"];
   const rows = entry?.rows ?? [];
-  // sectorStockAlpha carries the FULL NSE-750 (+ theme) list, every
-  // stock's own alpha_score vs its sector, refreshed DAILY. Both the
-  // sector leader (below) and each held stock's own alpha are read
-  // from this one same-day source — see the 2026-09-11 fix note above
-  // for why technicalSummary (weekly) is no longer used here.
-  const myAlphaRows = bundle.momentum_screeners["sectorStockAlpha"]?.rows ?? [];
-
-  const leaderBySector = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const r of myAlphaRows) {
-      if (!r.sector || r.alpha_score === null || r.alpha_score === undefined) continue;
-      const cur = m.get(r.sector);
-      if (!cur || r.alpha_score > cur.alpha_score) m.set(r.sector, r);
-    }
-    return m;
-  }, [myAlphaRows]);
-
-  const myAlphaBySymbol = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of myAlphaRows) if (r.symbol && r.alpha_score !== null && r.alpha_score !== undefined) m.set(r.symbol, r.alpha_score);
-    return m;
-  }, [myAlphaRows]);
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
@@ -344,16 +315,16 @@ export default function PortfolioAllocation() {
       },
       { key: "pnl_pct", label: "P&L %", width: 9, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
-        key: "sector_leader",
-        label: "Sector Leader",
+        // 2026-09-11 ("instead of leader and outperf, can we add
+        // company's latest qtr sales growth and eps growth") — replaces
+        // the old Sector Leader column. Gold/Silver still show their
+        // MCX-proxy 1Y context here (no stock "leads" a commodity, and
+        // they have no quarterly results either) rather than leaving
+        // this cell blank for them.
+        key: "qtr_sales_growth_pct",
+        label: "Qtr Sales Growth %",
         width: 13,
         render: (r) => {
-          // Gold/Silver have no equity leader (no stock "leads" a
-          // commodity) — the pushed row instead carries a 1Y COMEX
-          // gold/silver return as context (see the PortfolioAllocation
-          // skill's own reasoning for why it's shown here, not forced
-          // into Outperformance, which needs a same-window comparison
-          // this fund's unknown purchase date can't honestly give).
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
               <span
@@ -364,31 +335,32 @@ export default function PortfolioAllocation() {
               </span>
             );
           }
-          const leader = leaderBySector.get(r.sector);
-          if (!leader) return <span className="text-slate-300">—</span>;
-          const isLeader = leader.symbol === r.symbol;
-          return (
-            <span className="font-semibold text-slate-700">
-              {leader.symbol}
-              {isLeader && <span className="ml-1" title="You hold the current sector leader">🏆</span>}
-            </span>
-          );
+          if (r.qtr_sales_growth_pct === null || r.qtr_sales_growth_pct === undefined) return <span className="text-slate-300">—</span>;
+          return <Signed v={r.qtr_sales_growth_pct} digits={1} />;
         },
       },
       {
-        key: "outperformance",
-        label: "Outperformance",
+        // Same source/request as Qtr Sales Growth % above (one
+        // Screener.in fetch per holding, see the PortfolioAllocation
+        // skill). "T" means the year-ago quarter was a loss — no % is
+        // honest against a negative base, same convention
+        // momentumPersonal already uses for this.
+        key: "qtr_eps_growth_pct",
+        label: "Qtr EPS Growth %",
         width: 12,
         render: (r) => {
-          const leader = leaderBySector.get(r.sector);
-          const myAlpha = myAlphaBySymbol.get(r.symbol);
-          if (!leader || myAlpha === undefined) return <span className="text-slate-300">—</span>;
-          const gap = leader.alpha_score - myAlpha;
-          return <Signed v={gap} digits={1} />;
+          if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
+          if (r.qtr_eps_growth_pct === "T")
+            return (
+              <span className="text-xs font-medium text-emerald-700" title="Year-ago quarter was a loss — turned profitable">
+                Turned profitable
+              </span>
+            );
+          return <Signed v={r.qtr_eps_growth_pct} digits={1} />;
         },
       },
     ],
-    [leaderBySector, myAlphaBySymbol]
+    []
   );
 
   return (
@@ -408,22 +380,17 @@ export default function PortfolioAllocation() {
       <MethodologyNote>
         <b>% of Portfolio</b> = each holding's current value (quantity × last price) ÷ total portfolio value — the whole point of this page
         is the allocation weight, not the underlying rupee amounts. <b>P&amp;L %</b> = unrealized gain/loss vs. Kite's own average buy price.{" "}
-        <b>Sector Leader</b> is a live join against the <b>Technical Summary</b> page's own stored data (not recomputed here) — whichever
-        stock currently has the highest alpha vs. its sector, for the same sector this holding is tagged with. A 🏆 means you already hold
-        that sector's current leader. <b>Outperformance</b> = the leader's Alpha Score minus this specific holding's own Alpha Score — a
-        second live join, this time against the <b>Stocks vs Sector</b> tab's full stored list (not just its own sector's leader, every
-        scored NSE-750 stock), matched by symbol. Reads as "how far behind the leader is this exact holding, in alpha terms" — 0 (or blank,
-        for the leader itself) means you're not leaving anything on the table in that sector; a large positive number means the leader is
-        pulling well ahead of what you're holding. Shows "—" when either side of the join has nothing to match (a holding outside the
-        NSE-750 universe Stocks vs Sector scores, most often — funds/ETFs, or a small-cap Stocks vs Sector doesn't cover). Sector here comes
-        from Screener.in's own peer-comparison breadcrumb, same source and same "Sector" granularity both of those tabs use, so all three
-        line up — except known sector-tracking ETFs (BANKBEES, PHARMABEES, METALIETF, MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in
-        has no sector data for at all and are mapped directly to a real sector instead. <b>Gold/Silver</b> funds get their own "Gold"/"Silver"
-        label and no equity Sector Leader (no stock leads a commodity) — instead, <b>Sector Leader</b> shows that commodity's own 1-year
-COMEX gold/silver return, converted to its INR-equivalent using USDINR's own 1-year move (MCX itself has no fetchable price history — this
-        is the closest honest proxy, not literal MCX pricing). <b>Outperformance</b> stays "—" for these two on purpose:
-        it needs both sides measured over the same window, and a fund's P&amp;L% is since its own unknown purchase date, not a clean 1-year
-        figure. Pushed by the <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
+        <b>Qtr Sales Growth %</b>/<b>Qtr EPS Growth %</b> are the latest reported quarter's YoY growth, read straight off Screener.in's
+        Quarterly Results table (same technique momentumPersonal already uses) — pushed by the PortfolioAllocation skill itself, not a live
+        join against another tab. "Turned profitable" means the year-ago quarter was a loss, so no percentage would be honest against a
+        negative base. Shows "—" for a fund/ETF/commodity (no quarterly results to speak of) or a stock Screener.in has no numbers for yet
+        (e.g. a very recent IPO). Sector comes from the same Screener.in peer-comparison breadcrumb Technical Summary/Stocks vs Sector use,
+        so it lines up with what those tabs mean by the same word — except known sector-tracking ETFs (BANKBEES, PHARMABEES, METALIETF,
+        MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in has no sector data for at all and are mapped directly to a real sector instead.{" "}
+        <b>Gold/Silver/Liquid</b> funds get their own pseudo-sector label the same way — for Gold/Silver, the <b>Qtr Sales Growth %</b>{" "}
+        column instead shows that commodity's own 1-year COMEX return, converted to its INR-equivalent using USDINR's own 1-year move (MCX
+        itself has no fetchable price history — this is the closest honest proxy, not literal MCX pricing). Pushed by the{" "}
+        <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
 
       {/* Side by side 2026-09-06 ("enough space wasted in summary and
