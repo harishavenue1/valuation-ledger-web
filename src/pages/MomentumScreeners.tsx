@@ -163,9 +163,19 @@ export default function MomentumScreeners() {
       { key: "ema200d", label: "200D EMA", render: (r) => fmtNum(r.ema200d) },
       { key: "pct_above_200d", label: "% Above 200D", render: (r) => <Signed v={r.pct_above_200d} digits={1} /> },
       { key: "days_since_cross_200d", label: "Days Since Cross", render: (r) => (r.days_since_cross_200d === null || r.days_since_cross_200d === undefined ? "—" : r.days_since_cross_200d) },
+      {
+        key: "cross_move_pct_200d",
+        label: "Cross Day Move %",
+        render: (r) => (r.cross_move_pct_200d === null || r.cross_move_pct_200d === undefined ? "—" : <Signed v={r.cross_move_pct_200d} digits={1} />),
+      },
       { key: "ema33w", label: "33W EMA", render: (r) => fmtNum(r.ema33w) },
       { key: "pct_above_33w", label: "% Above 33W", render: (r) => <Signed v={r.pct_above_33w} digits={1} /> },
       { key: "weeks_since_cross_33w", label: "Weeks Since Cross", render: (r) => (r.weeks_since_cross_33w === null || r.weeks_since_cross_33w === undefined ? "—" : r.weeks_since_cross_33w) },
+      {
+        key: "cross_move_pct_33w",
+        label: "Cross Week Move %",
+        render: (r) => (r.cross_move_pct_33w === null || r.cross_move_pct_33w === undefined ? "—" : <Signed v={r.cross_move_pct_33w} digits={1} />),
+      },
       { key: "fresh_this_week", label: "Fresh This Week?", render: (r) => (r.fresh_this_week ? <span className="text-amber-600 font-semibold">Y</span> : "") },
     ],
     valueRsiTurnaround: [
@@ -349,12 +359,15 @@ export default function MomentumScreeners() {
       <>
         No numeric score — a stock either qualifies or it doesn't. Qualifies if it's <b>currently above</b> its 200-day EMA <b>or</b> its
         33-week EMA (shown under <b>Via</b>, both if it qualifies on each), the cross above that EMA happened within the{" "}
-        <b>last 8 weeks</b> (not an old, already-established trend), <b>and</b> price hasn't run more than <b>20% past</b> that EMA yet —
-        that 20% cap doubles as the "still consolidating, not extended" test, rather than a separate range/volatility check.{" "}
-        <b>Fresh This Week?</b> = the cross happened in the most recent bar (this week for the 33W EMA, the last trading day for the 200D
-        EMA). EMAs are computed on <b>OHLC4</b> ((Open+High+Low+Close)/4), not Close alone — but the above/below check and the %-above figure
-        compare the real <b>Close</b> against that OHLC4-based EMA line. No market-cap filter: there's no bulk data source for it across all
-        750 stocks, and this universe's own inclusion bar already excludes true microcaps in practice.
+        <b>last 8 weeks</b> (not an old, already-established trend), the crossing bar itself was a <b>strong 5%+ move</b> (the single day, for
+        the 200D EMA, or single week, for the 33W EMA, that actually crossed the line — shown as <b>Cross Day/Week Move %</b> — must itself be
+        a &gt;5% up-move, not a slow drift that's merely ended up 5%+ past the line by today), <b>and</b> price hasn't run more than{" "}
+        <b>20% past</b> that EMA yet — that 20% cap doubles as the "still consolidating, not extended" test, rather than a separate
+        range/volatility check. <b>Fresh This Week?</b> = the cross happened in the most recent bar (this week for the 33W EMA, the last
+        trading day for the 200D EMA). EMAs are computed on <b>OHLC4</b> ((Open+High+Low+Close)/4), not Close alone — but the above/below
+        check, the crossing-bar move %, and the %-above figure all compare real <b>Close</b> values against that OHLC4-based EMA line. No
+        market-cap filter: there's no bulk data source for it across all 750 stocks, and this universe's own inclusion bar already excludes
+        true microcaps in practice.
       </>
     ),
     valueRsiTurnaround: (
