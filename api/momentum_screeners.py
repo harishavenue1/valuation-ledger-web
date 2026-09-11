@@ -2394,21 +2394,57 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # applies to screens THIS account invented itself, not a replica of
 # someone else's stated rule — same reasoning maBreakout/Viraj-style
 # ports elsewhere already follow).
-
+#
+# Expanded 2026-09-11 ("add below tickers... give tradingview link to
+# all with new col 50DEMA, 33WEMA") — broad-market-cap-segment indices,
+# a couple more world indices, and a metals/miners cluster (futures,
+# INR-listed metal funds, and miner ETFs), plus a TradingView link and
+# two new columns on EVERY row. The 50D/33W EMAs are THIS account's own
+# addition on top of the video's framework (not a replica of anyone
+# else's stated rule), so — unlike the 200D EMA above — they're
+# computed on OHLC4 per this account's standing convention (see
+# feedback_ema_ohlc4_source), 33-week on OHLC4 of WEEKLY-resampled
+# bars, mirroring the exact basis myLongTermInvestingStrategy's own
+# 33W EMA exit rule uses. Every ticker below was checked live against
+# Yahoo's chart API before shipping (2y range, full OHLC) — one
+# requested name, Nifty Microcap 250, has NO Yahoo ticker (several
+# tried: NIFTYMICROCAP250.NS, ^NIFTYMICROCAP250, ^CNXMICROCAP250 — all
+# 404), so it's left out rather than faked with a rough stand-in, same
+# principle as MidSmallcap400/Factor Rotation/Market Breadth being left
+# out of v1. Three more requested names collapse onto tickers this
+# screener already carries — GOLDM1!/"GOLD US$/OZ" and GC=F (no MCX or
+# spot gold feed is fetchable from here, same COMEX-proxy reasoning
+# Portfolio Allocation's own Gold/Silver rows already use) and
+# SILVER1!/"SILVER US$/OZ" onto SI=F — so rather than pushing three
+# near-identical rows with byte-identical numbers under different
+# names, those requested tickers are represented via the TradingView
+# link on the single Gold/Silver row instead of a separate row each.
 SA_ASSET_UNIVERSE = {
-    "Nifty 50": "^NSEI",
-    "Nifty 500": "^CRSLDX",
-    "Dollar Index": "DX-Y.NYB",
-    "Bitcoin": "BTC-USD",
-    "Commodity Index (DBC)": "DBC",
-    "Gold (COMEX)": "GC=F",
-    "Silver (COMEX)": "SI=F",
+    "Nifty 50": {"ticker": "^NSEI", "tv": "NSE:NIFTY"},
+    "Nifty 500": {"ticker": "^CRSLDX", "tv": "NSE:NIFTY500"},
+    "Nifty Smallcap 250": {"ticker": "NIFTYSMLCAP250.NS", "tv": "NSE:NIFTYSMLCAP250"},
+    "Nifty Midcap 150": {"ticker": "NIFTYMIDCAP150.NS", "tv": "NSE:NIFTYMIDCAP150"},
+    "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX"},
+    "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI"},
+    "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY"},
+    "Bitcoin": {"ticker": "BTC-USD", "tv": "COINBASE:BTCUSD"},
+    "Commodity Index (DBC)": {"ticker": "DBC", "tv": "AMEX:DBC"},
+    "Copper": {"ticker": "HG=F", "tv": "MCX:COPPER1!"},
+    "Gold": {"ticker": "GC=F", "tv": "MCX:GOLDM1!"},
+    "Silver": {"ticker": "SI=F", "tv": "MCX:SILVER1!"},
+    "GOLDCASE": {"ticker": "GOLDCASE.NS", "tv": "NSE:GOLDCASE"},
+    "SILVERCASE": {"ticker": "SILVERCASE.NS", "tv": "NSE:SILVERCASE"},
+    "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL"},
+    "Gold Miners (GDX)": {"ticker": "GDX", "tv": "AMEX:GDX"},
+    "Copper Miners (COPX)": {"ticker": "COPX", "tv": "AMEX:COPX"},
 }
 SA_EMA_PERIOD = 200
+SA_EMA50D_PERIOD = 50
+SA_EMA33W_PERIOD = 33
 SA_RATIO_LOOKBACK_DAYS = 20  # ~1 trading month, for the Nifty 500-vs-Nifty 50 ratio trend
 
 
-def _sa_trend_row(label, ticker, hist):
+def _sa_trend_row(label, ticker, tv_symbol, hist):
     if hist is None or len(hist) < SA_EMA_PERIOD + 10:
         return None
     close = hist["Close"].dropna()
@@ -2418,23 +2454,44 @@ def _sa_trend_row(label, ticker, hist):
     last_close = float(close.iloc[-1])
     last_ema = float(ema200.iloc[-1])
     last_date = close.index[-1]
-    return {
+    row = {
         "asset": label,
         "symbol": ticker,
+        "tradingview_url": f"https://www.tradingview.com/symbols/{tv_symbol.replace(':', '-')}/",
         "as_of": last_date.date().isoformat() if hasattr(last_date, "date") else str(last_date),
         "close": round(last_close, 2),
         "ema200": round(last_ema, 2),
         "pct_above_ema200": round((last_close / last_ema - 1) * 100, 2),
         "trend": "Bull" if last_close > last_ema else "Bear",
+        "ema50d": None,
+        "pct_vs_ema50d": None,
+        "ema33w": None,
+        "pct_vs_ema33w": None,
     }
+
+    if all(c in hist.columns for c in ("Open", "High", "Low")):
+        ohlc4 = ((hist["Open"] + hist["High"] + hist["Low"] + hist["Close"]) / 4).dropna()
+        if len(ohlc4) >= SA_EMA50D_PERIOD + 8:
+            last_ema50 = float(ohlc4.ewm(span=SA_EMA50D_PERIOD, adjust=False).mean().iloc[-1])
+            row["ema50d"] = round(last_ema50, 2)
+            row["pct_vs_ema50d"] = round((last_close / last_ema50 - 1) * 100, 2)
+
+        weekly = hist.resample("W-FRI").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+        if len(weekly) >= SA_EMA33W_PERIOD + 8:
+            w_ohlc4 = (weekly["Open"] + weekly["High"] + weekly["Low"] + weekly["Close"]) / 4
+            last_ema33w = float(w_ohlc4.ewm(span=SA_EMA33W_PERIOD, adjust=False).mean().iloc[-1])
+            row["ema33w"] = round(last_ema33w, 2)
+            row["pct_vs_ema33w"] = round((last_close / last_ema33w - 1) * 100, 2)
+
+    return row
 
 
 def _run_strategic_alpha(symbols, name_map, sector_map):
-    hist = {label: _gxc_fetch_history(ticker) for label, ticker in SA_ASSET_UNIVERSE.items()}
+    hist = {label: _gxc_fetch_history(spec["ticker"]) for label, spec in SA_ASSET_UNIVERSE.items()}
 
     rows, skipped = [], []
-    for label, ticker in SA_ASSET_UNIVERSE.items():
-        row = _sa_trend_row(label, ticker, hist[label])
+    for label, spec in SA_ASSET_UNIVERSE.items():
+        row = _sa_trend_row(label, spec["ticker"], spec["tv"], hist[label])
         if row is None:
             skipped.append(label)
             continue
@@ -2455,11 +2512,16 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
                 rows.append({
                     "asset": "Nifty 500 / Nifty 50 ratio",
                     "symbol": "—",
+                    "tradingview_url": None,  # a derived ratio, not a single tradable symbol — nothing to link to
                     "as_of": str(ratio.index[-1].date()),
                     "close": round(now, 4),
                     "ema200": None,
                     "pct_above_ema200": round((now / then - 1) * 100, 2),
                     "trend": direction,
+                    "ema50d": None,
+                    "pct_vs_ema50d": None,
+                    "ema33w": None,
+                    "pct_vs_ema33w": None,
                 })
             else:
                 skipped.append("Nifty 500 / Nifty 50 ratio")
