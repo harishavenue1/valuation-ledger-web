@@ -14,12 +14,24 @@ import { useWatchlist } from "../lib/useWatchlist";
 // Claude can push — Kite holdings come from the mcp__kite__get_holdings
 // MCP tool, callable only in an interactive session, never from an
 // unattended Vercel cron (see RunButton.tsx's LOCAL_ONLY_SCREENERS).
-// The "sector leader" columns are a client-side join against
-// technicalSummary's own stored rows (bundle.momentum_screeners
-// .technicalSummary) — done here, not baked into the pushed
-// portfolioAllocation data, so it always reflects whatever's currently
-// stored for both instead of going stale between the two screeners'
-// independent refresh cadences.
+//
+// 2026-09-11 fix ("how is this ... outperformance is wrong") — Sector
+// Leader and Outperformance BOTH now derive from sectorStockAlpha
+// alone (bundle.momentum_screeners.sectorStockAlpha — the full NSE-750
+// list, refreshed daily), not from technicalSummary. They originally
+// joined technicalSummary (a WEEKLY snapshot, by original design — see
+// that page's own "should be only a weekly refresh" request) for the
+// leader's identity/alpha_score, while Outperformance's other side
+// (myAlpha) came from sectorStockAlpha (daily). Caught live: STLTECH
+// showed as its own sector's 🏆 leader yet Outperformance read -8.4 —
+// technicalSummary's stored alpha_score for STLTECH (129.69, as of
+// Sat 2026-09-10) was being subtracted from sectorStockAlpha's fresher
+// one for the SAME stock (138.07, today) — a stock compared against a
+// stale copy of itself, not a real gap. Deriving the leader from
+// sectorStockAlpha's own rows (highest alpha_score per sector, TODAY)
+// instead guarantees a held sector leader always nets exactly 0, and
+// every other gap is a same-day comparison. Technical Summary the PAGE
+// stays weekly, unchanged — this page just no longer depends on it.
 
 // 8-slot categorical palette, dataviz skill's validated reference
 // instance (adjacent-pairlist: worst CVD ΔE 9.1, worst normal-vision
@@ -269,20 +281,22 @@ export default function PortfolioAllocation() {
   const watchlist = useWatchlist();
   const entry = bundle.momentum_screeners["portfolioAllocation"];
   const rows = entry?.rows ?? [];
-  const leaderRows = bundle.momentum_screeners["technicalSummary"]?.rows ?? [];
   // sectorStockAlpha carries the FULL NSE-750 (+ theme) list, every
-  // stock's own alpha_score vs its sector — not just the leader
-  // technicalSummary keeps. Joined by symbol (not sector) to read a
-  // held stock's own alpha, so Outperformance below can be computed as
-  // "how far behind the leader is this specific holding", not just
-  // "who currently leads this sector".
+  // stock's own alpha_score vs its sector, refreshed DAILY. Both the
+  // sector leader (below) and each held stock's own alpha are read
+  // from this one same-day source — see the 2026-09-11 fix note above
+  // for why technicalSummary (weekly) is no longer used here.
   const myAlphaRows = bundle.momentum_screeners["sectorStockAlpha"]?.rows ?? [];
 
   const leaderBySector = useMemo(() => {
     const m = new Map<string, any>();
-    for (const l of leaderRows) if (l.sector) m.set(l.sector, l);
+    for (const r of myAlphaRows) {
+      if (!r.sector || r.alpha_score === null || r.alpha_score === undefined) continue;
+      const cur = m.get(r.sector);
+      if (!cur || r.alpha_score > cur.alpha_score) m.set(r.sector, r);
+    }
     return m;
-  }, [leaderRows]);
+  }, [myAlphaRows]);
 
   const myAlphaBySymbol = useMemo(() => {
     const m = new Map<string, number>();
