@@ -222,7 +222,15 @@ function SegmentSummary({ rows }: { rows: any[] }) {
   );
   const total: SegmentStat = {
     label: "Total Portfolio",
-    allocationPct: stocks.allocationPct + funds.allocationPct,
+    // 2026-09-11 ("why calculation wrong 99.9") — every holding's own
+    // pct_of_portfolio was independently rounded to 2 decimals when
+    // pushed, so summing them (stocks.allocationPct + funds.allocationPct)
+    // lands a hair off 100.00 (e.g. 99.95%) purely from that rounding,
+    // not a real gap — every holding IS a stock or a fund, nothing is
+    // left out. "Total Portfolio" means the whole portfolio by
+    // definition, so this row is hardcoded to 100 rather than
+    // re-displaying that harmless rounding drift as if it meant something.
+    allocationPct: 100,
     weightedPnlPct: (stocks.contributionPct ?? 0) + (funds.contributionPct ?? 0),
     contributionPct: null, // not meaningful for the total row itself — it IS the sum of the two segments' contributions, shown as weightedPnlPct instead
   };
