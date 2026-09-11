@@ -6,24 +6,33 @@ import { Col, GenericTable, MethodologyNote, Signed } from "../components/Screen
 // Added 2026-09-06 — "one more page to be built as a strategic alpha
 // summary" (https://www.youtube.com/watch?v=r6BYKayOaIQ, channel
 // "Strategic Alpha" / Suyog Dhavan's weekly "Community Connect"
-// format). v1 ships the REPEATABLE structural framework the video
-// tracks every week, confirmed ticker-by-ticker against live Yahoo
-// data before shipping (same standard as every other tab): Nifty 50 &
-// Nifty 500 vs their own 200-day EMA, the Nifty 500/Nifty 50 ratio
-// trend (the video's own stated rule), Dollar Index, Bitcoin, a broad
-// commodity index proxy, and Gold/Silver (COMEX, USD — see
-// Portfolio Allocation for the INR-adjusted MCX proxy of the same
-// two). Deliberately NOT built in v1 (user's own scope choice,
-// "Ship v1 with what's verified now"): Factor Rotation (Nifty500
-// Momentum50/Value50/Quality50 — no direct Yahoo ticker found for any
-// of the three), Market Breadth (% of NSE stocks above their own
-// 30-week MA — a bigger lift, needs a full universe fetch), exact
-// MidSmallcap400/Microcap250 indices (no matching ticker found), and
-// "country rotation" (the video itself calls this a proprietary,
-// undisclosed system — not reproducible here). Granular one-off sector
-// calls and specific price-level targets from any single episode are
-// out of scope by design — this page tracks the recurring rules, not
-// that week's picks.
+// format). v1 shipped the REPEATABLE structural framework the video
+// tracks every week: Nifty 50 & Nifty 500 vs their own 200-day EMA,
+// the Nifty 500/Nifty 50 ratio trend (the video's own stated rule),
+// Dollar Index, Bitcoin, and a broad commodity index proxy.
+// Deliberately NOT built (user's own scope choice, "Ship v1 with
+// what's verified now"): Factor Rotation (Nifty500 Momentum50/
+// Value50/Quality50 — no direct Yahoo ticker found for any of the
+// three), Market Breadth (% of NSE stocks above their own 30-week MA —
+// a bigger lift, needs a full universe fetch), and "country rotation"
+// (the video itself calls this a proprietary, undisclosed system — not
+// reproducible here). Granular one-off sector calls and specific
+// price-level targets from any single episode are out of scope by
+// design — this page tracks the recurring rules, not that week's picks.
+//
+// Expanded 2026-09-11 ("add below tickers... give tradingview link to
+// all with new col 50DEMA, 33WEMA") — broad-market-cap-segment indices
+// (Smallcap 250, Midcap 150), Nasdaq 100, KOSPI, a metals/miners
+// cluster (Copper/Gold/Silver futures, GOLDCASE/SILVERCASE, and the
+// GDX/SIL/COPX miner ETFs), plus a TradingView chart link and 50-day/
+// 33-week EMA columns on every row. See the module comment above
+// api/momentum_screeners.py's SA_ASSET_UNIVERSE for exactly which
+// requested tickers had no fetchable Yahoo data (Nifty Microcap 250)
+// or collapsed onto an existing row (GOLDM1!/"GOLD US$/OZ" and
+// SILVER1!/"SILVER US$/OZ" — no MCX or literal spot feed is fetchable
+// from here, so those are the SAME COMEX-proxy numbers this page's
+// existing Gold/Silver rows already show, just linked via TradingView
+// instead of duplicated as their own rows).
 const COLS: Col[] = [
   { key: "asset", label: "Asset", align: "left" },
   { key: "close", label: "Close", render: (r) => (r.close != null ? r.close.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "—") },
@@ -43,6 +52,22 @@ const COLS: Col[] = [
         </span>
       ) : (
         <span className="text-xs text-slate-600">{r.trend ?? "—"}</span>
+      ),
+  },
+  { key: "ema50d", label: "50D EMA", render: (r) => (r.ema50d != null ? r.ema50d.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
+  { key: "pct_vs_ema50d", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_vs_ema50d} digits={2} /> },
+  { key: "ema33w", label: "33W EMA", render: (r) => (r.ema33w != null ? r.ema33w.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
+  { key: "pct_vs_ema33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33w} digits={2} /> },
+  {
+    key: "tradingview_url",
+    label: "Chart",
+    render: (r) =>
+      r.tradingview_url ? (
+        <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 underline whitespace-nowrap">
+          TradingView ↗
+        </a>
+      ) : (
+        <span className="text-slate-300">—</span>
       ),
   },
   { key: "as_of", label: "As of", align: "left" },
@@ -71,14 +96,19 @@ export default function StrategicAlpha() {
       </p>
       <MethodologyNote>
         Each asset's trend is <b>Bull</b> if its latest daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
-        literally — not this app's own OHLC4 standing convention, which only applies to screens this app invented itself), <b>Bear</b>
-        otherwise. The <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is
-        outperforming Nifty 50, i.e. opportunities lie in the broader market rather than large-caps — its "% vs EMA200" column is repurposed to
-        show the ratio's own change over the last ~20 trading days, and it has no EMA200 (shown as "—"). Gold/Silver here are raw COMEX USD
-        futures (GC=F/SI=F); see <b>Portfolio Allocation</b> for the INR-adjusted MCX-equivalent version of the same two. <b>Not built in v1</b>{" "}
-        (ship-now scope): Factor Rotation (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks
-        above their 30-week MA), exact MidSmallcap400/Microcap250 indices, and "country rotation" (the video itself calls this an undisclosed
-        proprietary system).
+        literally — not this app's own OHLC4 standing convention), <b>Bear</b> otherwise. <b>50D EMA</b>/<b>33W EMA</b> are this app's own
+        addition on top of that (33-week matching myLongTermInvestingStrategy's own exit-rule EMA) — both computed on OHLC4 per this app's
+        standing convention, 33-week on OHLC4 of weekly-resampled bars, so they're not directly comparable to the 200D EMA's Close-only basis.
+        The <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is outperforming Nifty
+        50, i.e. opportunities lie in the broader market rather than large-caps — it's a derived ratio, not a single tradable symbol, so it has
+        no EMA or chart link, and its "% vs EMA200" column is repurposed to show the ratio's own change over the last ~20 trading days.{" "}
+        <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — no MCX or literal spot feed is fetchable from here, so these
+        same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their <b>Chart</b> links point to
+        the actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the
+        INR-adjusted version of the same two. <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
+        it's left out rather than faked with a rough stand-in — same principle as everything below. <b>Not built</b>: Factor Rotation
+        (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
+        rotation" (the video itself calls this an undisclosed proprietary system).
       </MethodologyNote>
       <GenericTable
         rows={entry?.rows ?? []}
