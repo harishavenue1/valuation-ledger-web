@@ -51,6 +51,7 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 import urllib.request
 import warnings
 from datetime import date, datetime, timedelta
@@ -2481,7 +2482,13 @@ def _sa_trend_row(label, ticker, tv_symbol, hist):
     row = {
         "asset": label,
         "symbol": ticker,
-        "tradingview_url": f"https://www.tradingview.com/symbols/{tv_symbol.replace(':', '-')}/",
+        # 2026-09-11 ("trading view link should opening chart, just
+        # like any other stocks") — this app's own established
+        # TradingView link shape (see ScreenerTable.tsx's per-symbol
+        # chart link) opens the interactive chart directly
+        # (/chart/?symbol=...), not the /symbols/.../ overview page
+        # this originally linked to.
+        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv_symbol)}",
         "as_of": last_date.date().isoformat() if hasattr(last_date, "date") else str(last_date),
         "close": round(last_close, 2),
         "ema200": round(last_ema, 2),
