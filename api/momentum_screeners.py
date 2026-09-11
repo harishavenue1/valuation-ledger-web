@@ -1136,6 +1136,13 @@ def _run_technical_summary(symbols, name_map, sector_map):
 #     the actual cross-up event, not just "currently above" (which
 #     would also match a stock that's been trending for a year).
 #
+# Added 2026-09-11: a FLOOR on top of the existing 20% ceiling — "if
+# the stock moves more than 5% over the 200EMA or 33WEMA line only
+# then list on page" (MAB_MIN_PCT_ABOVE). Narrows the qualifying band
+# from [0%, 20%] above the line to [5%, 20%] — a stock that's barely
+# poked above the EMA (0-5%) no longer qualifies on its own, even if
+# the cross itself was recent; it needs to have actually moved.
+#
 # EMAs are computed on OHLC4 = (Open+High+Low+Close)/4, not Close
 # alone, per Harish's standing rule (feedback_ema_ohlc4_source.md) —
 # but the above/below CHECK compares the real Close against that
@@ -1148,6 +1155,7 @@ def _run_technical_summary(symbols, name_map, sector_map):
 MAB_FETCH_YEARS = 3
 MAB_MIN_HISTORY_DAYS = 250
 MAB_RECENCY_WEEKS = 8
+MAB_MIN_PCT_ABOVE = 5.0  # added 2026-09-11 — "if the stock moves more than 5% over the 200EMA or 33WEMA line only then list on page"
 MAB_MAX_PCT_ABOVE = 20.0
 MAB_DAILY_EMA_PERIOD = 200
 MAB_WEEKLY_EMA_PERIOD = 33
@@ -1159,8 +1167,9 @@ def _mab_analyze(close, ohlc4, ema_period, recency_periods):
     compare the real close against that EMA line. Returns None if the
     stock doesn't currently qualify: not above the EMA right now,
     crossed too long ago (or the cross predates our fetch window
-    entirely, so recency can't be confirmed), or price has run more
-    than MAB_MAX_PCT_ABOVE% past the EMA."""
+    entirely, so recency can't be confirmed), price hasn't cleared
+    MAB_MIN_PCT_ABOVE% past the EMA yet, or price has run more than
+    MAB_MAX_PCT_ABOVE% past it."""
     if len(close) < ema_period + recency_periods + 20:  # buffer before the recency window, so a real prior "below" can actually be observed
         return None
     ema = ohlc4.ewm(span=ema_period, adjust=False).mean()
@@ -1178,7 +1187,7 @@ def _mab_analyze(close, ohlc4, ema_period, recency_periods):
     last_close = float(close.iloc[-1])
     last_ema = float(ema.iloc[-1])
     pct_above = round((last_close / last_ema - 1) * 100, 2)
-    if pct_above > MAB_MAX_PCT_ABOVE:
+    if pct_above < MAB_MIN_PCT_ABOVE or pct_above > MAB_MAX_PCT_ABOVE:
         return None
     return {"ema": round(last_ema, 2), "pct_above": pct_above, "periods_since_cross": periods_since_cross,
             "fresh": periods_since_cross <= 1}
