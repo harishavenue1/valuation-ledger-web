@@ -4,6 +4,7 @@ import { useData } from "../App";
 import { fmt, fmtSigned, lastActual } from "../lib/model";
 import { evForGrowth, solveReverseDcf } from "../lib/reverseDcf";
 import { MethodologyNote } from "../components/ScreenerTable";
+import { bulkAddCompanies } from "../lib/bulkAdd";
 
 // Added 2026-09-11 — "at 19th minute a concept discussed dcf, can we
 // build exactly as its discussed a new page". Source confirmed after
@@ -58,11 +59,53 @@ function NumberField({
 }
 
 export default function ReverseDCF() {
-  const { bundle } = useData();
+  const { bundle, setBundle } = useData();
   const navigate = useNavigate();
   const tickers = useMemo(() => Object.keys(bundle.stocks).sort(), [bundle.stocks]);
   const [ticker, setTicker] = useState<string>(tickers[0] ?? "");
   const stock = bundle.stocks[ticker];
+
+  // 2026-09-11 ("allow user to add more companies to Reverse DCF") —
+  // same Screener.in fetch Companies.tsx/Watchlist.tsx already use
+  // (bulkAddCompanies), so a ticker not yet in this app's ledger can
+  // be pulled in without leaving this page. Newly-added company is
+  // auto-selected once it lands.
+  const [newTickerInput, setNewTickerInput] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState("");
+  async function handleAddTicker() {
+    const t = newTickerInput.trim().toUpperCase();
+    if (!t) return;
+    setAdding(true);
+    setAddError("");
+    try {
+      const { successes, failures } = await bulkAddCompanies(t);
+      if (successes.length) {
+        const added = successes[0];
+        setBundle((b) => ({ ...b, stocks: { ...b.stocks, [added.ticker]: added.stock } }));
+        setTicker(added.ticker);
+        setNewTickerInput("");
+      } else {
+        setAddError(failures[0]?.error ?? "Couldn't find that ticker on Screener.in");
+      }
+    } catch {
+      setAddError("Fetch failed — check the ticker and try again");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  // Company-panel state — 2026-09-11 ("allow to edit the details for
+  // all fields"): originally read-only, straight off the stock
+  // record. Now plain editable numbers like the Assumptions below,
+  // pre-filled from the picked stock's own last actuals but fully
+  // overridable — useful when Screener.in's numbers are stale, or you
+  // want to model a "what if revenue/margin were X" scenario without
+  // it silently reverting.
+  const [currentPrice, setCurrentPrice] = useState<number | null>(null);
+  const [marketCapCr, setMarketCapCr] = useState<number | null>(null);
+  const [currentRevenueCr, setCurrentRevenueCr] = useState<number | null>(null);
+  const [avg3yGrowth, setAvg3yGrowth] = useState<number | null>(null);
 
   // Assumption state — pre-filled from the picked stock's own last
   // actuals where sensible, but every field is a plain editable
@@ -78,19 +121,22 @@ export default function ReverseDCF() {
   const [netDebtCr, setNetDebtCr] = useState<number | null>(null);
   const [lastTicker, setLastTicker] = useState<string>("");
 
-  // Re-seed the assumption fields from the newly-picked stock's own
+  // Re-seed every editable field from the newly-picked stock's own
   // last actuals, but only when the ticker actually changes — so
-  // edits the user makes to an assumption aren't silently clobbered
-  // on every re-render.
+  // edits the user makes (to either the Company panel or Assumptions)
+  // aren't silently clobbered on every re-render.
   if (ticker !== lastTicker && stock) {
     setLastTicker(ticker);
+    setCurrentPrice(stock.current_price ?? 0);
+    setMarketCapCr(stock.market_cap_cr ?? 0);
+    setCurrentRevenueCr(lastActual(stock.revenue) ?? 0);
+    const hist = (stock.revenue_growth_pct ?? []).filter((v): v is number => v !== null && v !== undefined);
+    setAvg3yGrowth(hist.length ? hist.slice(-3).reduce((s, v) => s + v, 0) / Math.min(3, hist.length) : 0);
     setTaxRatePct(lastActual(stock.tax_pct) ?? 25);
     setMarginPct(lastActual(stock.opm_pct) ?? 15);
     setNetDebtCr(lastActual(stock.borrowings) ?? 0);
   }
 
-  const currentRevenueCr = stock ? lastActual(stock.revenue) : null;
-  const marketCapCr = stock?.market_cap_cr ?? null;
   const targetEvCr = marketCapCr !== null && netDebtCr !== null ? marketCapCr + netDebtCr : null;
 
   const result = useMemo(() => {
@@ -110,15 +156,11 @@ export default function ReverseDCF() {
     });
   }, [currentRevenueCr, targetEvCr, taxRatePct, marginPct, waccPct, years, terminalGrowthPct, netCapexPct, wcPct]);
 
-  // Historical revenue growth — same array the Detail page's own
-  // model already carries — shown alongside the implied number so the
-  // "conservative vs aggressive" read Saigal makes (comparing implied
-  // growth to what the business has actually been capable of) has
-  // something concrete to compare against, not just a bare percentage.
-  const histGrowth = stock?.revenue_growth_pct ?? [];
-  const histGrowthValid = histGrowth.filter((v): v is number => v !== null && v !== undefined);
-  const avg3yGrowth = histGrowthValid.length ? histGrowthValid.slice(-3).reduce((s, v) => s + v, 0) / Math.min(3, histGrowthValid.length) : null;
-
+  // avg3yGrowth is its own editable field now (see the re-seed block
+  // above) — pre-filled from the stock's own revenue_growth_pct
+  // history, same "conservative vs aggressive" comparison Saigal makes
+  // against what the business has actually delivered, but overridable
+  // (e.g. swap in an analyst estimate instead of raw history).
   const verdict =
     result.impliedGrowthPct !== null && avg3yGrowth !== null
       ? result.impliedGrowthPct < avg3yGrowth - 3
@@ -160,7 +202,7 @@ export default function ReverseDCF() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
         <div className="p-4 border border-slate-200 rounded-lg">
           <h2 className="text-sm font-medium text-slate-700 mb-3">Company</h2>
-          <label className="flex flex-col gap-1 text-xs text-slate-600 mb-3">
+          <label className="flex flex-col gap-1 text-xs text-slate-600 mb-2">
             <span>Ticker</span>
             <select value={ticker} onChange={(e) => setTicker(e.target.value)} className="px-2 py-1.5 border border-slate-300 rounded text-sm">
               {tickers.map((t) => (
@@ -170,25 +212,37 @@ export default function ReverseDCF() {
               ))}
             </select>
           </label>
+          <div className="flex items-center gap-1 mb-3">
+            <input
+              type="text"
+              value={newTickerInput}
+              onChange={(e) => setNewTickerInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAddTicker()}
+              placeholder="Add a ticker not listed above…"
+              className="flex-1 px-2 py-1 border border-slate-300 rounded text-xs"
+            />
+            <button
+              onClick={handleAddTicker}
+              disabled={adding || !newTickerInput.trim()}
+              className="text-xs px-2 py-1 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50 whitespace-nowrap"
+            >
+              {adding ? "Fetching…" : "+ Add"}
+            </button>
+          </div>
+          {addError && <p className="text-xs text-red-600 mb-3">{addError}</p>}
           {stock && (
-            <div className="text-sm space-y-1">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Current Price</span>
-                <span className="tabular-nums font-medium">{fmt(stock.current_price, 2, "")}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Market Cap</span>
-                <span className="tabular-nums font-medium">{fmt(marketCapCr, 0, " Cr")}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Latest Revenue (annual)</span>
-                <span className="tabular-nums font-medium">{fmt(currentRevenueCr, 0, " Cr")}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">3Y Avg Revenue Growth</span>
-                <span className="tabular-nums font-medium">{avg3yGrowth !== null ? fmtSigned(avg3yGrowth) : "—"}</span>
-              </div>
-              <div className="flex justify-between">
+            <div className="grid grid-cols-2 gap-3">
+              <NumberField label="Current Price" value={currentPrice ?? 0} onChange={setCurrentPrice} />
+              <NumberField label="Market Cap" value={marketCapCr ?? 0} onChange={setMarketCapCr} suffix="Cr" />
+              <NumberField label="Latest Revenue (annual)" value={currentRevenueCr ?? 0} onChange={setCurrentRevenueCr} suffix="Cr" />
+              <NumberField
+                label="3Y Avg Revenue Growth"
+                value={avg3yGrowth ?? 0}
+                onChange={setAvg3yGrowth}
+                suffix="%"
+                title="Pre-filled from Screener.in's own history — edit to compare against an analyst estimate instead"
+              />
+              <div className="col-span-2 flex justify-between text-sm pt-1 border-t border-slate-100">
                 <span className="text-slate-500">Implied EV (Mkt Cap + Net Debt)</span>
                 <span className="tabular-nums font-medium">{fmt(targetEvCr, 0, " Cr")}</span>
               </div>
