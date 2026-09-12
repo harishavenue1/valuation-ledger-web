@@ -13,6 +13,7 @@ import PortfolioAllocation from "./pages/PortfolioAllocation";
 import GlobalMacro from "./pages/GlobalMacro";
 import StrategicAlpha from "./pages/StrategicAlpha";
 import ReverseDCF from "./pages/ReverseDCF";
+import ReverseDCFScan from "./pages/ReverseDCFScan";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -149,6 +150,9 @@ export default function App() {
               <NavLink to="/reverse-dcf" className={({ isActive }) => navClass(isActive)}>
                 🔄 Rev DCF
               </NavLink>
+              <NavLink to="/reverse-dcf-scan" className={({ isActive }) => navClass(isActive)}>
+                📋 DCF Scan
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -183,6 +187,7 @@ export default function App() {
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
+            <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
