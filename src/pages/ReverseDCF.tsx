@@ -175,6 +175,9 @@ export default function ReverseDCF() {
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">🔄 Reverse DCF</h1>
         <span className="text-slate-500 text-sm">What growth is the current price already pricing in?</span>
+        <button className="ml-auto text-xs underline text-indigo-600" onClick={() => navigate("/reverse-dcf-scan")}>
+          📋 Scan every tracked company →
+        </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
         Modeled on{" "}
