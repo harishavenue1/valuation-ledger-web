@@ -112,3 +112,92 @@ export function solveReverseDcf(inputs: ReverseDcfInputs): ReverseDcfResult {
   const impliedGrowthPct = (lo + hi) / 2;
   return { impliedGrowthPct, evAtImpliedGrowth: evForGrowth(rest, impliedGrowthPct) };
 }
+
+// Staged growth + visible calculation table — added 2026-09-12
+// ("show the calculation table, also the growth rate should be
+// editable, as a company can't grow at same rate for 10yrs, so 1-3
+// high, 3-6 medium, 6-10 low teens"). A single flat growth rate for
+// all 10 years (the functions above) is a fine SOLVE target, but not
+// a realistic thing to hand-edit — real growth decelerates. This adds
+// a fixed 3-stage shape (years 1-3 / 4-6 / 7-10, each its own editable
+// rate) and exposes every year's own numbers, not just the final
+// total, so the calculation is visible rather than a black box. The
+// flat-rate functions above are UNCHANGED and still back both the
+// single-stock page's initial auto-fill (seeds all three stages with
+// the same solved flat rate as a starting point) and the bulk Scan
+// page (which intentionally stays flat-rate — a first-pass screen
+// across many stocks has no business asking for 3 hand-tuned inputs
+// per company).
+
+export interface StagedGrowthInputs {
+  currentRevenueCr: number;
+  sustainableMarginPct: number;
+  taxRatePct: number;
+  waccPct: number;
+  terminalGrowthPct: number;
+  netCapexPctOfRevenue: number;
+  wcPctOfIncrementalRevenue: number;
+  stage1Pct: number; // years 1-3
+  stage2Pct: number; // years 4-6
+  stage3Pct: number; // years 7-10
+}
+
+export interface StagedYearRow {
+  year: number;
+  stage: 1 | 2 | 3;
+  growthPct: number;
+  revenueCr: number;
+  fcffCr: number;
+  discountFactor: number;
+  pvCr: number;
+}
+
+export interface StagedDcfResult {
+  yearRows: StagedYearRow[];
+  terminalFcffCr: number;
+  terminalValueCr: number; // undiscounted, as of year 10
+  pvTerminalValueCr: number;
+  totalEvCr: number; // sum of all 10 years' PV + PV of terminal value
+}
+
+function stageGrowthForYear(t: number, inputs: StagedGrowthInputs): { stage: 1 | 2 | 3; growthPct: number } {
+  if (t <= 3) return { stage: 1, growthPct: inputs.stage1Pct };
+  if (t <= 6) return { stage: 2, growthPct: inputs.stage2Pct };
+  return { stage: 3, growthPct: inputs.stage3Pct };
+}
+
+/** Builds the full 10-year table (fixed at 10 years — 3+3+4 — matching
+ * the three stages) plus terminal value, from explicit per-stage
+ * growth rates. Unlike solveReverseDcf, this doesn't solve for
+ * anything — it's a forward calculation FROM whatever growth rates
+ * you hand it, which is the point: edit a stage, see the resulting
+ * fair value shift immediately, no re-solving. */
+export function computeStagedDcf(inputs: StagedGrowthInputs): StagedDcfResult {
+  const margin = inputs.sustainableMarginPct / 100;
+  const tax = inputs.taxRatePct / 100;
+  const wacc = inputs.waccPct / 100;
+  const tg = inputs.terminalGrowthPct / 100;
+
+  const yearRows: StagedYearRow[] = [];
+  let prevRev = inputs.currentRevenueCr;
+  for (let t = 1; t <= 10; t++) {
+    const { stage, growthPct } = stageGrowthForYear(t, inputs);
+    const revenueCr = prevRev * (1 + growthPct / 100);
+    const incRev = revenueCr - prevRev;
+    const nopat = revenueCr * margin * (1 - tax);
+    const netCapex = revenueCr * (inputs.netCapexPctOfRevenue / 100);
+    const deltaWC = incRev * (inputs.wcPctOfIncrementalRevenue / 100);
+    const fcffCr = nopat - netCapex - deltaWC;
+    const discountFactor = 1 / Math.pow(1 + wacc, t);
+    yearRows.push({ year: t, stage, growthPct, revenueCr, fcffCr, discountFactor, pvCr: fcffCr * discountFactor });
+    prevRev = revenueCr;
+  }
+
+  const finalFcff = yearRows[yearRows.length - 1].fcffCr;
+  const terminalFcffCr = finalFcff * (1 + tg);
+  const terminalValueCr = wacc > tg ? terminalFcffCr / (wacc - tg) : Infinity;
+  const pvTerminalValueCr = terminalValueCr / Math.pow(1 + wacc, 10);
+  const totalEvCr = yearRows.reduce((s, y) => s + y.pvCr, 0) + pvTerminalValueCr;
+
+  return { yearRows, terminalFcffCr, terminalValueCr, pvTerminalValueCr, totalEvCr };
+}
