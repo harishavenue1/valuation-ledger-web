@@ -305,12 +305,26 @@ export const api = {
   // same session cookie every other request already uses, no local
   // poller involved. Takes ~60-100s (a full 750-ticker yfinance pull),
   // so the caller should show a "running" state while this awaits
-  // rather than treating it as instant. 2026-08-30, "refresh on click
-  // from any machine, not just the Mac" — viraj_screen still needs
-  // api.requestRun() above (it needs Harish's own Screener.in/Chartink
-  // cookies, which only live on his Mac).
-  runScreenerCloud: (screener: string): Promise<{ ok: boolean; universe: number; scanned: number; skipped: number; pushed: number; elapsed_s: number }> =>
-    req(`/api/momentum_screeners?screener=${encodeURIComponent(screener)}`),
+  // rather than treating it as instant.
+  //
+  // 2026-09-12 ("why viraj screen run failing") — every screener here
+  // used to live in api/momentum_screeners.py's SCREENER_RUNNERS, so
+  // hardcoding that one path was fine. viraj_screen was added to
+  // CLOUD_SCREENERS on 2026-08-30 once it was confirmed to need no
+  // stored credentials (see api/viraj_screen.py's own module comment),
+  // but it runs as its OWN Vercel function (api/viraj_screen.py, its
+  // own do_GET) — not a momentum_screeners.py runner — and this
+  // function was never updated to route it there, so every "Run now"
+  // click hit /api/momentum_screeners?screener=viraj_screen, which
+  // 400s ("?screener= must be one of {...}", viraj_screen isn't in
+  // that dict). viraj_screen.py's do_GET also names its count field
+  // "fetched" (fundamentals actually fetched, time-budget permitting)
+  // rather than "scanned" — both are surfaced below so either shape
+  // reads correctly.
+  runScreenerCloud: (
+    screener: string,
+  ): Promise<{ ok: boolean; universe: number; scanned?: number; fetched?: number; skipped: number; pushed: number; elapsed_s: number }> =>
+    req(screener === "viraj_screen" ? "/api/viraj_screen" : `/api/momentum_screeners?screener=${encodeURIComponent(screener)}`),
 
   // Guide page's Multibagger Checklist (added 2026-08-30) — one live,
   // stateless lookup for ANY NSE company by name/symbol, merging
