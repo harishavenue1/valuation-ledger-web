@@ -47,6 +47,7 @@ function fmtVol(v: number | null | undefined): string {
 const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "myLongTermInvestingStrategy", label: "myLongTermInvestingStrategy", emoji: "📐" },
   { key: "weeklySignals", label: "Weekly RSI/EMA Crosses", emoji: "🔔" },
+  { key: "smartMoney", label: "SmartMoney", emoji: "💰" },
   { key: "weekendInvesting", label: "weekendInvesting", emoji: "🏁" },
   { key: "quantBollinger", label: "quantBollinger", emoji: "📊" },
   { key: "Nifty500RelativeStrength", label: "RS (NSE750)", emoji: "💪" },
@@ -115,6 +116,34 @@ export default function MomentumScreeners() {
       { key: "rsi14", label: "RSI(14)", render: (r) => fmtNum(r.rsi14, 1) },
       { key: "ema33", label: "33W EMA", render: (r) => fmtNum(r.ema33) },
       { key: "pct_vs_ema33", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33} digits={1} /> },
+    ],
+    smartMoney: [
+      {
+        key: "signal",
+        label: "Signal",
+        align: "left",
+        render: (r) => (
+          <span
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
+              r.signal === "Entry"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                : r.signal === "Exit (Sell)"
+                  ? "bg-red-50 text-red-600 border-red-300"
+                  : "bg-amber-50 text-amber-700 border-amber-300"
+            }`}
+          >
+            {r.signal}
+          </span>
+        ),
+      },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
+      { key: "ema10", label: "EMA(10)", render: (r) => fmtNum(r.ema10) },
+      { key: "ema20", label: "EMA(20)", render: (r) => fmtNum(r.ema20) },
+      { key: "sma40", label: "SMA(40)", render: (r) => fmtNum(r.sma40) },
+      { key: "pct_vs_sma40", label: "% vs SMA(40)", render: (r) => <Signed v={r.pct_vs_sma40} digits={1} /> },
     ],
     weekendInvesting: [
       { key: "rank", label: "Rank" },
@@ -333,6 +362,22 @@ export default function MomentumScreeners() {
         <b>33W EMA Breakdown</b> = Close moved from at-or-above the 33-week EMA to below it on the latest week — the mirror-image exit signal
         (myLongTermInvestingStrategy's own sell rule). RSI and EMAs are both computed on weekly closes resampled from daily data, same
         calculation myLongTermInvestingStrategy already uses.
+      </>
+    ),
+    smartMoney: (
+      <>
+        Direct port of the "Vivek Equity Tool" Pine Script indicator, run on <b>weekly</b> bars. Trend = price vs a{" "}
+        <b>40-week SMA</b>, with a "neutral/ranging" zone around it sized by <b>Wilder ATR(40) × 0.618</b> — a week that overlaps this band
+        doesn't count as trending either way, only a week that clears fully outside it does. Momentum = the <b>10-week EMA vs 20-week
+        EMA</b>. <b>Entry</b> = trend just flipped up <b>and</b> momentum agrees (EMA10 &gt; EMA20) — the exact week this first became true
+        after not already being in that state (a stock already in an established uptrend for months won't re-fire). <b>Exit (Close)</b> =
+        already in a trending state, but the fast EMAs just crossed against it — an early warning before a full reversal, same as the
+        original script's own "Close" signal. <b>Exit (Sell)</b> = trend just flipped down <b>and</b> momentum agrees — the script's own
+        short-entry condition, shown here as the strongest bearish signal even though this app doesn't otherwise short-sell. Because the
+        signal depends on which state a stock is <i>already</i> in (not just this week's numbers), the underlying calculation replays each
+        stock's full weekly history bar-by-bar; only a signal that actually fires on the most recent completed week is shown here. Same
+        demerger/spin-off data-cliff guard as Weekly RSI/EMA Crosses (a &gt;35% single-week move is treated as a corporate-action artifact,
+        not a real signal) — confirmed necessary live on HEG Ltd's 2026-09 graphite-business demerger.
       </>
     ),
     weekendInvesting: (

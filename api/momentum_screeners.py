@@ -455,6 +455,155 @@ def _run_weekly_signals(symbols, name_map, sector_map):
     }, None
 
 
+# ── smartMoney ───────────────────────────────────────────────────────────────
+#
+# Added 2026-09-12 ("build a page to scan the stocks for entry and
+# exit on weekly basis using this script, name it as SmartMoney") — a
+# direct port of the "Vivek Equity Tool" Pine Script v5 indicator
+# (© Vivek_AlfaTraders) the user pasted, applied on WEEKLY bars (the
+# script itself defaults to the chart's own timeframe with an optional
+# separate higher-timeframe trend input — here it's simply run on
+# weekly OHLC throughout, since that's what was asked for). Same
+# trend + momentum structure as that indicator:
+#   - EMA(10) / EMA(20) — a fast momentum ribbon
+#   - SMA(40) — the trend line
+#   - A "neutral/ranging" zone around the SMA(40), sized by
+#     Wilder ATR(40) * 0.618 (the script's own golden-ratio multiplier)
+#     — a bar whose open-or-close overlaps this band doesn't count as
+#     trending either way, only a bar that clears fully outside it does
+#   - Direction: +1 (up) once price clears above the zone, -1 (down)
+#     once below, 0 while inside it
+#   - Entry: direction flips to up AND EMA10 > EMA20 (momentum agrees)
+#     — the exact bar this first becomes true after NOT already being
+#     in a long state
+#   - Exit (Close): while already in a long/short state, the fast EMAs
+#     cross against the still-standing trend — the script's own early
+#     warning before a full reversal is confirmed
+#   - Exit (Sell): direction flips to down AND EMA10 < EMA20 — the
+#     script's short-entry condition, kept here as a stronger bearish
+#     signal than the soft "Close" warning even though this app is
+#     long-only elsewhere
+#
+# State is PATH-DEPENDENT (which state a stock is already in matters,
+# same as the Pine Script's own condition[1] carried forward each
+# bar), so unlike every other screener in this file this walks each
+# stock's full weekly history forward bar-by-bar (_sm_walk_state, a
+# plain Python loop per symbol) rather than a single vectorized
+# point-in-time check — cheap relative to the network fetch that
+# dominates this screener's cost anyway. Only a signal firing on the
+# LAST completed weekly bar is kept — same "this week only" convention
+# as weeklySignals, and reuses THAT screener's own
+# _wrs_plausible_weekly_move guard unchanged (a >35% single-week move
+# is almost always a demerger/spin-off data cliff, not real price
+# action — see weeklySignals' own module comment, confirmed live on
+# HEG Ltd's graphite-business demerger) so this doesn't ship the exact
+# same false-positive class of bug on day one.
+
+SM_EMA_FAST1 = 10
+SM_EMA_FAST2 = 20
+SM_SMA_TREND = 40
+SM_ATR_LEN = 40
+SM_RANGE_MULT = 0.618
+SM_FETCH_YEARS = 4
+SM_MIN_HISTORY_WEEKS = SM_SMA_TREND + SM_ATR_LEN + 15
+
+
+def _sm_resample_weekly(daily_df):
+    daily_df = daily_df.set_index("date")
+    weekly = daily_df.resample("W-FRI").agg(
+        {"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+    if len(weekly) and daily_df.index.max() < weekly.index[-1] - timedelta(days=4):
+        weekly = weekly.iloc[:-1]  # drop a still-forming current week, same guard weekendInvesting/quantBollinger use
+    return weekly
+
+
+def _sm_indicators(weekly):
+    o, h, l, c = weekly["Open"], weekly["High"], weekly["Low"], weekly["Close"]
+    ema1 = c.ewm(span=SM_EMA_FAST1, adjust=False).mean()
+    ema2 = c.ewm(span=SM_EMA_FAST2, adjust=False).mean()
+    trend = c.rolling(SM_SMA_TREND).mean()
+    prev_c = c.shift(1)
+    tr = pd.concat([h - l, (h - prev_c).abs(), (l - prev_c).abs()], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1 / SM_ATR_LEN, min_periods=SM_ATR_LEN, adjust=False).mean()  # Wilder RMA, matches Pine's ta.atr()
+    ch_basis = atr * SM_RANGE_MULT
+    ch_top = trend + ch_basis
+    ch_bot = trend - ch_basis
+    in_range = ((o <= ch_top) | (c <= ch_top)) & ((o >= ch_bot) | (c >= ch_bot))
+    dir_trend = pd.Series(0, index=weekly.index)
+    dir_trend[~in_range & (c >= trend)] = 1
+    dir_trend[~in_range & (c < trend)] = -1
+    return pd.DataFrame({"close": c, "ema1": ema1, "ema2": ema2, "trend": trend, "dir": dir_trend})
+
+
+def _sm_walk_state(ind):
+    """Replays the Pine Script's own persistent state machine
+    (condition[1] carried forward every bar) across the full weekly
+    history, and returns (buy, sell, close) bool flags for whether
+    each fired on the LAST bar only."""
+    state = 0
+    buy = sell = close_sig = False
+    for _, row in ind.iterrows():
+        if pd.isna(row["trend"]) or pd.isna(row["ema1"]) or pd.isna(row["ema2"]):
+            continue
+        buy_cond = row["dir"] == 1 and row["ema1"] > row["ema2"]
+        sell_cond = row["dir"] == -1 and row["ema1"] < row["ema2"]
+        close_cond = (row["dir"] == 1 and row["ema1"] < row["ema2"]) or (row["dir"] == -1 and row["ema1"] > row["ema2"])
+
+        prev_state = state
+        if prev_state != 1 and buy_cond:
+            state = 1
+        elif prev_state != -1 and sell_cond:
+            state = -1
+        elif prev_state != 0 and close_cond:
+            state = 0
+        # else: state unchanged, carried forward — matches nz(f_condition[1])
+
+        buy = state == 1 and prev_state != 1
+        sell = state == -1 and prev_state != -1
+        close_sig = prev_state != 0 and close_cond
+    return buy, sell, close_sig
+
+
+def _run_smart_money(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * SM_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    scanned = 0
+    for sym, g in daily.groupby("symbol"):
+        weekly = _sm_resample_weekly(g[["date", "Open", "High", "Low", "Close"]])
+        if len(weekly) < SM_MIN_HISTORY_WEEKS:
+            skipped.append(sym)
+            continue
+        ind = _sm_indicators(weekly)
+        last = ind.iloc[-1]
+        if pd.isna(last["trend"]) or pd.isna(last["ema1"]) or pd.isna(last["ema2"]):
+            skipped.append(sym)
+            continue
+        scanned += 1
+        if not _wrs_plausible_weekly_move(ind):
+            continue  # demerger/spin-off/bonus-ratio data cliff, not a real signal — see module comment
+        buy, sell, close_sig = _sm_walk_state(ind)
+        if not (buy or sell or close_sig):
+            continue
+        signal = "Entry" if buy else "Exit (Sell)" if sell else "Exit (Close)"
+        rows.append({
+            "signal": signal,
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "close": round(float(last["close"]), 2),
+            "ema10": round(float(last["ema1"]), 2),
+            "ema20": round(float(last["ema2"]), 2),
+            "sma40": round(float(last["trend"]), 2),
+            "pct_vs_sma40": round((float(last["close"]) / float(last["trend"]) - 1) * 100, 2),
+        })
+
+    order = {"Entry": 0, "Exit (Sell)": 1, "Exit (Close)": 2}
+    rows.sort(key=lambda r: (order[r["signal"]], -r["pct_vs_sma40"]))
+    return {"label": "SmartMoney", "push_rows": rows, "scanned": scanned, "skipped": len(skipped)}, None
+
+
 # ── weekendInvesting ─────────────────────────────────────────────────────────
 
 WI_TOP_N = 20
@@ -2983,6 +3132,7 @@ SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
     "weeklySignals": _run_weekly_signals,
+    "smartMoney": _run_smart_money,
     "weekendInvesting": _run_weekend_investing,
     "quantBollinger": _run_quant_bollinger,
     "nseScreener": _run_nse_screener,
