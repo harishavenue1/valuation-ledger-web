@@ -347,6 +347,39 @@ def _run_ltis(symbols, name_map, sector_map):
 # myLongTermInvestingStrategy already builds (weekly resample, EWM
 # Wilder RSI14, EMA12/21/33), rather than recomputing RSI/EMA a third
 # way in this file.
+#
+# Fixed 2026-09-12 ("HEG ... is not breaking Weekly 33WEMA but why its
+# part of breakdown list") — confirmed live: HEG Ltd's graphite-business
+# demerger (record date 2026-09-07) cut its RAW share price ~63% in one
+# week (₹729 -> ~₹260) as a pure value-transfer accounting adjustment,
+# zero real bearish price action — TradingView's own weekly chart (which
+# adjusts for the demerger) shows no EMA break at all. yfinance's
+# auto_adjust=True (see _ms_fetch_daily) handles ordinary splits and
+# dividends but NOT demergers/spin-offs/bonus-ratio actions — those show
+# up as a genuine, unadjusted price cliff in the raw history, which
+# _wrs_fresh_ema33_breakdown mechanically (and correctly, given the raw
+# numbers) read as "crossed below the EMA this week". Fix:
+# _wrs_plausible_weekly_move rejects any week whose close-to-close move
+# is larger than real organic weekly price action ever plausibly is for
+# an NSE stock — almost always a corporate-action data discontinuity,
+# not a technical signal — and both cross checks skip a symbol whose
+# latest week fails that check, rather than flag a demerger/spinoff as
+# a momentum event.
+
+WRS_MAX_PLAUSIBLE_WEEKLY_MOVE_PCT = 35.0
+
+
+def _wrs_plausible_weekly_move(wdf):
+    """False if the LAST completed weekly candle's close-to-close move
+    is larger than organic single-week NSE price action plausibly gets
+    — almost always a demerger/spin-off/bonus-ratio data discontinuity,
+    not a real technical move (see module comment above)."""
+    if len(wdf) < 2:
+        return True
+    prev_close, last_close = wdf["close"].iloc[-2], wdf["close"].iloc[-1]
+    if pd.isna(prev_close) or pd.isna(last_close) or prev_close <= 0:
+        return True
+    return bool(abs((last_close / prev_close - 1) * 100) <= WRS_MAX_PLAUSIBLE_WEEKLY_MOVE_PCT)
 
 
 def _wrs_fresh_rsi_cross(wdf):
@@ -405,6 +438,8 @@ def _run_weekly_signals(symbols, name_map, sector_map):
             "ema33": round(float(last[f"ema{LTIS_EXIT_EMA}"]), 2),
             "pct_vs_ema33": round((float(last["close"]) / float(last[f"ema{LTIS_EXIT_EMA}"]) - 1) * 100, 2),
         }
+        if not _wrs_plausible_weekly_move(wdf):
+            continue  # demerger/spin-off/bonus-ratio data cliff, not a real technical move — see module comment
         if _wrs_fresh_rsi_cross(wdf):
             rsi_rows.append({**base, "signal": "RSI>66 Cross"})
         if _wrs_fresh_ema33_breakdown(wdf):
