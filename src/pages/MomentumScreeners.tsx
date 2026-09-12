@@ -115,7 +115,6 @@ export default function MomentumScreeners() {
       { key: "rsi14", label: "RSI(14)", render: (r) => fmtNum(r.rsi14, 1) },
       { key: "ema33", label: "33W EMA", render: (r) => fmtNum(r.ema33) },
       { key: "pct_vs_ema33", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33} digits={1} /> },
-      { key: "as_of", label: "Week Of", align: "left" },
     ],
     weekendInvesting: [
       { key: "rank", label: "Rank" },
