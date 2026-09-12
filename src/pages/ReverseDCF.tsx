@@ -161,7 +161,11 @@ export default function ReverseDCF() {
     const rev = lastActual(stock.revenue) ?? 0;
     setCurrentRevenueCr(rev);
     const hist = (stock.revenue_growth_pct ?? []).filter((v): v is number => v !== null && v !== undefined);
-    setAvg3yGrowth(hist.length ? hist.slice(-3).reduce((s, v) => s + v, 0) / Math.min(3, hist.length) : 0);
+    // 2026-09-12 ("why alot of decimals for 3yr avg growth") — plain
+    // division left a float like 7.233333333333334 sitting in the
+    // editable field; round to 1 decimal, same precision as every
+    // other %-field seeded on this page (tax/margin/etc via NumberField).
+    setAvg3yGrowth(hist.length ? Math.round((hist.slice(-3).reduce((s, v) => s + v, 0) / Math.min(3, hist.length)) * 10) / 10 : 0);
     const tax = lastActual(stock.tax_pct) ?? 25;
     setTaxRatePct(tax);
     const margin = lastActual(stock.opm_pct) ?? 15;
