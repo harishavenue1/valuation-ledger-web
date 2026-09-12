@@ -365,21 +365,44 @@ def _run_ltis(symbols, name_map, sector_map):
 # not a technical signal — and both cross checks skip a symbol whose
 # latest week fails that check, rather than flag a demerger/spinoff as
 # a momentum event.
+#
+# Widened 2026-09-12 (same session, smartMoney's very first live run) —
+# India Glycols' 3-way demerger (record date 2026-09-02) landed in the
+# week BEFORE the most recent one, so a lookback of only 1 week missed
+# it entirely: SMA(40)/EMA(10)/EMA(20) were all still converging down
+# from the pre-demerger price level, and smartMoney's state machine
+# read that lagging gap as a fresh "Exit (Sell)" — a real bug in the
+# ORIGINAL fix's scope, not a new failure mode. A moving average keeps
+# carrying a shock's weight for as long as its own window does (a full
+# SMA(40) literally includes it for 40 weeks; an EMA's weight decays
+# but is still material well past its span), so the guard now checks
+# EVERY week-over-week transition across a caller-supplied lookback —
+# long enough to span whichever indicator's window is actually in play
+# — not just the single most recent one.
 
 WRS_MAX_PLAUSIBLE_WEEKLY_MOVE_PCT = 35.0
 
 
-def _wrs_plausible_weekly_move(wdf):
-    """False if the LAST completed weekly candle's close-to-close move
-    is larger than organic single-week NSE price action plausibly gets
-    — almost always a demerger/spin-off/bonus-ratio data discontinuity,
-    not a real technical move (see module comment above)."""
+def _wrs_plausible_weekly_move(wdf, lookback=1):
+    """False if ANY week-over-week close move within the last
+    `lookback` completed weekly transitions is larger than organic
+    single-week NSE price action plausibly gets — almost always a
+    demerger/spin-off/bonus-ratio data discontinuity (see module
+    comment above), not a real technical move. `lookback` should cover
+    whichever indicator's own averaging window is being guarded (e.g.
+    33 for a 33-week EMA, 40 for a 40-week SMA) — a cliff anywhere in
+    that window can still be corrupting the indicator's current value
+    even though it isn't the most recent week's own move."""
     if len(wdf) < 2:
         return True
-    prev_close, last_close = wdf["close"].iloc[-2], wdf["close"].iloc[-1]
-    if pd.isna(prev_close) or pd.isna(last_close) or prev_close <= 0:
+    close = wdf["close"].iloc[-(lookback + 1):]
+    if len(close) < 2:
         return True
-    return bool(abs((last_close / prev_close - 1) * 100) <= WRS_MAX_PLAUSIBLE_WEEKLY_MOVE_PCT)
+    moves = ((close - close.shift(1)) / close.shift(1)).abs() * 100
+    moves = moves.dropna()
+    if moves.empty:
+        return True
+    return bool((moves <= WRS_MAX_PLAUSIBLE_WEEKLY_MOVE_PCT).all())
 
 
 def _wrs_fresh_rsi_cross(wdf):
@@ -438,7 +461,7 @@ def _run_weekly_signals(symbols, name_map, sector_map):
             "ema33": round(float(last[f"ema{LTIS_EXIT_EMA}"]), 2),
             "pct_vs_ema33": round((float(last["close"]) / float(last[f"ema{LTIS_EXIT_EMA}"]) - 1) * 100, 2),
         }
-        if not _wrs_plausible_weekly_move(wdf):
+        if not _wrs_plausible_weekly_move(wdf, lookback=LTIS_EXIT_EMA):
             continue  # demerger/spin-off/bonus-ratio data cliff, not a real technical move — see module comment
         if _wrs_fresh_rsi_cross(wdf):
             rsi_rows.append({**base, "signal": "RSI>66 Cross"})
@@ -583,7 +606,7 @@ def _run_smart_money(symbols, name_map, sector_map):
             skipped.append(sym)
             continue
         scanned += 1
-        if not _wrs_plausible_weekly_move(ind):
+        if not _wrs_plausible_weekly_move(ind, lookback=SM_SMA_TREND):
             continue  # demerger/spin-off/bonus-ratio data cliff, not a real signal — see module comment
         buy, sell, close_sig = _sm_walk_state(ind)
         if not (buy or sell or close_sig):
