@@ -160,7 +160,6 @@ export default function MomentumScreeners() {
       { key: "sector", label: "Sector", align: "left" },
       { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "via", label: "Via", align: "left" },
-      { key: "ema200d", label: "200D EMA", render: (r) => fmtNum(r.ema200d) },
       { key: "pct_above_200d", label: "% Above 200D", render: (r) => <Signed v={r.pct_above_200d} digits={1} /> },
       { key: "days_since_cross_200d", label: "Days Since Cross", render: (r) => (r.days_since_cross_200d === null || r.days_since_cross_200d === undefined ? "—" : r.days_since_cross_200d) },
       {
@@ -168,7 +167,6 @@ export default function MomentumScreeners() {
         label: "Cross Day Move %",
         render: (r) => (r.cross_move_pct_200d === null || r.cross_move_pct_200d === undefined ? "—" : <Signed v={r.cross_move_pct_200d} digits={1} />),
       },
-      { key: "ema33w", label: "33W EMA", render: (r) => fmtNum(r.ema33w) },
       { key: "pct_above_33w", label: "% Above 33W", render: (r) => <Signed v={r.pct_above_33w} digits={1} /> },
       { key: "weeks_since_cross_33w", label: "Weeks Since Cross", render: (r) => (r.weeks_since_cross_33w === null || r.weeks_since_cross_33w === undefined ? "—" : r.weeks_since_cross_33w) },
       {
