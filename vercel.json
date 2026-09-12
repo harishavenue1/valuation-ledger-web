@@ -27,6 +27,7 @@
     { "path": "/api/momentum_screeners?screener=globalCountryEtfs", "schedule": "37 10 * * *" },
     { "path": "/api/momentum_screeners?screener=globalCurrencies", "schedule": "38 10 * * *" },
     { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
+    { "path": "/api/momentum_screeners?screener=marketRatios", "schedule": "40 10 * * *" },
     { "path": "/api/momentum_screeners?screener=reverseDcfScanNse750&offset=0&limit=80", "schedule": "0 11 * * *" },
     { "path": "/api/momentum_screeners?screener=reverseDcfScanNse750&offset=80&limit=80", "schedule": "6 11 * * *" },
     { "path": "/api/momentum_screeners?screener=reverseDcfScanNse750&offset=160&limit=80", "schedule": "12 11 * * *" },

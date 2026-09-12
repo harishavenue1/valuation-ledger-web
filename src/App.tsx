@@ -12,6 +12,7 @@ import TechnicalSummary from "./pages/TechnicalSummary";
 import PortfolioAllocation from "./pages/PortfolioAllocation";
 import GlobalMacro from "./pages/GlobalMacro";
 import StrategicAlpha from "./pages/StrategicAlpha";
+import MarketRatios from "./pages/MarketRatios";
 import ReverseDCF from "./pages/ReverseDCF";
 import ReverseDCFScan from "./pages/ReverseDCFScan";
 import Watchlist from "./pages/Watchlist";
@@ -147,6 +148,9 @@ export default function App() {
               <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
                 📡 Strategic
               </NavLink>
+              <NavLink to="/market-ratios" className={({ isActive }) => navClass(isActive)}>
+                📐 Ratios
+              </NavLink>
               <NavLink to="/reverse-dcf" className={({ isActive }) => navClass(isActive)}>
                 🔄 Rev DCF
               </NavLink>
@@ -186,6 +190,7 @@ export default function App() {
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
+            <Route path="/market-ratios" element={<MarketRatios />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/watchlist" element={<Watchlist />} />
