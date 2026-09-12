@@ -324,6 +324,97 @@ def _run_ltis(symbols, name_map, sector_map):
     return {"label": "myLongTermInvestingStrategy", "push_rows": signals, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── weeklySignals ─────────────────────────────────────────────────────────────
+#
+# Added 2026-09-12 ("looks we dont have plain vanilla stocks crossing
+# RSI>66 on weekly basis add this to one page under momentum, also
+# stocks price falling below weekly33EMA.. so these are only those
+# stocks which recent on this weeks") — two simple weekly signals, each
+# filtered to ONLY the most recent completed weekly candle's cross
+# event, not an "is it currently true" snapshot and not a multi-week
+# recency window like maBreakout's 8 weeks:
+#   1. Weekly RSI(14) crossing ABOVE 66 — the "plain vanilla" version of
+#      myLongTermInvestingStrategy's own entry rule (same threshold,
+#      matches Harish's own standing weekly-RSI>66 rule per
+#      user_trading_profile.md), but WITHOUT that screener's extra
+#      12W/21W/33W EMA-ribbon condition — the RSI cross on its own.
+#   2. Price crossing BELOW the 33-week EMA — the mirror-image "exit"
+#      signal (myLongTermInvestingStrategy's own sell rule is close
+#      below 33W EMA), also fresh-this-week only.
+#
+# Reuses _ltis_weekly_indicators and the LTIS_* constants UNCHANGED —
+# this just adds cross-detection on top of the SAME weekly series
+# myLongTermInvestingStrategy already builds (weekly resample, EWM
+# Wilder RSI14, EMA12/21/33), rather than recomputing RSI/EMA a third
+# way in this file.
+
+
+def _wrs_fresh_rsi_cross(wdf):
+    """True if weekly RSI14 crossed from <=66 to >66 on the LAST
+    completed weekly candle only — a stock that's been above 66 for
+    months doesn't qualify, only a cross that happened this week."""
+    if len(wdf) < 2:
+        return False
+    prev, last = wdf["rsi14"].iloc[-2], wdf["rsi14"].iloc[-1]
+    if pd.isna(prev) or pd.isna(last):
+        return False
+    return bool(prev <= LTIS_RSI_THRESHOLD < last)
+
+
+def _wrs_fresh_ema33_breakdown(wdf):
+    """True if Close crossed from >= the 33W EMA to below it on the
+    LAST completed weekly candle only."""
+    if len(wdf) < 2:
+        return False
+    ema_col = f"ema{LTIS_EXIT_EMA}"
+    prev_close, prev_ema = wdf["close"].iloc[-2], wdf[ema_col].iloc[-2]
+    last_close, last_ema = wdf["close"].iloc[-1], wdf[ema_col].iloc[-1]
+    if pd.isna(prev_close) or pd.isna(prev_ema) or pd.isna(last_close) or pd.isna(last_ema):
+        return False
+    return bool(prev_close >= prev_ema and last_close < last_ema)
+
+
+def _run_weekly_signals(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=365 * LTIS_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rsi_rows, ema_rows, skipped = [], [], []
+    scanned = 0
+    for sym, g in daily.groupby("symbol"):
+        wdf = _ltis_weekly_indicators(g.set_index("date"))
+        if len(wdf) < LTIS_MIN_HISTORY_WEEKS:
+            skipped.append(sym)
+            continue
+        last = wdf.iloc[-1]
+        if pd.isna(last["rsi14"]) or pd.isna(last[f"ema{LTIS_EXIT_EMA}"]):
+            skipped.append(sym)
+            continue
+        scanned += 1
+        base = {
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "as_of": wdf.index[-1].strftime("%Y-%m-%d"),
+            "close": round(float(last["close"]), 2),
+            "rsi14": round(float(last["rsi14"]), 2),
+            "ema33": round(float(last[f"ema{LTIS_EXIT_EMA}"]), 2),
+            "pct_vs_ema33": round((float(last["close"]) / float(last[f"ema{LTIS_EXIT_EMA}"]) - 1) * 100, 2),
+        }
+        if _wrs_fresh_rsi_cross(wdf):
+            rsi_rows.append({**base, "signal": "RSI>66 Cross"})
+        if _wrs_fresh_ema33_breakdown(wdf):
+            ema_rows.append({**base, "signal": "33W EMA Breakdown"})
+
+    rsi_rows.sort(key=lambda r: -r["rsi14"])
+    ema_rows.sort(key=lambda r: r["pct_vs_ema33"])
+    return {
+        "label": "Weekly RSI 66 / 33W EMA Crosses",
+        "push_rows": rsi_rows + ema_rows,
+        "scanned": scanned,
+        "skipped": len(skipped),
+    }, None
+
+
 # ── weekendInvesting ─────────────────────────────────────────────────────────
 
 WI_TOP_N = 20
@@ -2851,6 +2942,7 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
+    "weeklySignals": _run_weekly_signals,
     "weekendInvesting": _run_weekend_investing,
     "quantBollinger": _run_quant_bollinger,
     "nseScreener": _run_nse_screener,
