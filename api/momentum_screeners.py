@@ -2562,6 +2562,249 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── reverseDcfScanNse750 ─────────────────────────────────────────────────────
+#
+# Added 2026-09-12 — "also in dcf scan lets do it for all
+# NSETop750Companies... which should be obviously change to daily
+# changes". The existing Reverse DCF Scan page (src/pages/
+# ReverseDCFScan.tsx) only covers companies already in this app's own
+# ledger (~56, whatever's been manually added) — this extends the same
+# calculation across the full NSE 750 (Nifty Total Market) universe,
+# refreshed daily like every other screener here.
+#
+# Why this can't run as ONE Vercel call like the others: every other
+# screener in this file needs only price history (bulk yfinance, fast)
+# or a handful of Screener.in fetches for a SUBSET of the universe.
+# This needs full fundamentals — multi-year revenue, margin, tax rate,
+# market cap, borrowings — for all ~750 stocks, and there's no bulk
+# source for that; it's one Screener.in page fetch PER TICKER, same as
+# every other per-stock fundamentals fetch in this account. At ~1.2s
+# per fetch (matching this file's own established pacing), 750 stocks
+# is 15+ minutes — 3x past Vercel's 300s function ceiling even before
+# accounting for slow days. Confirmed with Harish before building
+# ("batched crons, staggered through the day") rather than guessing:
+#
+#   - do_GET grew a `?offset=` param (alongside the existing `?limit=`)
+#     so a single screener can be invoked on a SLICE of the NSE 750
+#     universe, not just a prefix truncation.
+#   - This runner reads whatever's currently stored for this screener
+#     key BEFORE computing (via get_meta), replaces only the rows for
+#     the tickers in ITS OWN batch, and returns the full MERGED set —
+#     so the outer do_GET handler's normal set_meta write (unchanged)
+#     persists the complete, stitched-together dataset every time,
+#     not just the slice this one invocation touched.
+#   - vercel.json gets ~10 daily cron entries (RDCF_BATCH_SIZE=80,
+#     ceil(750/80)=10), offset=0,80,160,...,720, spaced through an
+#     unused UTC window. Since ALL 10 fire every day (not once total,
+#     rotating through different days), the WHOLE 750-stock universe
+#     refreshes daily — each ticker's own row is only ever as stale as
+#     "earlier today", never older, satisfying "obviously daily
+#     changes" while staying inside Vercel's per-invocation limit.
+#
+# The solve math (_rdcf_ev_for_growth/_rdcf_solve) is a deliberate
+# Python port of src/lib/reverseDcf.ts's solveReverseDcf — same
+# formula, same [-50%, 200%] bisection bounds — so this scan and the
+# single-stock page agree on what "implied growth" means for a given
+# stock, even though the two are separate implementations (TS
+# frontend vs Python backend, can't share code across that boundary).
+# Only the FLAT-rate solve is ported here, not the staged-growth
+# calculator — a 750-row screen has no business asking for 3 hand-
+# tuned growth inputs per stock; flat is the right first-pass filter,
+# same reasoning the ledger-based Scan page already documented for
+# itself.
+
+RDCF_WACC_PCT = 12.0
+RDCF_TERMINAL_GROWTH_PCT = 5.0
+RDCF_YEARS = 10
+RDCF_BATCH_SIZE = 80
+
+
+def _rdcf_ev_for_growth(revenue0, margin, tax, wacc, years, tg, g):
+    prev_rev = revenue0
+    pv = 0.0
+    final_fcff = 0.0
+    for t in range(1, years + 1):
+        rev = prev_rev * (1 + g)
+        fcff = rev * margin * (1 - tax)  # netCapex/deltaWC both 0, same default as the frontend's own flat solve
+        pv += fcff / (1 + wacc) ** t
+        prev_rev = rev
+        final_fcff = fcff
+    if wacc <= tg:
+        return float("inf")
+    tv = final_fcff * (1 + tg) / (wacc - tg)
+    return pv + tv / (1 + wacc) ** years
+
+
+def _rdcf_solve(revenue0, margin_pct, tax_pct, target_ev):
+    margin = margin_pct / 100
+    tax = tax_pct / 100
+    wacc = RDCF_WACC_PCT / 100
+    tg = RDCF_TERMINAL_GROWTH_PCT / 100
+    if wacc <= tg or revenue0 <= 0 or target_ev <= 0:
+        return None
+    lo, hi = -50.0, 200.0
+    ev_lo = _rdcf_ev_for_growth(revenue0, margin, tax, wacc, RDCF_YEARS, tg, lo / 100)
+    ev_hi = _rdcf_ev_for_growth(revenue0, margin, tax, wacc, RDCF_YEARS, tg, hi / 100)
+    if not (ev_lo <= target_ev <= ev_hi):
+        return None
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        ev_mid = _rdcf_ev_for_growth(revenue0, margin, tax, wacc, RDCF_YEARS, tg, mid / 100)
+        if ev_mid < target_ev:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2, 2)
+
+
+def _rdcf_fetch_fundamentals(ticker):
+    """Annual (not quarterly — see _mp_fetch_fundamentals above for
+    momentumPersonal's own quarterly fetch, a different need) P&L +
+    Balance Sheet + top-ratios market cap/price for one ticker. Same
+    robust label-matching _screener_fetch.py's own parse_top_ratios
+    uses (li text contains "Market Cap" etc, not positional index) —
+    ported here rather than imported, per this account's "duplicate,
+    don't cross-import" convention (momentum_screeners.py is a
+    separate Vercel function from fetch_company.py, no shared-module
+    imports between them by design)."""
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+               "Referer": "https://www.screener.in/"}
+    for url in [f"https://www.screener.in/company/{ticker}/consolidated/",
+                f"https://www.screener.in/company/{ticker}/"]:
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        current_price = marketcap = None
+        ul = soup.find("ul", id="top-ratios")
+        if ul:
+            for li in ul.find_all("li"):
+                label = li.get_text(" ", strip=True)
+                nums = [_mp_parse_number(s.get_text(strip=True)) for s in li.find_all("span", class_="number")]
+                nums = [n for n in nums if n is not None]
+                if "Current Price" in label and nums:
+                    current_price = nums[0]
+                elif "Market Cap" in label and nums:
+                    marketcap = nums[0]
+
+        pl = next((s for s in soup.find_all("section")
+                   if s.find("h2") and "Profit" in s.find("h2").get_text(strip=True)), None)
+        if not pl:
+            continue
+        table = pl.find("table")
+        if not table:
+            continue
+        pl_rows = {}
+        for tr in table.find("tbody").find_all("tr"):
+            cells = tr.find_all("td")
+            if len(cells) < 2:
+                continue
+            label = cells[0].get_text(strip=True).rstrip("+").strip()
+            pl_rows[label] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+        sales_row = next((v for k, v in pl_rows.items() if "sales" in k.lower()), None)
+        if not sales_row or len(sales_row) < 4 or all(v is None for v in sales_row):
+            continue  # template present but Screener.in has no real annual numbers for this ticker yet
+        opm_row = next((v for k, v in pl_rows.items() if "opm" in k.lower()), None)
+        tax_row = next((v for k, v in pl_rows.items() if k.lower().strip() == "tax %"), None)
+
+        borrowings = None
+        bs = next((s for s in soup.find_all("section")
+                   if s.find("h2") and s.find("h2").get_text(strip=True) == "Balance Sheet"), None)
+        if bs:
+            bs_table = bs.find("table")
+            if bs_table:
+                for tr in bs_table.find("tbody").find_all("tr"):
+                    cells = tr.find_all("td")
+                    if len(cells) < 2:
+                        continue
+                    label = cells[0].get_text(strip=True).rstrip("+").strip()
+                    if "borrowings" in label.lower():
+                        vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                        borrowings = next((v for v in reversed(vals) if v is not None), None)
+                        break
+
+        revenue_hist = [v for v in sales_row if v is not None]
+        if not revenue_hist:
+            continue
+        opm_latest = next((v for v in reversed(opm_row) if v is not None), None) if opm_row else None
+        tax_latest = next((v for v in reversed(tax_row) if v is not None), None) if tax_row else None
+        return {
+            "current_price": current_price,
+            "marketcap": marketcap,
+            "revenue_hist": revenue_hist,  # ascending chronological, oldest -> newest (same convention as bundle.stocks.revenue)
+            "opm_pct": opm_latest,
+            "tax_pct": tax_latest,
+            "borrowings": borrowings,
+        }
+    return None
+
+
+def _rdcf_avg_3y_growth(revenue_hist):
+    yoy = [_mp_yoy(revenue_hist[i], revenue_hist[i - 1]) for i in range(1, len(revenue_hist))]
+    yoy_valid = [v for v in yoy if v is not None]
+    if not yoy_valid:
+        return None
+    last3 = yoy_valid[-3:]
+    return round(sum(last3) / len(last3), 2)
+
+
+def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
+    new_rows = []
+    for sym in symbols:
+        fund = _rdcf_fetch_fundamentals(sym)
+        time.sleep(1.0)  # same Screener.in pacing every other per-ticker fetch in this file already uses
+        if fund is None or fund["marketcap"] is None:
+            continue
+        revenue0 = fund["revenue_hist"][-1]
+        if revenue0 is None or revenue0 <= 0:
+            continue
+        net_debt = fund["borrowings"] or 0
+        target_ev = fund["marketcap"] + net_debt
+        margin = fund["opm_pct"] if fund["opm_pct"] is not None else 15.0
+        tax = fund["tax_pct"] if fund["tax_pct"] is not None else 25.0
+        implied_growth = _rdcf_solve(revenue0, margin, tax, target_ev)
+        avg3y = _rdcf_avg_3y_growth(fund["revenue_hist"])
+        gap = round(avg3y - implied_growth, 2) if (implied_growth is not None and avg3y is not None) else None
+        verdict = None
+        if gap is not None:
+            verdict = "conservative" if gap > 3 else ("aggressive" if gap < -3 else "in line")
+        new_rows.append({
+            "symbol": sym,
+            "name": name_map.get(sym, sym),
+            "price": fund["current_price"],
+            "market_cap_cr": fund["marketcap"],
+            "implied_growth_pct": implied_growth,
+            "avg_3y_growth_pct": avg3y,
+            "gap": gap,
+            "verdict": verdict,
+            "as_of": date.today().isoformat(),
+        })
+
+    # Merge with whatever's already stored for this screener — see the
+    # module comment above for why (batched crons, one slice at a
+    # time; every OTHER ticker's most-recently-computed row must
+    # survive this batch's own write, not get wiped).
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    existing_rows = all_screeners.get("reverseDcfScanNse750", {}).get("rows", [])
+    by_symbol = {r["symbol"]: r for r in existing_rows}
+    for r in new_rows:
+        by_symbol[r["symbol"]] = r
+    merged = list(by_symbol.values())
+    merged.sort(key=lambda r: (r["gap"] is None, -(r["gap"] if r["gap"] is not None else 0)))
+    for i, r in enumerate(merged, 1):
+        r["rank"] = i
+
+    return {"label": "Reverse DCF Scan — NSE 750", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -2582,6 +2825,7 @@ SCREENER_RUNNERS = {
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
     "strategicAlpha": _run_strategic_alpha,
+    "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
 }
 
 
@@ -2628,6 +2872,20 @@ class handler(BaseHTTPRequestHandler):
                 limit = int(query["limit"][0])
             except ValueError:
                 limit = None
+        # offset — added 2026-09-12 for reverseDcfScanNse750's batched
+        # crons (750 individual Screener.in fetches can't fit in one
+        # Vercel invocation's 300s ceiling, so it's split into ~10
+        # daily cron slots, each covering its own slice of the
+        # universe via offset+limit — see that screener's own module
+        # comment for the merge-on-read logic that stitches the
+        # batches back into one full dataset). Every other screener
+        # keeps working exactly as before: offset defaults to 0.
+        offset = 0
+        if query.get("offset"):
+            try:
+                offset = int(query["offset"][0])
+            except ValueError:
+                offset = 0
 
         start_t = time.monotonic()
         try:
@@ -2638,6 +2896,8 @@ class handler(BaseHTTPRequestHandler):
         symbols = [c[0] for c in constituents]
         name_map = {c[0]: c[1] for c in constituents}
         sector_map = {c[0]: c[2] for c in constituents}
+        if offset:
+            symbols = symbols[offset:]
         if limit:
             symbols = symbols[:limit]
 
