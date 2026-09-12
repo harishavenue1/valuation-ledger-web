@@ -79,6 +79,13 @@ const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = 
     skill: "SmeMomentum",
     reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",
   },
+  // Added 2026-09-12 — same reason as smeMomentum: the NSE bulk/block
+  // deal data this pairs with a BSE announcement match reliably times
+  // out from Vercel's datacenter IP.
+  bulkBlockDeals: {
+    skill: "BulkBlockDeals",
+    reason: "nseindia.com's bulk/block deal feed times out from Vercel — refresh by asking Claude to run the BulkBlockDeals skill, or running its script directly on your Mac",
+  },
   // Added 2026-09-06 — Kite holdings are only reachable through the
   // mcp__kite__get_holdings MCP tool, callable from an interactive
   // Claude session, never from an unattended Vercel cron (no Kite API
