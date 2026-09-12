@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import RunButton from "../components/RunButton";
 import { Col, GenericTable, MethodologyNote, Signed } from "../components/ScreenerTable";
@@ -106,7 +106,8 @@ export default function StrategicAlpha() {
         <a href="https://www.youtube.com/watch?v=r6BYKayOaIQ" target="_blank" rel="noreferrer" className="underline">
           Strategic Alpha
         </a>{" "}
-        channel's own recurring framework — refreshes daily on Vercel.
+        channel's own recurring framework — refreshes daily on Vercel. The Nifty 500/Nifty 50 ratio (and three more relative-strength
+        ratios) moved to its own <Link to="/market-ratios" className="underline">📐 Market Ratios</Link> page.
       </p>
       <MethodologyNote>
         Each asset's trend is <b>Bull</b> if its latest daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
@@ -114,11 +115,8 @@ export default function StrategicAlpha() {
         percentage distance from each line (200-day, 50-day, 33-week), not the EMA's own price level — the 50D/33W pair is this app's own
         addition on top of the video's framework (33-week matching myLongTermInvestingStrategy's own exit-rule EMA), both computed on OHLC4
         per this app's standing convention, so they're not directly comparable to the 200D EMA's Close-only basis. <b>1D/1W/1M/3M/6M/1Y %</b>{" "}
-        are plain trailing returns as of the last close, same calculation globalCountryEtfs/globalCurrencies already use. The{" "}
-        <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is outperforming Nifty 50,
-        i.e. opportunities lie in the broader market rather than large-caps — it's a derived ratio, not a single tradable symbol, so it has no
-        EMA, return columns, or chart link (its Close cell isn't clickable), and its "% vs 200D EMA" column is repurposed to show the ratio's
-        own change over the last ~20 trading days. Every other row's <b>Close</b> price is itself the TradingView link.{" "}
+        are plain trailing returns as of the last close, same calculation globalCountryEtfs/globalCurrencies already use. Every row's{" "}
+        <b>Close</b> price is itself the TradingView link.{" "}
         <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — no MCX or literal spot feed is fetchable from here, so these
         same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their Close cell links to the
         actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the

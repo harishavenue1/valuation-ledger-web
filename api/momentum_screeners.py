@@ -2466,7 +2466,6 @@ SA_ASSET_UNIVERSE = {
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
 SA_EMA33W_PERIOD = 33
-SA_RATIO_LOOKBACK_DAYS = 20  # ~1 trading month, for the Nifty 500-vs-Nifty 50 ratio trend
 
 
 def _sa_trend_row(label, ticker, tv_symbol, hist):
@@ -2487,7 +2486,9 @@ def _sa_trend_row(label, ticker, tv_symbol, hist):
         # chart link) opens the interactive chart directly
         # (/chart/?symbol=...), not the /symbols/.../ overview page
         # this originally linked to.
-        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv_symbol)}",
+        # tv_symbol is None for a derived ratio (e.g. marketRatios below) —
+        # nothing to link a chart to for a numerator/denominator pair.
+        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv_symbol)}" if tv_symbol else None,
         # 2026-09-12 ("remove the column as of, all should be changed
         # on same date of refresh, also no need to mention actual
         # value of 200DEMA, 50DEMA and 33EMA.. and add the change over
@@ -2541,35 +2542,67 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
             continue
         rows.append(row)
 
-    # Nifty 500 vs Nifty 50 relative-strength ratio — the video's own
-    # stated rule: "if the ratio is moving up, Nifty 500 is
-    # outperforming Nifty [50], which means opportunities lie outside
-    # Nifty" (i.e. broader-market leadership vs large-cap leadership).
-    n50, n500 = hist.get("Nifty 50"), hist.get("Nifty 500")
-    if n50 is not None and n500 is not None:
-        common_idx = n50.index.intersection(n500.index)
-        if len(common_idx) > SA_RATIO_LOOKBACK_DAYS:
-            ratio = (n500["Close"].reindex(common_idx) / n50["Close"].reindex(common_idx)).dropna()
-            if len(ratio) > SA_RATIO_LOOKBACK_DAYS:
-                now, then = float(ratio.iloc[-1]), float(ratio.iloc[-1 - SA_RATIO_LOOKBACK_DAYS])
-                direction = "Nifty 500 leading — opportunities outside Nifty 50" if now > then else "Nifty 50 leading"
-                rows.append({
-                    "asset": "Nifty 500 / Nifty 50 ratio",
-                    "symbol": "—",
-                    "tradingview_url": None,  # a derived ratio, not a single tradable symbol — nothing to link to
-                    "close": round(now, 4),
-                    "pct_above_ema200": round((now / then - 1) * 100, 2),
-                    "trend": direction,
-                    "pct_vs_ema50d": None,
-                    "pct_vs_ema33w": None,
-                    "r_1d": None, "r_1w": None, "r_1m": None, "r_3m": None, "r_6m": None, "r_1y": None,
-                })
-            else:
-                skipped.append("Nifty 500 / Nifty 50 ratio")
-        else:
-            skipped.append("Nifty 500 / Nifty 50 ratio")
+    # 2026-09-12 ("take the ratios details and move to new page") — the
+    # Nifty 500/Nifty 50 relative-strength ratio row used to live here;
+    # it now lives on its own page/screener (see marketRatios below,
+    # _run_market_ratios) alongside three more ratio pairs, so it's no
+    # longer computed as part of this screener.
 
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
+# ── marketRatios ─────────────────────────────────────────────────────────────
+#
+# Added 2026-09-12 ("take the ratios details and move to new page, add
+# Midcap/Nifty50, SmallCap/Nifty50, Gold/Nifty50") — split out of
+# strategicAlpha's own "Nifty 500 / Nifty 50 ratio" row (the video's own
+# stated rule: a rising ratio means the numerator is outperforming the
+# denominator) and generalized to a small family of relative-strength
+# ratio pairs, each on its own page/table now instead of one row buried
+# inside Strategic Alpha.
+#
+# Reuses _sa_trend_row UNCHANGED (not duplicated) by building a
+# synthetic OHLC history for the ratio itself — Open/High/Low are all
+# set equal to Close since a ratio-of-closes has no real intraday
+# range, which makes the 50D/33W "OHLC4" EMAs degrade gracefully to
+# plain Close-based EMAs (a reasonable approximation, not a claim of
+# real OHLC data). This gives every ratio the exact same fields
+# (200D-EMA Bull/Bear trend, % vs 50D/33W EMA, 1D/1W/1M/3M/6M/1Y
+# returns) as every other Strategic Alpha asset, for free.
+SA_RATIO_UNIVERSE = {
+    "Nifty 500 / Nifty 50": ("Nifty 500", "Nifty 50"),
+    "Nifty Midcap 150 / Nifty 50": ("Nifty Midcap 150", "Nifty 50"),
+    "Nifty Smallcap 250 / Nifty 50": ("Nifty Smallcap 250", "Nifty 50"),
+    "Gold / Nifty 50": ("Gold", "Nifty 50"),
+}
+
+
+def _sa_ratio_hist(numerator_hist, denominator_hist):
+    if numerator_hist is None or denominator_hist is None:
+        return None
+    common_idx = numerator_hist.index.intersection(denominator_hist.index)
+    if len(common_idx) < SA_EMA_PERIOD + 10:
+        return None
+    ratio = (numerator_hist["Close"].reindex(common_idx) / denominator_hist["Close"].reindex(common_idx)).dropna()
+    if len(ratio) < SA_EMA_PERIOD + 10:
+        return None
+    return pd.DataFrame({"Open": ratio, "High": ratio, "Low": ratio, "Close": ratio})
+
+
+def _run_market_ratios(symbols, name_map, sector_map):
+    needed = {label for pair in SA_RATIO_UNIVERSE.values() for label in pair}
+    hist = {label: _gxc_fetch_history(SA_ASSET_UNIVERSE[label]["ticker"]) for label in needed}
+
+    rows, skipped = [], []
+    for label, (num_label, den_label) in SA_RATIO_UNIVERSE.items():
+        ratio_hist = _sa_ratio_hist(hist.get(num_label), hist.get(den_label))
+        row = _sa_trend_row(label, "—", None, ratio_hist)
+        if row is None:
+            skipped.append(label)
+            continue
+        rows.append(row)
+
+    return {"label": "Market Ratios", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 # ── reverseDcfScanNse750 ─────────────────────────────────────────────────────
@@ -2835,6 +2868,7 @@ SCREENER_RUNNERS = {
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
     "strategicAlpha": _run_strategic_alpha,
+    "marketRatios": _run_market_ratios,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
 }
 
