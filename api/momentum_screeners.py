@@ -2478,7 +2478,6 @@ def _sa_trend_row(label, ticker, tv_symbol, hist):
     ema200 = close.ewm(span=SA_EMA_PERIOD, adjust=False).mean()
     last_close = float(close.iloc[-1])
     last_ema = float(ema200.iloc[-1])
-    last_date = close.index[-1]
     row = {
         "asset": label,
         "symbol": ticker,
@@ -2489,29 +2488,43 @@ def _sa_trend_row(label, ticker, tv_symbol, hist):
         # (/chart/?symbol=...), not the /symbols/.../ overview page
         # this originally linked to.
         "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv_symbol)}",
-        "as_of": last_date.date().isoformat() if hasattr(last_date, "date") else str(last_date),
+        # 2026-09-12 ("remove the column as of, all should be changed
+        # on same date of refresh, also no need to mention actual
+        # value of 200DEMA, 50DEMA and 33EMA.. and add the change over
+        # 1D, 1W, 1M, 3M, 6M, 1Y") — dropped the per-row "as_of" (the
+        # screener-level as_of shown once at the top of the page
+        # already covers this, every row refreshes together) and the
+        # raw EMA price levels (only the % distance from each EMA is
+        # useful for scanning, not the absolute price). Added plain
+        # trailing returns across the standard windows, reusing
+        # _gxc_pct_return — the same helper globalCountryEtfs/
+        # globalCurrencies already use for their own return columns.
         "close": round(last_close, 2),
-        "ema200": round(last_ema, 2),
         "pct_above_ema200": round((last_close / last_ema - 1) * 100, 2),
         "trend": "Bull" if last_close > last_ema else "Bear",
-        "ema50d": None,
         "pct_vs_ema50d": None,
-        "ema33w": None,
         "pct_vs_ema33w": None,
+        "r_1d": _gxc_pct_return(hist, 1),
+        "r_1w": _gxc_pct_return(hist, 7),
+        "r_1m": _gxc_pct_return(hist, 30),
+        "r_3m": _gxc_pct_return(hist, 91),
+        "r_6m": _gxc_pct_return(hist, 182),
+        "r_1y": _gxc_pct_return(hist, 365),
     }
+    for k in ("r_1d", "r_1w", "r_1m", "r_3m", "r_6m", "r_1y"):
+        if row[k] is not None:
+            row[k] = round(row[k], 2)
 
     if all(c in hist.columns for c in ("Open", "High", "Low")):
         ohlc4 = ((hist["Open"] + hist["High"] + hist["Low"] + hist["Close"]) / 4).dropna()
         if len(ohlc4) >= SA_EMA50D_PERIOD + 8:
             last_ema50 = float(ohlc4.ewm(span=SA_EMA50D_PERIOD, adjust=False).mean().iloc[-1])
-            row["ema50d"] = round(last_ema50, 2)
             row["pct_vs_ema50d"] = round((last_close / last_ema50 - 1) * 100, 2)
 
         weekly = hist.resample("W-FRI").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
         if len(weekly) >= SA_EMA33W_PERIOD + 8:
             w_ohlc4 = (weekly["Open"] + weekly["High"] + weekly["Low"] + weekly["Close"]) / 4
             last_ema33w = float(w_ohlc4.ewm(span=SA_EMA33W_PERIOD, adjust=False).mean().iloc[-1])
-            row["ema33w"] = round(last_ema33w, 2)
             row["pct_vs_ema33w"] = round((last_close / last_ema33w - 1) * 100, 2)
 
     return row
@@ -2544,15 +2557,12 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
                     "asset": "Nifty 500 / Nifty 50 ratio",
                     "symbol": "—",
                     "tradingview_url": None,  # a derived ratio, not a single tradable symbol — nothing to link to
-                    "as_of": str(ratio.index[-1].date()),
                     "close": round(now, 4),
-                    "ema200": None,
                     "pct_above_ema200": round((now / then - 1) * 100, 2),
                     "trend": direction,
-                    "ema50d": None,
                     "pct_vs_ema50d": None,
-                    "ema33w": None,
                     "pct_vs_ema33w": None,
+                    "r_1d": None, "r_1w": None, "r_1m": None, "r_3m": None, "r_6m": None, "r_1y": None,
                 })
             else:
                 skipped.append("Nifty 500 / Nifty 50 ratio")

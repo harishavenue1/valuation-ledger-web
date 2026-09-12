@@ -52,13 +52,21 @@ const COLS: Col[] = [
       );
     },
   },
-  { key: "ema200", label: "200D EMA", render: (r) => (r.ema200 != null ? r.ema200.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
-  { key: "pct_above_ema200", label: "% vs EMA200", render: (r) => <Signed v={r.pct_above_ema200} digits={2} /> },
-  { key: "ema50d", label: "50D EMA", render: (r) => (r.ema50d != null ? r.ema50d.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
+  // 2026-09-12 ("remove the column as of, all should be changed on
+  // same date of refresh, also no need to mention actual value of
+  // 200DEMA, 50DEMA and 33EMA.. and add the change over 1D, 1W, 1M,
+  // 3M, 6M, 1Y") — dropped As of (the page-level "as of" banner below
+  // already covers this — every row refreshes together) and the raw
+  // EMA price levels (only the % distance is useful for scanning).
+  { key: "r_1d", label: "1D %", render: (r) => <Signed v={r.r_1d} digits={2} /> },
+  { key: "r_1w", label: "1W %", render: (r) => <Signed v={r.r_1w} digits={2} /> },
+  { key: "r_1m", label: "1M %", render: (r) => <Signed v={r.r_1m} digits={2} /> },
+  { key: "r_3m", label: "3M %", render: (r) => <Signed v={r.r_3m} digits={2} /> },
+  { key: "r_6m", label: "6M %", render: (r) => <Signed v={r.r_6m} digits={2} /> },
+  { key: "r_1y", label: "1Y %", render: (r) => <Signed v={r.r_1y} digits={2} /> },
+  { key: "pct_above_ema200", label: "% vs 200D EMA", render: (r) => <Signed v={r.pct_above_ema200} digits={2} /> },
   { key: "pct_vs_ema50d", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_vs_ema50d} digits={2} /> },
-  { key: "ema33w", label: "33W EMA", render: (r) => (r.ema33w != null ? r.ema33w.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—") },
   { key: "pct_vs_ema33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33w} digits={2} /> },
-  { key: "as_of", label: "As of", align: "left" },
   {
     // 2026-09-11 ("move trend to last column") — was originally right
     // after % vs EMA200; moved to the very end of the table.
@@ -102,13 +110,15 @@ export default function StrategicAlpha() {
       </p>
       <MethodologyNote>
         Each asset's trend is <b>Bull</b> if its latest daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
-        literally — not this app's own OHLC4 standing convention), <b>Bear</b> otherwise. <b>50D EMA</b>/<b>33W EMA</b> are this app's own
-        addition on top of that (33-week matching myLongTermInvestingStrategy's own exit-rule EMA) — both computed on OHLC4 per this app's
-        standing convention, 33-week on OHLC4 of weekly-resampled bars, so they're not directly comparable to the 200D EMA's Close-only basis.
-        The <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is outperforming Nifty
-        50, i.e. opportunities lie in the broader market rather than large-caps — it's a derived ratio, not a single tradable symbol, so it has
-        no EMA or chart link (its Close cell isn't clickable), and its "% vs EMA200" column is repurposed to show the ratio's own change over
-        the last ~20 trading days. Every other row's <b>Close</b> price is itself the TradingView link.{" "}
+        literally — not this app's own OHLC4 standing convention), <b>Bear</b> otherwise. The three <b>% vs EMA</b> columns show only the
+        percentage distance from each line (200-day, 50-day, 33-week), not the EMA's own price level — the 50D/33W pair is this app's own
+        addition on top of the video's framework (33-week matching myLongTermInvestingStrategy's own exit-rule EMA), both computed on OHLC4
+        per this app's standing convention, so they're not directly comparable to the 200D EMA's Close-only basis. <b>1D/1W/1M/3M/6M/1Y %</b>{" "}
+        are plain trailing returns as of the last close, same calculation globalCountryEtfs/globalCurrencies already use. The{" "}
+        <b>Nifty 500 / Nifty 50 ratio</b> row applies the video's own stated rule: a rising ratio means Nifty 500 is outperforming Nifty 50,
+        i.e. opportunities lie in the broader market rather than large-caps — it's a derived ratio, not a single tradable symbol, so it has no
+        EMA, return columns, or chart link (its Close cell isn't clickable), and its "% vs 200D EMA" column is repurposed to show the ratio's
+        own change over the last ~20 trading days. Every other row's <b>Close</b> price is itself the TradingView link.{" "}
         <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — no MCX or literal spot feed is fetchable from here, so these
         same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their Close cell links to the
         actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the
