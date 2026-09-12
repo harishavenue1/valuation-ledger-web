@@ -22,6 +22,7 @@ import { api, ApiError } from "../lib/api";
 // actually reachable from any machine").
 const CLOUD_SCREENERS = new Set([
   "myLongTermInvestingStrategy",
+  "weeklySignals",
   "weekendInvesting",
   "quantBollinger",
   "Nifty500RelativeStrength",

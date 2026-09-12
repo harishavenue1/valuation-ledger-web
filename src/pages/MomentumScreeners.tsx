@@ -46,6 +46,7 @@ function fmtVol(v: number | null | undefined): string {
 // sharing one generic table.
 const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "myLongTermInvestingStrategy", label: "myLongTermInvestingStrategy", emoji: "📐" },
+  { key: "weeklySignals", label: "Weekly RSI/EMA Crosses", emoji: "🔔" },
   { key: "weekendInvesting", label: "weekendInvesting", emoji: "🏁" },
   { key: "quantBollinger", label: "quantBollinger", emoji: "📊" },
   { key: "Nifty500RelativeStrength", label: "RS (NSE750)", emoji: "💪" },
@@ -91,6 +92,30 @@ export default function MomentumScreeners() {
       { key: "ema21", label: "21W EMA", render: (r) => fmtNum(r.ema21) },
       { key: "ema33", label: "33W EMA", render: (r) => fmtNum(r.ema33) },
       { key: "pct_above_ema33", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_above_ema33} digits={1} /> },
+    ],
+    weeklySignals: [
+      {
+        key: "signal",
+        label: "Signal",
+        align: "left",
+        render: (r) => (
+          <span
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
+              r.signal === "RSI>66 Cross" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : "bg-red-50 text-red-600 border-red-300"
+            }`}
+          >
+            {r.signal}
+          </span>
+        ),
+      },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "close", label: "Close", render: (r) => <PriceLink symbol={r.symbol} value={r.close} /> },
+      { key: "rsi14", label: "RSI(14)", render: (r) => fmtNum(r.rsi14, 1) },
+      { key: "ema33", label: "33W EMA", render: (r) => fmtNum(r.ema33) },
+      { key: "pct_vs_ema33", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_vs_ema33} digits={1} /> },
+      { key: "as_of", label: "Week Of", align: "left" },
     ],
     weekendInvesting: [
       { key: "rank", label: "Rank" },
@@ -298,6 +323,17 @@ export default function MomentumScreeners() {
         No numeric score — a stock either qualifies or it doesn't. <b>Signal</b> = weekly RSI(14) &gt; 66 <b>AND</b> price above the 12-week,
         21-week, <b>AND</b> 33-week EMA (full ribbon alignment, all three at once). RSI and EMAs are computed on weekly closes resampled from
         daily data. Only stocks currently meeting the signal are shown.
+      </>
+    ),
+    weeklySignals: (
+      <>
+        Two plain, unscored signals — a stock either fired one this week or it doesn't appear. Both look ONLY at the most recent completed
+        weekly candle: a stock that's been above/below the line for months doesn't qualify, only a cross that happened <b>this week</b>.{" "}
+        <b>RSI&gt;66 Cross</b> = weekly RSI(14) moved from 66-or-below to above 66 on the latest week — the plain version of{" "}
+        myLongTermInvestingStrategy's own entry threshold, but without that screener's extra 12W/21W/33W EMA-ribbon requirement.{" "}
+        <b>33W EMA Breakdown</b> = Close moved from at-or-above the 33-week EMA to below it on the latest week — the mirror-image exit signal
+        (myLongTermInvestingStrategy's own sell rule). RSI and EMAs are both computed on weekly closes resampled from daily data, same
+        calculation myLongTermInvestingStrategy already uses.
       </>
     ),
     weekendInvesting: (
