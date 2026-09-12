@@ -394,7 +394,12 @@ def _run_weekly_signals(symbols, name_map, sector_map):
         scanned += 1
         base = {
             "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
-            "as_of": wdf.index[-1].strftime("%Y-%m-%d"),
+            # 2026-09-12 ("dont need column for a date") — dropped the
+            # per-row date; every row is already the same "last
+            # completed weekly candle" by construction (that's the
+            # whole point of the fresh-cross filter), and the page-level
+            # "as of" banner above the table already covers it, same
+            # convention as strategicAlpha's own as_of column removal.
             "close": round(float(last["close"]), 2),
             "rsi14": round(float(last["rsi14"]), 2),
             "ema33": round(float(last[f"ema{LTIS_EXIT_EMA}"]), 2),
