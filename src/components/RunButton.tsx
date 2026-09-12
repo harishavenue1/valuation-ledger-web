@@ -124,7 +124,11 @@ function CloudRunButton({ screener }: { screener: string }) {
     setCloudRun(screener, { state: "running", detail: null });
     try {
       const result = await api.runScreenerCloud(screener);
-      setCloudRun(screener, { state: "done", detail: `${result.pushed} pushed of ${result.scanned} scanned (${result.elapsed_s}s)` });
+      // viraj_screen's own endpoint reports "fetched" (fundamentals
+      // actually pulled, time-budget permitting), not "scanned" — fall
+      // back through both so the detail string reads right either way.
+      const scanned = result.scanned ?? result.fetched ?? result.universe;
+      setCloudRun(screener, { state: "done", detail: `${result.pushed} pushed of ${scanned} scanned (${result.elapsed_s}s)` });
       await reload();
     } catch (e) {
       setCloudRun(screener, { state: "error", detail: e instanceof ApiError ? e.message : "request failed" });
