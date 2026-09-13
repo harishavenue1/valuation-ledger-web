@@ -2902,6 +2902,29 @@ SA_ASSET_UNIVERSE = {
     # elsewhere in this app (globalCountryEtfs on the Global Macro
     # page, under the exact same label "Emerging Markets (EEM)").
     "Emerging Markets (EEM)": {"ticker": "EEM", "tv": "AMEX:EEM", "region": "International"},
+    # 2026-09-13 ("lets add yields charts under strategic for US,
+    # INDIA") — user's own screenshot showed a TradingView "US10Y"
+    # chart. US 10Y is high-confidence: ^TNX (CBOE Interest Rate 10
+    # Year T Note) is a well-documented, actual Yahoo Finance ticker,
+    # confirmed live on finance.yahoo.com/quote/%5ETNX (currently
+    # quoted directly in percent, e.g. 4.94 = 4.94%, not the old x10
+    # CBOE convention). India 10Y is LOWER-CONFIDENCE — Yahoo Finance
+    # doesn't reliably carry non-US sovereign bond yields the way it
+    # does US Treasuries; ^IN10Y is TradingView's own symbol (real,
+    # confirmed via TVC:IN10Y) but a websearch could not independently
+    # confirm Yahoo/yfinance actually serves data under that same
+    # ticker (search-summary "confirmations" of this were themselves
+    # just echoing the ticker back, not citing a working example) — the
+    # one real Yahoo-side alternative, NIFTYGS10YR.NS (Nifty 10yr
+    # Benchmark G-Sec bond PRICE index), was deliberately NOT used
+    # instead, since a bond price index trends in the OPPOSITE
+    # direction from its yield and would silently mislabel a falling-
+    # yield rally as "Bear". Added optimistically per this session's
+    # established pattern — will skip gracefully (absent row) if Yahoo
+    # doesn't carry it; confirm with a live production run before
+    # trusting the India row specifically.
+    "US 10Y Yield": {"ticker": "^TNX", "tv": "TVC:US10Y", "region": "International"},
+    "India 10Y Yield": {"ticker": "^IN10Y", "tv": "TVC:IN10Y", "region": "India"},
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50

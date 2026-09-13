@@ -201,8 +201,12 @@ export default function StrategicAlpha() {
         cell links to the real MCX chart on TradingView even though the price shown is the derived-and-calibrated approximation.
         <b>Nifty Microcap 250</b> and <b>Nifty MidSmallcap 400</b> were added 2026-09-13; Microcap 250 had no fetchable Yahoo ticker when first
         requested (several formats tried, all 404) — a different one turned up since, confirmed live via the user's own TradingView
-        screenshot. <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week MA), and "country rotation" (the video itself calls
-        this an undisclosed proprietary system).
+        screenshot. <b>US 10Y Yield</b>/<b>India 10Y Yield</b> were added 2026-09-13 ("yields charts under strategic for US, INDIA") — these
+        are the actual yield level (a rising row means yields are rising), run through the same trend/return logic as every other row, not a
+        bond price index. US 10Y (^TNX) is high-confidence, a well-documented Yahoo ticker; India 10Y (^IN10Y) is lower-confidence — Yahoo
+        doesn't reliably carry non-US sovereign bond yields the way it does US Treasuries, so this row may come back empty until confirmed
+        live. <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week MA), and "country rotation" (the video itself calls this an
+        undisclosed proprietary system).
       </MethodologyNote>
       <GenericTable
         rows={rows}
