@@ -54,6 +54,23 @@
 // holding period the live Playtool result reflects, independent of
 // the day-bucket table below (still spans DEFAULT_DAYS/whatever list
 // the page has, computed from the exact same instrument).
+//
+// Updated again 2026-09-13 ("for gold and silver STCG is slab rate
+// and also include the surcharge, cess as per indian rules") — gold/
+// silver (and any other non-"listed security" asset — not covered by
+// STT/section 111A) don't get the flat STCG% equity gets: short-term
+// gains on them are taxed at the investor's own income-tax SLAB rate,
+// and the resulting tax (both the slab-based STCG leg and the flat
+// 12.5% LTCG leg — LTCG's rate itself is uniform across asset classes
+// since the 2024 budget) gets surcharge and cess stacked on top,
+// exactly like any other income-tax liability. Modeled as a
+// per-instrument `slabRateTax` flag (on by default for the page's own
+// Gold/Silver cards) plus 3 new shared assumptions (slabRatePct,
+// surchargePct, cessPct) — see computeMtfRow's own comment for the
+// exact stacking formula. Equity/ETF instruments (slabRateTax=false,
+// the default for anything else) are unaffected — plain stcgPct/
+// ltcgPct, no surcharge/cess, same as every earlier version of this
+// file.
 
 export interface MtfInstrument {
   name: string;
@@ -63,12 +80,16 @@ export interface MtfInstrument {
   expPlPct: number; // expected rate of return over the holding period — Zerodha's own "Expected rate of return" slider
   days: number; // "No. of days held" slider — the single day count the live Playtool result reflects
   charges: number; // brokerage + STT + stamp duty + pledge/unpledge, same both scenarios — seed via computeZerodhaCharges, editable override
+  slabRateTax: boolean; // 2026-09-13 ("for gold and silver STCG is slab rate ... include surcharge, cess") — gold/silver (and other non-equity assets, since they're not "listed securities" under STT/111A) don't get the flat STCG% — short-term gains are taxed at the investor's own income-tax SLAB rate instead, and BOTH slab-STCG and flat-LTCG get surcharge+cess stacked on top. Equity/ETF instruments (the default, false) keep the plain shared STCG%/LTCG% — unaffected.
 }
 
 export interface MtfAssumptions {
   stcgPct: number;
   ltcgPct: number;
   ltcgThresholdDays: number; // > this many days = long-term (365 for equity)
+  slabRatePct: number; // investor's own marginal income-tax slab rate — applies to STCG on slabRateTax instruments (gold/silver etc.) instead of stcgPct. Default 30% (the top individual slab under both regimes) — this app has no notion of the user's actual income, so it's a manual input
+  surchargePct: number; // individual income-tax surcharge, based on TOTAL income (not just this gain): 10% (₹50L-1Cr), 15% (1Cr-2Cr), 25% (2Cr-5Cr, new-regime cap), 0% below ₹50L. Manual input, default 0% (can't be derived without knowing total income)
+  cessPct: number; // Health & Education Cess — a stable, well-documented flat 4% on (tax + surcharge), applies to every slab of every regime
 }
 
 export interface MtfRow {
@@ -126,7 +147,17 @@ export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, 
   const invested = inst.investedAmount;
 
   const pl = grossPl;
-  const taxRatePct = days > assumptions.ltcgThresholdDays ? assumptions.ltcgPct : assumptions.stcgPct;
+  // 2026-09-13 ("for gold and silver STCG is slab rate ... include
+  // surcharge, cess") — slabRateTax instruments swap the flat STCG%
+  // for the investor's own income-tax slab rate (LTCG stays the flat
+  // 12.5% either way — the post-2024-budget rate is uniform across
+  // asset classes), and BOTH legs then get surcharge+cess stacked on
+  // top (real Indian tax law applies surcharge+cess to the whole
+  // capital-gains tax, not just the short-term leg). Equity/ETF
+  // instruments (slabRateTax=false) are untouched — plain stcgPct/
+  // ltcgPct, no surcharge/cess, same as before.
+  const baseRatePct = days > assumptions.ltcgThresholdDays ? assumptions.ltcgPct : inst.slabRateTax ? assumptions.slabRatePct : assumptions.stcgPct;
+  const taxRatePct = inst.slabRateTax ? baseRatePct * (1 + assumptions.surchargePct / 100) * (1 + assumptions.cessPct / 100) : baseRatePct;
   const tax = Math.max(0, pl) * (taxRatePct / 100);
   const intPaid = funded * (inst.dailyRatePct / 100) * days;
 
@@ -159,13 +190,12 @@ export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, 
 
 export const DEFAULT_DAYS = [30, 60, 90, 120, 150, 180, 240, 366, 450, 685];
 
-export const DEFAULT_ASSUMPTIONS: MtfAssumptions = { stcgPct: 20, ltcgPct: 12.5, ltcgThresholdDays: 365 };
+export const DEFAULT_ASSUMPTIONS: MtfAssumptions = { stcgPct: 20, ltcgPct: 12.5, ltcgThresholdDays: 365, slabRatePct: 30, surchargePct: 0, cessPct: 4 };
 
-export function defaultInstrument(name: string): MtfInstrument {
+export function defaultInstrument(name: string, slabRateTax = false, marginPct = 30): MtfInstrument {
   const investedAmount = 100000;
-  const marginPct = 30;
   const expPlPct = 50;
   const totalInv = investedAmount / (marginPct / 100);
   const sellValue = totalInv * (1 + expPlPct / 100);
-  return { name, investedAmount, marginPct, dailyRatePct: 0.04, expPlPct, days: 180, charges: computeZerodhaCharges(totalInv, sellValue) };
+  return { name, investedAmount, marginPct, dailyRatePct: 0.04, expPlPct, days: 180, charges: computeZerodhaCharges(totalInv, sellValue), slabRateTax };
 }

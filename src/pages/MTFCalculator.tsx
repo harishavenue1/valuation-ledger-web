@@ -154,7 +154,7 @@ function InstrumentCard({
       {/* Secondary inputs Zerodha derives live per-stock (Margin%,
           Leverage) or states as a flat platform rate (Daily Interest,
           Charges) — all manual/editable here. */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         <NumberField
           label="Margin %"
           value={inst.marginPct}
@@ -175,6 +175,16 @@ function InstrumentCard({
             ↺ Zerodha's formula
           </button>
         </div>
+        <label
+          className="flex flex-col gap-1 text-xs text-slate-600"
+          title="Gold/silver (and other non-'listed security' assets) aren't taxed at the flat STCG rate — short-term gains follow your own income slab instead, and surcharge+cess stack on top of the resulting tax. Uncheck for equity/ETF instruments."
+        >
+          <span>Slab-rate tax</span>
+          <span className="flex items-center gap-1.5 px-2 py-1.5 border border-slate-300 rounded">
+            <input type="checkbox" checked={inst.slabRateTax} onChange={(e) => onChange({ ...inst, slabRateTax: e.target.checked })} className="accent-indigo-600" />
+            <span className="text-xs text-slate-500">{inst.slabRateTax ? "Gold/Silver rule" : "Equity STCG/LTCG"}</span>
+          </span>
+        </label>
       </div>
 
       {/* Zerodha's own 3 sliders */}
@@ -188,7 +198,11 @@ function InstrumentCard({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-lg p-4 mt-1">
         <MetricCard label="Applicable interest" caption={`${inst.dailyRatePct}% per day`} value={`₹${fmt(live.intPaid, 0)}`} />
         <MetricCard label="Brokerage + Charges" value={`₹${fmt(live.charges, 0)}`} />
-        <MetricCard label="Tax" caption={`${live.taxRatePct}% ${isLtcg ? "LTCG" : "STCG"}`} value={`₹${fmt(live.tax, 0)}`} />
+        <MetricCard
+          label="Tax"
+          caption={`${fmt(live.taxRatePct, 2)}% ${isLtcg ? "LTCG" : inst.slabRateTax ? "slab" : "STCG"}${inst.slabRateTax ? " +surcharge/cess" : ""}`}
+          value={`₹${fmt(live.tax, 0)}`}
+        />
         <MetricCard
           label="Profit & Loss"
           value={`₹${fmt(live.finalProfit, 0)}`}
@@ -245,7 +259,7 @@ function InstrumentCard({
                 <td className="px-2 py-1.5 text-right tabular-nums">{r.days}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                  {fmt(r.tax, 0)} <span className="text-slate-400">({r.taxRatePct}%)</span>
+                  {fmt(r.tax, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.intPaid, 0)}</td>
@@ -269,7 +283,10 @@ function InstrumentCard({
 }
 
 export default function MTFCalculator() {
-  const [instruments, setInstruments] = useState<MtfInstrument[]>([defaultInstrument("Gold"), defaultInstrument("Silver")]);
+  // 2026-09-13 ("leverage is 3.57 for GOLDCASE, and 2.7 for SILVERCASE")
+  // — real Zerodha-quoted leverage for these two instruments, converted
+  // to Margin% (= 100/leverage) as this model's own input.
+  const [instruments, setInstruments] = useState<MtfInstrument[]>([defaultInstrument("Gold", true, 28.01), defaultInstrument("Silver", true, 37.04)]);
   const [assumptions, setAssumptions] = useState<MtfAssumptions>(DEFAULT_ASSUMPTIONS);
   const [dayBuckets, setDayBuckets] = useState<number[]>(DEFAULT_DAYS);
   const [newDay, setNewDay] = useState("");
@@ -321,7 +338,14 @@ export default function MTFCalculator() {
         charges, SEBI fees, GST on brokerage — aren't modeled; click "↺ Zerodha's formula" to reseed it after changing the sliders).{" "}
         <b>Tax</b> is the one metric Zerodha's own calculator doesn't have at all — added here (2026-09-13, "I guess only tax is not part of
         zerodha, lets add it"): STCG below {assumptions.ltcgThresholdDays} days held, LTCG above it, floored at zero (a loss doesn't generate a
-        tax credit). <b>Profit & Loss</b> = P/L − Tax − Charges − Interest, and its % = Profit & Loss ÷ (Invested + Interest) — this differs
+        tax credit). <b>Slab-rate tax</b> (checked by default for Gold/Silver, 2026-09-13 "for gold and silver STCG is slab rate ... include
+        the surcharge, cess") — gold/silver aren't "listed securities" under STT/section 111A, so their short-term gains are taxed at{" "}
+        <b>your own income slab rate</b> instead of the flat equity STCG% (LTCG stays the same flat 12.5%, uniform across asset classes since
+        the 2024 budget), and <b>Surcharge</b> + <b>Cess</b> then stack on whatever tax results, on both legs — exactly like real Indian
+        capital-gains tax. Set your own <b>Income slab rate</b> and <b>Surcharge</b> bracket in Shared assumptions (this app has no notion of
+        your actual income, so these are manual); <b>Cess</b> defaults to the standard flat 4%. Uncheck "Slab-rate tax" on any instrument to
+        use the plain equity STCG%/LTCG% instead (no surcharge/cess) — unaffected, same as before. <b>Profit & Loss</b> = P/L − Tax − Charges
+        − Interest, and its % = Profit & Loss ÷ (Invested + Interest) — this differs
         from Zerodha's own displayed %, which divides by Invested alone; kept as the interest-adjusted version per this session's earlier,
         explicit decision. <b>Margin%</b>/<b>Leverage</b> stays a manual input — Zerodha looks this up live, per stock (e.g. GOLDCASE 28%/
         3.57x, RELIANCE ~22.6%/4.42x), which this app can't fetch headlessly. Below each card's live result: the same instrument run across
@@ -332,8 +356,8 @@ export default function MTFCalculator() {
       <div className="p-4 border border-slate-200 rounded-lg mb-6">
         <h2 className="text-sm font-medium text-slate-700 mb-3">Shared assumptions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-          <NumberField label="STCG rate" value={assumptions.stcgPct} onChange={(v) => setAssumptions((a) => ({ ...a, stcgPct: v }))} suffix="%" />
-          <NumberField label="LTCG rate" value={assumptions.ltcgPct} onChange={(v) => setAssumptions((a) => ({ ...a, ltcgPct: v }))} suffix="%" />
+          <NumberField label="STCG rate (equity)" value={assumptions.stcgPct} onChange={(v) => setAssumptions((a) => ({ ...a, stcgPct: v }))} suffix="%" title="Used for instruments with 'Slab-rate tax' unchecked" />
+          <NumberField label="LTCG rate" value={assumptions.ltcgPct} onChange={(v) => setAssumptions((a) => ({ ...a, ltcgPct: v }))} suffix="%" title="Flat, uniform across asset classes since the 2024 budget — used for every instrument once held past the threshold" />
           <NumberField
             label="LTCG threshold"
             value={assumptions.ltcgThresholdDays}
@@ -341,6 +365,30 @@ export default function MTFCalculator() {
             suffix="days"
             title="365 for listed equity/ETFs under current rules — edit if this instrument is taxed differently"
           />
+        </div>
+        {/* 2026-09-13 ("for gold and silver STCG is slab rate ... include
+            the surcharge, cess as per indian rules") — gold/silver aren't
+            "listed securities" (no STT/111A), so their short-term gains
+            follow the investor's own income slab rather than the flat
+            STCG% above; surcharge/cess then stack on top of WHATEVER tax
+            results (slab-STCG or flat-LTCG). Applies only to instruments
+            with "Slab-rate tax" checked below (Gold/Silver by default). */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4 pt-3 border-t border-slate-100">
+          <NumberField
+            label="Income slab rate"
+            value={assumptions.slabRatePct}
+            onChange={(v) => setAssumptions((a) => ({ ...a, slabRatePct: v }))}
+            suffix="%"
+            title="Your own marginal income-tax slab rate — used instead of the flat STCG rate for gold/silver (and any other 'Slab-rate tax' instrument). This app has no notion of your actual income, so set this to your real slab."
+          />
+          <NumberField
+            label="Surcharge"
+            value={assumptions.surchargePct}
+            onChange={(v) => setAssumptions((a) => ({ ...a, surchargePct: v }))}
+            suffix="%"
+            title="Based on TOTAL income, not just this gain: 0% below ₹50L, 10% (₹50L–1Cr), 15% (1Cr–2Cr), 25% (2Cr–5Cr, new-regime cap). Set to match your own bracket."
+          />
+          <NumberField label="Cess" value={assumptions.cessPct} onChange={(v) => setAssumptions((a) => ({ ...a, cessPct: v }))} suffix="%" title="Health & Education Cess — a flat 4% on (tax + surcharge), same across every slab/regime" />
         </div>
         <div className="text-xs text-slate-500 mb-2">Day buckets shown in every table below — edit freely:</div>
         <div className="flex flex-wrap items-center gap-2">
