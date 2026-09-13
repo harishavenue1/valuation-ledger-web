@@ -53,6 +53,11 @@ const COLS: Col[] = [
     render: (r) => (r.profit_ath === true ? <span className="text-emerald-600 font-semibold">✓</span> : r.profit_ath === false ? <span className="text-slate-300">—</span> : <span className="text-slate-300">?</span>),
   },
   {
+    key: "alpha_52w",
+    label: "Alpha (52W vs NSE500)",
+    render: (r) => (r.alpha_52w !== null && r.alpha_52w !== undefined ? <Signed v={r.alpha_52w} digits={1} /> : "—"),
+  },
+  {
     key: "all_three",
     label: "All 3",
     render: (r) =>
@@ -93,10 +98,15 @@ export default function TurtleWealth() {
         <b>ATH Price</b> reuses this app's own All-Time High screener logic: at/within 3% of the highest weekly close in however much yfinance
         weekly history is available (at least ~1 year required). <b>ATH Sales</b>/<b>ATH Profit</b> check whether the LATEST annual figure in
         Screener.in's own P&L table (however many years back that table goes — typically ~10-12) is the highest value in that table — not a
-        claim to verify the company's literal entire listed history beyond what Screener's table shows. <b>All 3</b> = "ADD" tags every stock
-        meeting all three at once, Turtle Wealth's own "Super Performers" bucket minus the Outperformance-vs-sector-and-BSE500 leg (not
-        replicated here — their exact thresholds for that, and for their "Turtle Exit Price" downside rule and dynamic risk allocation, aren't
-        published anywhere public to replicate honestly). Refreshes across ~10 batched daily runs (same reason and design as the Reverse DCF
+        claim to verify the company's literal entire listed history beyond what Screener's table shows. <b>Alpha (52W vs NSE500)</b>{" "}
+        (2026-09-13) is the stock's own trailing 52-week return minus NIFTY 500's (^CRSLDX, same house benchmark
+        Nifty500RelativeStrength/sectorStockAlpha already use) over the identical window — a step toward Turtle Wealth's 3rd pillar,
+        All-Time-High Outperformance, but not the full thing: it's a single 52-week snapshot vs one broad index, not an all-time-high
+        Outperformance check vs both sector AND BSE500 the way their own ADD/HOLD/EXIT scoring slide defines it. Reference only — not
+        currently part of the <b>All 3</b>/"ADD" tag below. <b>All 3</b> = "ADD" tags every stock meeting ATH Price + ATH Sales + ATH Profit
+        at once, Turtle Wealth's own "Super Performers" bucket minus the Outperformance-vs-sector-and-BSE500 leg (not replicated here — their
+        exact thresholds for that, and for their "Turtle Exit Price" downside rule and dynamic risk allocation, aren't published anywhere
+        public to replicate honestly). Refreshes across ~10 batched daily runs (same reason and design as the Reverse DCF
         Scan's own NSE 750 tab — 750 stocks' annual financials each need their own rate-limited Screener.in fetch, which can't fit inside one
         Vercel invocation) — see each row's own <b>As of</b> date. No manual "Run now" for the same reason.
       </MethodologyNote>

@@ -3533,7 +3533,51 @@ def _tw_is_ath(hist):
     return bool(vals[-1] >= max(vals))
 
 
+def _tw_r_1y(cw):
+    """52-week return (%) from a date-indexed, ascending weekly-close
+    Series — the closest weekly bar to 364 days before the latest one
+    (Series.asof: the last valid value AT OR BEFORE that date), not a
+    fixed -52-bar offset, so a short gap in the series doesn't throw
+    the comparison off by a week or two."""
+    if len(cw) < 2:
+        return None
+    latest = float(cw.iloc[-1])
+    past = cw.asof(cw.index[-1] - pd.Timedelta(days=364))
+    if past is None or (isinstance(past, float) and pd.isna(past)) or past <= 0:
+        return None
+    return round((latest / float(past) - 1) * 100, 2)
+
+
+def _tw_fetch_benchmark_r_1y():
+    """NIFTY 500's own 52-week return, weekly closes over as much history
+    as Yahoo has — same RS_BENCHMARK_TICKER (^CRSLDX) this file's own
+    Nifty500RelativeStrength/sectorStockAlpha screeners already use as
+    THE house benchmark for "vs NSE500", same _tw_r_1y math as every
+    stock gets so the comparison is apples-to-apples (both weekly
+    closes, both the same asof-364-days lookup)."""
+    try:
+        df = yf.download(RS_BENCHMARK_TICKER, period="max", interval="1wk", progress=False, auto_adjust=True)
+    except Exception:
+        return None
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df[["Close"]].dropna()
+    if df.empty:
+        return None
+    return _tw_r_1y(df["Close"])
+
+
 def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
+    # 2026-09-13 ("Turtle Wealth add one more column alpha over 52W
+    # w.r.t NSE500") — a step toward the 5-pillar framework's 3rd
+    # pillar, All-Time-High Outperformance (Momentum): not the full
+    # thing (that's vs a stock's own SECTOR too, per their ADD/HOLD/
+    # EXIT scoring slide, and "all-time-high" outperformance rather
+    # than a single 52-week snapshot) — just what was literally asked,
+    # alpha_52w = stock's own 52-week return minus NIFTY 500's, over
+    # the same window.
+    bench_r_1y = _tw_fetch_benchmark_r_1y()
+
     weekly = _ms_fetch_weekly_max(symbols)
     ath_price_by_symbol = {}
     if weekly is not None:
@@ -3543,10 +3587,13 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
                 continue
             price = float(cw.iloc[-1])
             ath = float(cw.max())
+            r_1y = _tw_r_1y(cw)
             ath_price_by_symbol[sym] = {
                 "price": round(price, 2),
                 "pct_off_ath": round((price / ath - 1) * 100, 2),
                 "price_ath": bool(price >= ath * (1 - ATH_BAND_PCT / 100)),
+                "r_1y": r_1y,
+                "alpha_52w": None if r_1y is None or bench_r_1y is None else round(r_1y - bench_r_1y, 2),
             }
 
     new_rows = []
@@ -3573,6 +3620,7 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
             "sales_ath": sales_ath,
             "latest_profit_cr": profit_hist[-1] if profit_hist else None,
             "profit_ath": profit_ath,
+            "alpha_52w": athp["alpha_52w"] if athp else None,
             "all_three": bool(price_ath and sales_ath and profit_ath),
             "as_of": date.today().isoformat(),
         })
