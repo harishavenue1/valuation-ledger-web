@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import RunButton from "../components/RunButton";
 import { Col, GenericTable, MethodologyNote, Signed } from "../components/ScreenerTable";
@@ -95,15 +95,20 @@ export default function StrategicAlpha() {
   const allRows = entry?.rows ?? [];
   // Added 2026-09-13 ("split strategic page to india and international
   // tickets") — every asset in api/momentum_screeners.py's
-  // SA_ASSET_UNIVERSE is now tagged with its own "region" field
-  // ("India" or "International"); this just filters the SAME single
-  // dataset by that tag, same toggle-button pattern Reverse DCF Scan
-  // already uses for its ledger/NSE 750 sources — no separate fetch,
-  // no separate as_of, both views always refresh together.
-  const [region, setRegion] = useState<"india" | "international">("india");
+  // SA_ASSET_UNIVERSE is tagged with its own "region" field ("India" or
+  // "International"); this just filters the SAME single dataset by
+  // that tag, same toggle-button pattern Reverse DCF Scan already uses
+  // for its ledger/NSE 750 sources — no separate fetch, no separate
+  // as_of, all views always refresh together. Grew a third tab the
+  // same day ("merge the strategic and ratios page under strategic") —
+  // the standalone Market Ratios page/screener (added earlier the same
+  // day) was folded back into this same strategicAlpha screener,
+  // tagged region="Ratios", rather than staying a separate page.
+  const [region, setRegion] = useState<"india" | "international" | "ratios">("india");
   const indiaRows = allRows.filter((r: any) => r.region === "India");
   const internationalRows = allRows.filter((r: any) => r.region === "International");
-  const rows = region === "india" ? indiaRows : internationalRows;
+  const ratiosRows = allRows.filter((r: any) => r.region === "Ratios");
+  const rows = region === "india" ? indiaRows : region === "international" ? internationalRows : ratiosRows;
 
   return (
     <div>
@@ -119,8 +124,7 @@ export default function StrategicAlpha() {
         <a href="https://www.youtube.com/watch?v=r6BYKayOaIQ" target="_blank" rel="noreferrer" className="underline">
           Strategic Alpha
         </a>{" "}
-        channel's own recurring framework — refreshes daily on Vercel. The Nifty 500/Nifty 50 ratio (and three more relative-strength
-        ratios) moved to its own <Link to="/market-ratios" className="underline">📐 Market Ratios</Link> page.
+        channel's own recurring framework — refreshes daily on Vercel.
       </p>
 
       <div className="flex gap-2 mb-4">
@@ -136,12 +140,24 @@ export default function StrategicAlpha() {
         >
           🌍 International ({internationalRows.length})
         </button>
+        <button
+          onClick={() => setRegion("ratios")}
+          className={`text-xs px-3 py-1.5 rounded border ${region === "ratios" ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+        >
+          📐 Ratios ({ratiosRows.length})
+        </button>
       </div>
 
       <MethodologyNote>
-        The <b>🇮🇳 India</b>/<b>🌍 International</b> toggle above splits the same single dataset by region — both refresh together on the
-        same daily run, just filtered by which market each asset belongs to. Each asset's trend is <b>Bull</b> if its latest daily close is
-        above its own 200-day EMA (on Close, replicating the video's stated rule
+        The <b>🇮🇳 India</b>/<b>🌍 International</b>/<b>📐 Ratios</b> toggle above splits the same single dataset three ways — all refresh
+        together on the same daily run, just filtered by which bucket each asset belongs to. <b>📐 Ratios</b> is relative-strength ratios
+        (numerator Close ÷ denominator Close, treated as its own synthetic price series run through the exact same trend logic as every
+        other row): <b>Nifty 500 / Nifty 50</b> is the video's own original rule (rising = broader market leading, opportunities outside
+        large-caps); <b>Nifty Midcap 150 / Nifty 50</b> and <b>Nifty Smallcap 250 / Nifty 50</b> extend the same idea down the cap curve;{" "}
+        <b>Gold / Nifty 50</b> tracks the classic risk-off/risk-on rotation between gold and Indian equities. Ratio rows have no chart link
+        (a ratio isn't a single tradable symbol) and their 50D/33W EMAs are computed as if Open/High/Low all equal Close (a ratio of closing
+        prices has no real intraday range) — a reasonable approximation, not real OHLC data. Each asset's trend is <b>Bull</b> if its latest
+        daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
         literally — not this app's own OHLC4 standing convention), <b>Bear</b> otherwise. The three <b>% vs EMA</b> columns show only the
         percentage distance from each line (200-day, 50-day, 33-week), not the EMA's own price level — the 50D/33W pair is this app's own
         addition on top of the video's framework (33-week matching myLongTermInvestingStrategy's own exit-rule EMA), both computed on OHLC4
