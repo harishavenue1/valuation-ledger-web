@@ -2894,6 +2894,14 @@ SA_ASSET_UNIVERSE = {
     "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL", "region": "International"},
     "Gold Miners (GDX)": {"ticker": "GDX", "tv": "AMEX:GDX", "region": "International"},
     "Copper Miners (COPX)": {"ticker": "COPX", "tv": "AMEX:COPX", "region": "International"},
+    # 2026-09-13 ("under international add" + a TradingView screenshot
+    # of an "Emerging Markets Basket - FXCM" instrument) — FXCM's own
+    # basket is a proprietary CFD product, not something Yahoo Finance
+    # carries. Used the real, standard equivalent instead: EEM
+    # (iShares MSCI Emerging Markets ETF), already proven working
+    # elsewhere in this app (globalCountryEtfs on the Global Macro
+    # page, under the exact same label "Emerging Markets (EEM)").
+    "Emerging Markets (EEM)": {"ticker": "EEM", "tv": "AMEX:EEM", "region": "International"},
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
