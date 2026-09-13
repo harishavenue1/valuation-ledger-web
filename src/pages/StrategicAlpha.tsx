@@ -202,13 +202,12 @@ export default function StrategicAlpha() {
         <b>Nifty Microcap 250</b> and <b>Nifty MidSmallcap 400</b> were added 2026-09-13; Microcap 250 had no fetchable Yahoo ticker when first
         requested (several formats tried, all 404) — a different one turned up since, confirmed live via the user's own TradingView
         screenshot. <b>US 10Y Yield</b> was added 2026-09-13 ("yields charts under strategic for US, INDIA") — this is the actual yield level
-        (^TNX, confirmed live), a rising row means yields are rising, run through the same trend/return logic as every other row.{" "}
-        <b>India 10Y G-Sec (Price, inv. of yield)</b>: a true India yield ticker (^IN10Y) was tried first and confirmed live to return no
-        Yahoo data — Yahoo doesn't reliably carry non-US sovereign bond yields the way it does US Treasuries. This row is a deliberate,
-        clearly-labeled substitute instead: <b>NIFTYGS10YR.NS</b>, the Nifty 10yr Benchmark G-Sec bond <b>PRICE</b> index — moves in the{" "}
-        <b>opposite</b> direction from the actual yield (rising row = bond prices up = yields <i>falling</i>, not rising). Not a real yield
-        series; the closest honest substitute available from Yahoo. <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week
-        MA), and "country rotation" (the video itself calls this an undisclosed proprietary system).
+        (^TNX, confirmed live), a rising row means yields are rising, run through the same trend/return logic as every other row. An{" "}
+        <b>India 10Y</b> row was attempted alongside it but dropped after two dead ends confirmed live: the real yield ticker (^IN10Y)
+        returns no Yahoo data at all, and a price-index proxy (NIFTYGS10YR.NS) returns only a single current data point from Yahoo even on a
+        2-year range request — neither can feed this screener's trend/return calculation. Not available via Yahoo through any route found.{" "}
+        <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week MA), and "country rotation" (the video itself calls this an
+        undisclosed proprietary system).
       </MethodologyNote>
       <GenericTable
         rows={rows}
