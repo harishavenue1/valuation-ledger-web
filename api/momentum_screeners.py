@@ -2667,7 +2667,18 @@ def _run_global_country_etfs(symbols, name_map, sector_map):
         if label == "India (benchmark)":
             continue
         h = hist[label]
-        row = {"country": label, "symbol": ticker, "sector": region}
+        # 2026-09-13 ("add a price column with a link to trading View")
+        # — every ETF here is a US-listed (mostly NYSE Arca) ETF; AMEX
+        # is TradingView's own exchange code for that listing venue,
+        # same prefix already proven working for DBC/SIL/GDX/COPX in
+        # SA_ASSET_UNIVERSE above. Not individually verified per-ticker
+        # (50 of them) — if a specific one turns out to be mislisted
+        # (e.g. actually NASDAQ-listed), that's a one-off fix the same
+        # way Gold/Silver/Copper's own chart-link mismatches were
+        # caught and fixed earlier.
+        close = round(float(h["Close"].dropna().iloc[-1]), 2) if h is not None and len(h["Close"].dropna()) else None
+        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(f'AMEX:{ticker}')}"
+        row = {"country": label, "symbol": ticker, "sector": region, "close": close, "tradingview_url": tv_url}
         alphas = {}
         for tf, days in GCE_TIMEFRAMES:
             r = _gxc_pct_return(h, days)
@@ -2719,7 +2730,17 @@ def _run_global_currencies(symbols, name_map, sector_map):
     rows, skipped = [], []
     for country, fx_ticker, is_direct in GCU_CURRENCY_UNIVERSE:
         h = fx_hist.get(fx_ticker)
-        row = {"country": country, "symbol": fx_ticker}
+        # 2026-09-13 ("same to currency table as well") — FX_IDC is
+        # TradingView's own free, broker-agnostic FX data provider,
+        # covering every major/cross pair without needing a specific
+        # broker account — the standard prefix for embeddable/free FX
+        # chart links. Pair name is the ticker with yfinance's "=X"
+        # suffix stripped (USDINR=X -> USDINR), already how the pair
+        # reads on TradingView.
+        close = round(float(h["Close"].dropna().iloc[-1]), 4) if h is not None and len(h["Close"].dropna()) else None
+        tv_pair = fx_ticker.replace("=X", "")
+        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(f'FX_IDC:{tv_pair}')}"
+        row = {"country": country, "symbol": fx_ticker, "close": close, "tradingview_url": tv_url}
         for tf, days in GCE_TIMEFRAMES:
             raw = _gxc_pct_return(h, days)
             ret = raw if (raw is None or is_direct) else -raw
