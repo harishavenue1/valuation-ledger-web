@@ -247,41 +247,84 @@ function InstrumentCard({
           time); "let table reflect below that show as we earlier
           built" — same instrument, every day bucket from the shared
           list above, at once. */}
+      {/* 2026-09-13 ("we have enough column space, so lets divide cols
+          to with and without leverage and show the grossProfit ->
+          interest -> charges -> tax -> finalProfit -> finalProfit %")
+          — two full, identically-shaped breakdowns side by side
+          instead of interleaved columns, so the with/without-leverage
+          comparison reads left-to-right within each half rather than
+          jumping between columns. "Without Leverage" Interest is
+          always 0 (no funding) — kept as an explicit column anyway so
+          both halves have the same 6-column shape and the eye can
+          scan straight across. Gross Profit/Tax on the No-Lev side
+          are computed inline here (Invested × Expected P/L%, taxed at
+          the same day's rate) rather than added to MtfRow — display-
+          only decomposition of the already-verified finalProfitWoLev/
+          patWoLevPct formulas, not new logic. */}
       <div className="overflow-x-auto mt-6">
-        <table className="text-sm border-collapse w-full" style={{ minWidth: 900 }}>
+        <table className="text-sm border-collapse w-full" style={{ minWidth: 1500 }}>
           <thead className="text-slate-500 text-xs">
             <tr>
-              <th className="text-right px-2 py-1.5">Days</th>
-              <th className="text-right px-2 py-1.5">P/L</th>
-              <th className="text-right px-2 py-1.5">Tax</th>
-              <th className="text-right px-2 py-1.5">Charges</th>
-              <th className="text-right px-2 py-1.5">Int Paid</th>
-              <th className="text-right px-2 py-1.5">Final Profit</th>
-              <th className="text-right px-2 py-1.5">Final Profit (No Lev.)</th>
-              <th className="text-right px-2 py-1.5">Leverage Edge</th>
-              <th className="text-right px-2 py-1.5">PAT (Lev) %</th>
-              <th className="text-right px-2 py-1.5">PAT (No Lev) %</th>
+              <th rowSpan={2} className="text-right px-2 py-1.5 align-bottom">
+                Days
+              </th>
+              <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-indigo-50/50 text-indigo-700 font-semibold">
+                With Leverage (MTF)
+              </th>
+              <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-slate-100 text-slate-600 font-semibold border-l border-slate-300">
+                Without Leverage (Cash)
+              </th>
+              <th rowSpan={2} className="text-right px-2 py-1.5 align-bottom border-l border-slate-300">
+                Leverage Edge
+              </th>
+            </tr>
+            <tr>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Gross Profit</th>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Interest</th>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Charges</th>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Tax</th>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Final Profit</th>
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Final Profit %</th>
+              <th className="text-right px-2 py-1 bg-slate-100 border-l border-slate-300">Gross Profit</th>
+              <th className="text-right px-2 py-1 bg-slate-100">Interest</th>
+              <th className="text-right px-2 py-1 bg-slate-100">Charges</th>
+              <th className="text-right px-2 py-1 bg-slate-100">Tax</th>
+              <th className="text-right px-2 py-1 bg-slate-100">Final Profit</th>
+              <th className="text-right px-2 py-1 bg-slate-100">Final Profit %</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.days} className={`border-t border-slate-100 ${r.days === inst.days ? "bg-indigo-50/60" : r.days > assumptions.ltcgThresholdDays ? "bg-emerald-50/40" : ""}`}>
-                <td className="px-2 py-1.5 text-right tabular-nums">{r.days}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                  {fmt(r.tax, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.intPaid, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.finalProfit, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.finalProfitWoLev, 0)}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
-                  <span className={r.leverageEdge >= 0 ? "text-emerald-600" : "text-red-600"}>{fmt(r.leverageEdge, 0)}</span>
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{r.patLevPct !== null ? fmtSigned(r.patLevPct, 2) : "—"}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{r.patWoLevPct !== null ? fmtSigned(r.patWoLevPct, 2) : "—"}</td>
-              </tr>
-            ))}
+            {rows.map((r) => {
+              const grossNoLev = r.invested * (inst.expPlPct / 100);
+              const taxNoLev = Math.max(0, grossNoLev) * (r.taxRatePct / 100);
+              return (
+                <tr key={r.days} className={`border-t border-slate-100 ${r.days === inst.days ? "bg-indigo-50/60" : r.days > assumptions.ltcgThresholdDays ? "bg-emerald-50/40" : ""}`}>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{r.days}</td>
+                  {/* With leverage */}
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.intPaid, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                    {fmt(r.tax, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-medium">{fmt(r.finalProfit, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{r.patLevPct !== null ? fmtSigned(r.patLevPct, 2) : "—"}</td>
+                  {/* Without leverage */}
+                  <td className="px-2 py-1.5 text-right tabular-nums border-l border-slate-200">{fmt(grossNoLev, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{fmt(0, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                    {fmt(taxNoLev, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.finalProfitWoLev, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{r.patWoLevPct !== null ? fmtSigned(r.patWoLevPct, 2) : "—"}</td>
+                  {/* Leverage edge */}
+                  <td className="px-2 py-1.5 text-right tabular-nums border-l border-slate-300">
+                    <span className={r.leverageEdge >= 0 ? "text-emerald-600" : "text-red-600"}>{fmt(r.leverageEdge, 0)}</span>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
