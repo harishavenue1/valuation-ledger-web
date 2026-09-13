@@ -4,36 +4,84 @@ import { MethodologyNote } from "../components/ScreenerTable";
 import { computeMtfRow, computeMtfTotals, computeZerodhaCharges, defaultInstrument, DEFAULT_ASSUMPTIONS, DEFAULT_DAYS, MtfAssumptions, MtfInstrument } from "../lib/mtf";
 
 // MTF Calculator — added 2026-09-13, "can we build this as a new page"
-// after reviewing the user's own MTF-Gold/MTF-Silver Google Sheet. See
-// src/lib/mtf.ts's module comment for the full formula trace and the
-// two corrections made vs. the original sheet (both confirmed with
-// the user). Layout generalizes the sheet's two hardcoded blocks
-// (Gold/Silver) into any number of named instrument cards sharing one
-// global STCG/LTCG/day-bucket assumption set — add/remove cards freely
-// instead of the sheet being locked to exactly two.
+// after reviewing the user's own MTF-Gold/MTF-Silver Google Sheet, and
+// reworked several times through the same session:
+// - "also on MTF use the actual zerodha trade
+//   https://zerodha.com/calculators/mtf-calculator/" — swapped
+//   Interest/Charges/Leverage to Zerodha's own documented formulas
+//   (see src/lib/mtf.ts's module comment for the full trace + the
+//   GOLDCASE example used to verify it).
+// - "use similar ui as zerodha page as a playtool and let table
+//   reflect below that show as we earlier built" — this page's top
+//   section per instrument is now a close visual replica of Zerodha's
+//   own MTF calculator (search-style header, 3 sliders: Invested
+//   amount / No. of days held / Expected rate of return, a 4-metric
+//   result row, and the two-tone investment-split bar) — driving the
+//   SAME instrument the day-bucket table below still shows in full
+//   (this app's own addition on top of Zerodha's page, which only
+//   ever shows one day count at a time).
+// - "I guess only tax is not part of zerodha, lets add it" — Zerodha's
+//   own calculator doesn't model capital gains tax at all; added as a
+//   4th metric card (Interest / Charges / Tax / Profit & Loss) so the
+//   replica is complete, with Profit & Loss net of all three (this
+//   app's own choice, confirmed earlier: "logic for final profit and
+//   loss go with earlier logic").
 
-const NUM_STEP = "any";
-
-function NumberField({
+function SliderField({
   label,
   value,
   onChange,
+  min,
+  max,
+  step = 1,
+  prefix,
   suffix,
-  title,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  min: number;
+  max: number;
+  step?: number;
+  prefix?: string;
   suffix?: string;
-  title?: string;
 }) {
+  return (
+    <div className="mb-4">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-sm text-slate-600">{label}</span>
+        <div className="flex items-center gap-1 px-2 py-1 border border-slate-300 rounded">
+          {prefix && <span className="text-slate-400 text-sm">{prefix}</span>}
+          <input
+            type="number"
+            value={Number.isFinite(value) ? value : ""}
+            onChange={(e) => onChange(parseFloat(e.target.value))}
+            className="w-24 text-sm text-right tabular-nums outline-none"
+          />
+          {suffix && <span className="text-slate-400 text-sm">{suffix}</span>}
+        </div>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={Number.isFinite(value) ? value : min}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-indigo-600"
+      />
+    </div>
+  );
+}
+
+function NumberField({ label, value, onChange, suffix, title }: { label: string; value: number; onChange: (v: number) => void; suffix?: string; title?: string }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-slate-600" title={title}>
       <span>{label}</span>
       <div className="flex items-center gap-1">
         <input
           type="number"
-          step={NUM_STEP}
+          step="any"
           value={Number.isFinite(value) ? value : ""}
           onChange={(e) => onChange(parseFloat(e.target.value))}
           className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm tabular-nums"
@@ -44,23 +92,40 @@ function NumberField({
   );
 }
 
+function MetricCard({ label, caption, value, sub, tone }: { label: string; caption?: string; value: string; sub?: string; tone?: "profit" | "loss" }) {
+  return (
+    <div>
+      <div className="text-xs text-slate-500">
+        {label} {caption && <span className="text-slate-400">({caption})</span>}
+      </div>
+      <div className={`text-lg font-semibold tabular-nums ${tone === "profit" ? "text-emerald-600" : tone === "loss" ? "text-red-600" : "text-slate-800"}`}>
+        {value} {sub && <span className="text-sm font-medium">{sub}</span>}
+      </div>
+    </div>
+  );
+}
+
 function InstrumentCard({
   inst,
   onChange,
   onRemove,
   removable,
   assumptions,
-  days,
+  dayBuckets,
 }: {
   inst: MtfInstrument;
   onChange: (i: MtfInstrument) => void;
   onRemove: () => void;
   removable: boolean;
   assumptions: MtfAssumptions;
-  days: number[];
+  dayBuckets: number[];
 }) {
-  const { totalInv, invested, funded, dayCharge, curPrice, sellValue, leverageX } = computeMtfTotals(inst);
-  const rows = days.map((d) => computeMtfRow(inst, assumptions, d));
+  const { totalInv, funded, sellValue, leverageX } = computeMtfTotals(inst);
+  const live = computeMtfRow(inst, assumptions, inst.days);
+  const rows = dayBuckets.map((d) => computeMtfRow(inst, assumptions, d));
+  const investedPct = totalInv > 0 ? (inst.investedAmount / totalInv) * 100 : 0;
+  const fundedPct = 100 - investedPct;
+  const isLtcg = inst.days > assumptions.ltcgThresholdDays;
 
   function recalcZerodhaCharges() {
     onChange({ ...inst, charges: computeZerodhaCharges(totalInv, sellValue) });
@@ -68,88 +133,97 @@ function InstrumentCard({
 
   return (
     <div className="p-4 border border-slate-200 rounded-lg mb-6">
-      <div className="flex items-center gap-2 mb-3">
-        <input
-          type="text"
-          value={inst.name}
-          onChange={(e) => onChange({ ...inst, name: e.target.value })}
-          className="text-sm font-semibold px-2 py-1 border border-slate-300 rounded"
-        />
+      {/* Search-style header — Zerodha's own page leads with a stock
+          search box showing that stock's live Leverage. No live
+          lookup here (Zerodha's own margin data isn't fetchable
+          headlessly), so this is a plain name field with a Leverage
+          readout computed from the Margin% input below. */}
+      <div className="flex items-center gap-2 mb-4 pb-3 border-b border-slate-100">
+        <span className="text-slate-400">🔍</span>
+        <input type="text" value={inst.name} onChange={(e) => onChange({ ...inst, name: e.target.value })} className="text-sm font-semibold px-2 py-1.5 border border-slate-300 rounded flex-1 max-w-[240px]" />
+        <span className="text-xs text-slate-500 ml-auto">
+          Leverage: <b className="text-slate-700">{leverageX !== null ? `${fmt(leverageX, 2)}x` : "—"}</b>
+        </span>
         {removable && (
-          <button onClick={onRemove} className="ml-auto text-xs text-red-500 hover:underline">
+          <button onClick={onRemove} className="text-xs text-red-500 hover:underline">
             ✕ Remove
           </button>
         )}
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-1">
-        <NumberField label="Shares #" value={inst.shares} onChange={(v) => onChange({ ...inst, shares: v })} />
-        <NumberField label="Buy Price" value={inst.buyPrice} onChange={(v) => onChange({ ...inst, buyPrice: v })} />
-        <div className="flex flex-col gap-1">
-          <NumberField
-            label="Margin %"
-            value={inst.marginPct}
-            onChange={(v) => onChange({ ...inst, marginPct: v })}
-            suffix="%"
-            title="Broker's MTF margin requirement for this instrument — the % of Total Inv you must fund yourself. Zerodha looks this up live per stock (e.g. GOLDCASE 28%, RELIANCE ~22.6%) — not fetchable headlessly here, so it's a manual input."
-          />
-          <span className="text-[11px] text-slate-400" title="Zerodha's own framing: Margin% and Leverage are the same number, just inverted">
-            = {leverageX !== null ? `${fmt(leverageX, 2)}x leverage` : "—"}
-          </span>
-        </div>
+      {/* Secondary inputs Zerodha derives live per-stock (Margin%,
+          Leverage) or states as a flat platform rate (Daily Interest,
+          Charges) — all manual/editable here. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
+        <NumberField
+          label="Margin %"
+          value={inst.marginPct}
+          onChange={(v) => onChange({ ...inst, marginPct: v })}
+          suffix="%"
+          title="Broker's MTF margin requirement for this instrument. Zerodha looks this up live per stock (e.g. GOLDCASE 28%, RELIANCE ~22.6%) — not fetchable headlessly here, so it's a manual input."
+        />
         <NumberField
           label="Daily Interest Rate"
           value={inst.dailyRatePct}
           onChange={(v) => onChange({ ...inst, dailyRatePct: v })}
-          suffix="% /day"
+          suffix="%/day"
           title="Zerodha's real MTF rate is a flat 0.04%/day (₹40 per lakh funded), charged from T+1 until sold — not annualized"
         />
-        <NumberField label="Expected P/L" value={inst.expPlPct} onChange={(v) => onChange({ ...inst, expPlPct: v })} suffix="%" title="Expected price move by the time of sale — drives Current Price below" />
         <div className="flex flex-col gap-1">
-          <NumberField
-            label="Charges"
-            value={inst.charges}
-            onChange={(v) => onChange({ ...inst, charges: v })}
-            suffix="₹"
-            title="Brokerage + STT + stamp duty + pledge/unpledge, applied in both the leveraged and unleveraged scenarios"
-          />
+          <NumberField label="Charges" value={inst.charges} onChange={(v) => onChange({ ...inst, charges: v })} suffix="₹" title="Brokerage + STT + stamp duty + pledge/unpledge" />
           <button onClick={recalcZerodhaCharges} className="text-[11px] text-indigo-600 underline text-left" title="Recompute from Zerodha's own documented formula for this trade's current size">
             ↺ Zerodha's formula
           </button>
         </div>
       </div>
-      <div className="text-[11px] text-slate-400 mb-4">
-        Interest and Charges follow{" "}
-        <a href="https://zerodha.com/calculators/mtf-calculator/" target="_blank" rel="noreferrer" className="underline">
-          Zerodha's own MTF calculator
-        </a>{" "}
-        — Margin%/Leverage stays a manual input (Zerodha looks it up live, per stock).
+
+      {/* Zerodha's own 3 sliders */}
+      <SliderField label="Invested amount" value={inst.investedAmount} onChange={(v) => onChange({ ...inst, investedAmount: v })} min={5000} max={5000000} step={5000} prefix="₹" />
+      <SliderField label="No. of days held" value={inst.days} onChange={(v) => onChange({ ...inst, days: v })} min={1} max={730} step={1} suffix=" days" />
+      <SliderField label="Expected rate of return" value={inst.expPlPct} onChange={(v) => onChange({ ...inst, expPlPct: v })} min={-50} max={150} step={1} suffix="%" />
+
+      {/* Live result — 4 metrics (Zerodha's own 3, plus Tax, their one
+          gap: "I guess only tax is not part of zerodha, lets add
+          it") — all reflect inst.days, the slider above. */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-lg p-4 mt-1">
+        <MetricCard label="Applicable interest" caption={`${inst.dailyRatePct}% per day`} value={`₹${fmt(live.intPaid, 0)}`} />
+        <MetricCard label="Brokerage + Charges" value={`₹${fmt(live.charges, 0)}`} />
+        <MetricCard label="Tax" caption={`${live.taxRatePct}% ${isLtcg ? "LTCG" : "STCG"}`} value={`₹${fmt(live.tax, 0)}`} />
+        <MetricCard
+          label="Profit & Loss"
+          value={`₹${fmt(live.finalProfit, 0)}`}
+          sub={`${live.finalProfit >= 0 ? "▲" : "▼"} ${live.patLevPct !== null ? fmt(Math.abs(live.patLevPct), 2, "%") : "—"}`}
+          tone={live.finalProfit >= 0 ? "profit" : "loss"}
+        />
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-4 text-sm border-t border-slate-100 pt-3">
-        <div>
-          <div className="text-xs text-slate-500">Total Inv</div>
-          <div className="tabular-nums font-medium">₹{fmt(totalInv, 0)}</div>
+      {/* Investment split — Zerodha's own two-tone bar */}
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-4 text-sm">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" /> Your investment <b className="tabular-nums">₹{fmt(inst.investedAmount, 0)}</b>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> Funded (MTF) <b className="tabular-nums">₹{fmt(funded, 0)}</b>
+        </span>
+        <span className="ml-auto text-slate-500">
+          Total buy value <b className="text-slate-800 tabular-nums">₹{fmt(totalInv, 0)}</b>
+        </span>
+      </div>
+      <div className="flex h-6 rounded overflow-hidden mt-2 text-[11px] text-white font-medium">
+        <div className="bg-orange-500 flex items-center justify-center" style={{ width: `${investedPct}%` }}>
+          {investedPct >= 8 ? `${fmt(investedPct, 0)}%` : ""}
         </div>
-        <div>
-          <div className="text-xs text-slate-500">Invested (self)</div>
-          <div className="tabular-nums font-medium">₹{fmt(invested, 0)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-500">Funded (MTF)</div>
-          <div className="tabular-nums font-medium">₹{fmt(funded, 0)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-500">Day Charge</div>
-          <div className="tabular-nums font-medium">₹{fmt(dayCharge, 0)}</div>
-        </div>
-        <div>
-          <div className="text-xs text-slate-500">Current Price</div>
-          <div className="tabular-nums font-medium">{fmt(curPrice, 2)}</div>
+        <div className="bg-blue-500 flex items-center justify-center" style={{ width: `${fundedPct}%` }}>
+          {fundedPct >= 8 ? `${fmt(fundedPct, 0)}%` : ""}
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* The day-bucket table — this app's own addition on top of
+          Zerodha's page (which only ever shows one day count at a
+          time); "let table reflect below that show as we earlier
+          built" — same instrument, every day bucket from the shared
+          list above, at once. */}
+      <div className="overflow-x-auto mt-6">
         <table className="text-sm border-collapse w-full" style={{ minWidth: 900 }}>
           <thead className="text-slate-500 text-xs">
             <tr>
@@ -167,7 +241,7 @@ function InstrumentCard({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.days} className={`border-t border-slate-100 ${r.days > assumptions.ltcgThresholdDays ? "bg-emerald-50/40" : ""}`}>
+              <tr key={r.days} className={`border-t border-slate-100 ${r.days === inst.days ? "bg-indigo-50/60" : r.days > assumptions.ltcgThresholdDays ? "bg-emerald-50/40" : ""}`}>
                 <td className="px-2 py-1.5 text-right tabular-nums">{r.days}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
@@ -187,7 +261,9 @@ function InstrumentCard({
           </tbody>
         </table>
       </div>
-      <div className="text-[11px] text-slate-400 mt-2">Shaded rows are past the LTCG threshold ({assumptions.ltcgThresholdDays} days) — taxed at LTCG instead of STCG.</div>
+      <div className="text-[11px] text-slate-400 mt-2">
+        Highlighted row = the "No. of days held" slider above ({inst.days}d); shaded rows past {assumptions.ltcgThresholdDays}d are taxed at LTCG instead of STCG.
+      </div>
     </div>
   );
 }
@@ -195,7 +271,7 @@ function InstrumentCard({
 export default function MTFCalculator() {
   const [instruments, setInstruments] = useState<MtfInstrument[]>([defaultInstrument("Gold"), defaultInstrument("Silver")]);
   const [assumptions, setAssumptions] = useState<MtfAssumptions>(DEFAULT_ASSUMPTIONS);
-  const [days, setDays] = useState<number[]>(DEFAULT_DAYS);
+  const [dayBuckets, setDayBuckets] = useState<number[]>(DEFAULT_DAYS);
   const [newDay, setNewDay] = useState("");
 
   function updateInstrument(idx: number, next: MtfInstrument) {
@@ -209,12 +285,12 @@ export default function MTFCalculator() {
   }
   function addDay() {
     const d = parseInt(newDay, 10);
-    if (!Number.isFinite(d) || d <= 0 || days.includes(d)) return;
-    setDays((prev) => [...prev, d].sort((a, b) => a - b));
+    if (!Number.isFinite(d) || d <= 0 || dayBuckets.includes(d)) return;
+    setDayBuckets((prev) => [...prev, d].sort((a, b) => a - b));
     setNewDay("");
   }
   function removeDay(d: number) {
-    setDays((prev) => prev.filter((x) => x !== d));
+    setDayBuckets((prev) => prev.filter((x) => x !== d));
   }
 
   return (
@@ -223,34 +299,34 @@ export default function MTFCalculator() {
         <h1 className="text-xl font-semibold">📐 MTF Calculator</h1>
         <span className="text-slate-500 text-sm">What margin-funded leverage actually costs you vs. paying cash</span>
       </div>
-      <p className="text-xs text-slate-500 mb-4">Ported from your own MTF-Gold/MTF-Silver sheet — add/remove instruments and day buckets freely below.</p>
+      <p className="text-xs text-slate-500 mb-4">
+        A close replica of{" "}
+        <a href="https://zerodha.com/calculators/mtf-calculator/" target="_blank" rel="noreferrer" className="underline">
+          Zerodha's own MTF calculator
+        </a>{" "}
+        — plus Tax (the one thing theirs doesn't model) and a full day-bucket table below each instrument.
+      </p>
 
       <MethodologyNote>
-        Each instrument card is independent: <b>Total Inv</b> = Shares × Buy Price; <b>Invested</b> = Total Inv × Margin%; <b>Funded</b> = the
-        rest, borrowed via MTF. <b>Current Price</b> is derived from Buy Price × (1 + Expected P/L%), so the P/L column always ties out exactly
-        to (Current − Buy) × Shares.{" "}
-        <b>
-          Interest and Charges are matched to{" "}
-          <a href="https://zerodha.com/calculators/mtf-calculator/" target="_blank" rel="noreferrer" className="underline">
-            Zerodha's own real MTF calculator
-          </a>
-        </b>{" "}
-        (2026-09-13, "use the actual zerodha trade") — <b>Daily Interest Rate</b> defaults to their flat 0.04%/day on Funded (₹40 per lakh,
-        simple interest, compounding ignored), and <b>Charges</b> defaults to their documented formula (brokerage 0.3% or ₹20/order —
-        whichever's LOWER — both legs, STT 0.1% delivery both legs, stamp duty 0.015% on the buy leg, pledge/unpledge ₹15+18% GST each way);
-        verified live against the user's own GOLDCASE example (₹10,00,000 invested, 28% margin, 180 days, 50% expected) — Interest ties out
-        exactly to Zerodha's ₹1,85,040, Charges lands ~3% under Zerodha's own ₹9,831.02 (smaller statutory items — exchange transaction
-        charges, SEBI fees, GST on brokerage — aren't modeled; click "↺ Zerodha's formula" to reseed Charges after changing Shares/Buy
-        Price/Expected P/L). <b>Margin%</b>/<b>Leverage</b> stays a manual input — Zerodha looks this up live, per stock (e.g. GOLDCASE 28%/
-        3.57x, RELIANCE ~22.6%/4.42x), which this app can't fetch headlessly. Tax uses STCG below {assumptions.ltcgThresholdDays} days held,
-        LTCG above it (shaded rows), floored at zero — a loss doesn't generate a tax credit here; note Zerodha's own calculator doesn't model
-        tax at all, this is this app's own addition on top. <b>Final Profit</b> = P/L − Tax − Charges − Interest Paid.{" "}
-        <b>Final Profit (No Lev.)</b> is the same trade sized to only your own Invested capital, paid in cash (no interest, but the same
-        Charges and tax treatment) — the honest baseline to compare leverage against. <b>Leverage Edge</b> is the rupee difference between the
-        two. <b>PAT (Lev)%</b> = Final Profit ÷ (Invested + Interest Paid) — capital actually put at risk, excluding tax from the base (unlike
-        naively dividing by total cash including tax, this doesn't mechanically shrink the return% the longer you hold for reasons unrelated
-        to the trade; note this differs from Zerodha's own displayed %, which divides by Invested alone — kept as-is per this session's
-        earlier decision). <b>PAT (No Lev)%</b> = Final Profit (No Lev.) ÷ Invested.
+        Each instrument card's sliders (<b>Invested amount</b>, <b>No. of days held</b>, <b>Expected rate of return</b>) and result row
+        (<b>Applicable interest</b>, <b>Brokerage + Charges</b>, <b>Profit & Loss</b>) replicate{" "}
+        <a href="https://zerodha.com/calculators/mtf-calculator/" target="_blank" rel="noreferrer" className="underline">
+          Zerodha's own MTF calculator
+        </a>{" "}
+        layout and formulas (2026-09-13, "use the actual zerodha trade" / "use similar ui as zerodha page as a playtool") — verified live
+        against the user's own GOLDCASE example (₹10,00,000 invested, 28% margin, 180 days, 50% expected): <b>Applicable interest</b> ties out
+        exactly to Zerodha's own ₹1,85,040 (Funded × 0.04%/day × days, simple interest, compounding ignored); <b>Brokerage + Charges</b>{" "}
+        (brokerage 0.3% or ₹20/order — whichever's LOWER — both legs, STT 0.1% delivery both legs, stamp duty 0.015% buy leg, pledge/unpledge
+        ₹15+18% GST each way) lands ~3% under Zerodha's own ₹9,831.02 for the same trade (smaller statutory items — exchange transaction
+        charges, SEBI fees, GST on brokerage — aren't modeled; click "↺ Zerodha's formula" to reseed it after changing the sliders).{" "}
+        <b>Tax</b> is the one metric Zerodha's own calculator doesn't have at all — added here (2026-09-13, "I guess only tax is not part of
+        zerodha, lets add it"): STCG below {assumptions.ltcgThresholdDays} days held, LTCG above it, floored at zero (a loss doesn't generate a
+        tax credit). <b>Profit & Loss</b> = P/L − Tax − Charges − Interest, and its % = Profit & Loss ÷ (Invested + Interest) — this differs
+        from Zerodha's own displayed %, which divides by Invested alone; kept as the interest-adjusted version per this session's earlier,
+        explicit decision. <b>Margin%</b>/<b>Leverage</b> stays a manual input — Zerodha looks this up live, per stock (e.g. GOLDCASE 28%/
+        3.57x, RELIANCE ~22.6%/4.42x), which this app can't fetch headlessly. Below each card's live result: the same instrument run across
+        every day bucket in the shared list below at once (highlighted row = the slider's current day count) — Zerodha's own page only ever
+        shows one day count at a time.
       </MethodologyNote>
 
       <div className="p-4 border border-slate-200 rounded-lg mb-6">
@@ -266,11 +342,9 @@ export default function MTFCalculator() {
             title="365 for listed equity/ETFs under current rules — edit if this instrument is taxed differently"
           />
         </div>
-        <div className="text-xs text-slate-500 mb-2">
-          Day buckets shown in every table below — edit freely:
-        </div>
+        <div className="text-xs text-slate-500 mb-2">Day buckets shown in every table below — edit freely:</div>
         <div className="flex flex-wrap items-center gap-2">
-          {days.map((d) => (
+          {dayBuckets.map((d) => (
             <span key={d} className="inline-flex items-center gap-1 text-xs bg-slate-100 rounded-full px-2 py-1">
               {d}d
               <button onClick={() => removeDay(d)} className="text-slate-400 hover:text-red-500">
@@ -300,7 +374,7 @@ export default function MTFCalculator() {
           onRemove={() => removeInstrument(idx)}
           removable={instruments.length > 1}
           assumptions={assumptions}
-          days={days}
+          dayBuckets={dayBuckets}
         />
       ))}
 
