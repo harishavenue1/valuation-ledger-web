@@ -121,9 +121,12 @@ export default function StrategicAlpha() {
         /<b>Silver (INR, ~MCX SILVER1!)</b> are added 2026-09-13: real MCX futures data is only reachable via Kite, which only works from an
         interactive Claude session (same limit as Portfolio Allocation) — no good for a page that refreshes on an unattended daily cron. So
         these are DERIVED instead: the same COMEX USD price converted to INR at the daily USDINR rate (per 10g for gold, per kg for silver,
-        India's own quoting convention) — no import duty/GST/making-charge premium included, so the absolute level runs a few percent below
-        the real MCX print, but day-to-day % moves and the Bull/Bear trend read should track closely, which is all this page's own framework
-        actually uses. Their Close cell links to the real MCX chart on TradingView even though the price shown is the derived approximation.
+        India's own quoting convention), plus a flat India markup (import duty + GST + local exchange premium combined) — empirically
+        calibrated against live MCX quotes on 2026-09-13, +12.63% for gold and +17.16% for silver (the two differ, not one shared markup).
+        The pure conversion alone lands noticeably below the real MCX print even with a correct exchange rate — confirmed live that the
+        implied USDINR the raw formula used (~95.7) was itself a plausible real rate, so the gap was genuinely duty/premium, not a bad fetch.
+        This is a fixed, point-in-time calibration, not a formula that self-corrects if the real duty/premium drifts over time. Their Close
+        cell links to the real MCX chart on TradingView even though the price shown is the derived-and-calibrated approximation.
         <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
         it's left out rather than faked with a rough stand-in — same principle as everything below. <b>Not built</b>: Factor Rotation
         (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
