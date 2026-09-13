@@ -79,7 +79,6 @@ export interface MtfInstrument {
   dailyRatePct: number; // MTF funding interest, per DAY — Zerodha's own flat rate is 0.04%/day (₹40 per lakh), not annualized
   expPlPct: number; // expected rate of return over the holding period — Zerodha's own "Expected rate of return" slider
   days: number; // "No. of days held" slider — the single day count the live Playtool result reflects
-  charges: number; // brokerage + STT + stamp duty + pledge/unpledge, same both scenarios — seed via computeZerodhaCharges, editable override
   slabRateTax: boolean; // 2026-09-13 ("for gold and silver STCG is slab rate ... include surcharge, cess") — gold/silver (and other non-equity assets, since they're not "listed securities" under STT/111A) don't get the flat STCG% — short-term gains are taxed at the investor's own income-tax SLAB rate instead, and BOTH slab-STCG and flat-LTCG get surcharge+cess stacked on top. Equity/ETF instruments (the default, false) keep the plain shared STCG%/LTCG% — unaffected.
 }
 
@@ -124,12 +123,33 @@ export interface MtfRow {
 // to explain the residual gap; deliberately left out rather than
 // hardcoding statutory rates that drift with regulation and that this
 // sandbox can't verify live.
-export function computeZerodhaCharges(buyValue: number, sellValue: number): number {
+//
+// 2026-09-13 ("remove the charges as input tab, it must via rules not
+// a user input") — Charges is no longer a stored/editable field on
+// MtfInstrument at all; every caller derives it fresh from this
+// formula, every render, off the instrument's current size. The
+// breakdown variant exists so the UI can show each component's own
+// rupee amount and % of the total on hover ("give a breakdown with
+// percentages of charges on mouse over").
+export interface ZerodhaChargesBreakdown {
+  brokerage: number;
+  stt: number;
+  stampDuty: number;
+  pledgeUnpledge: number;
+  total: number;
+}
+
+export function computeZerodhaChargesBreakdown(buyValue: number, sellValue: number): ZerodhaChargesBreakdown {
   const brokerage = Math.min(0.003 * buyValue, 20) + Math.min(0.003 * sellValue, 20);
   const stt = 0.001 * buyValue + 0.001 * sellValue;
   const stampDuty = 0.00015 * buyValue;
   const pledgeUnpledge = 2 * (15 * 1.18);
-  return Math.round((brokerage + stt + stampDuty + pledgeUnpledge) * 100) / 100; // round to paise — every caller wants a clean rupee figure, not a float artifact
+  const total = Math.round((brokerage + stt + stampDuty + pledgeUnpledge) * 100) / 100; // round to paise — every caller wants a clean rupee figure, not a float artifact
+  return { brokerage, stt, stampDuty, pledgeUnpledge, total };
+}
+
+export function computeZerodhaCharges(buyValue: number, sellValue: number): number {
+  return computeZerodhaChargesBreakdown(buyValue, sellValue).total;
 }
 
 export function computeMtfTotals(inst: MtfInstrument) {
@@ -139,11 +159,12 @@ export function computeMtfTotals(inst: MtfInstrument) {
   const grossPl = totalInv * (inst.expPlPct / 100);
   const sellValue = totalInv + grossPl;
   const leverageX = inst.marginPct > 0 ? 100 / inst.marginPct : null; // Zerodha's own framing — e.g. Margin 28% = Leverage 3.57x
-  return { totalInv, funded, dayCharge, grossPl, sellValue, leverageX };
+  const chargesBreakdown = computeZerodhaChargesBreakdown(totalInv, sellValue);
+  return { totalInv, funded, dayCharge, grossPl, sellValue, leverageX, chargesBreakdown, charges: chargesBreakdown.total };
 }
 
 export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, days: number): MtfRow {
-  const { totalInv, funded, grossPl } = computeMtfTotals(inst);
+  const { totalInv, funded, grossPl, charges } = computeMtfTotals(inst);
   const invested = inst.investedAmount;
 
   const pl = grossPl;
@@ -161,12 +182,12 @@ export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, 
   const tax = Math.max(0, pl) * (taxRatePct / 100);
   const intPaid = funded * (inst.dailyRatePct / 100) * days;
 
-  const finalProfit = pl - tax - inst.charges - intPaid;
-  const totalCashOut = invested + tax + inst.charges + intPaid;
+  const finalProfit = pl - tax - charges - intPaid;
+  const totalCashOut = invested + tax + charges + intPaid;
   const patLevBase = invested + intPaid;
   const patLevPct = patLevBase > 0 ? (finalProfit / patLevBase) * 100 : null;
 
-  const finalProfitWoLev = invested * (inst.expPlPct / 100) * (1 - taxRatePct / 100) - inst.charges;
+  const finalProfitWoLev = invested * (inst.expPlPct / 100) * (1 - taxRatePct / 100) - charges;
   const patWoLevPct = invested > 0 ? (finalProfitWoLev / invested) * 100 : null;
 
   return {
@@ -177,7 +198,7 @@ export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, 
     pl,
     taxRatePct,
     tax,
-    charges: inst.charges,
+    charges,
     intPaid,
     totalCashOut,
     finalProfit,
@@ -193,9 +214,5 @@ export const DEFAULT_DAYS = [30, 60, 90, 120, 150, 180, 240, 366, 450, 685];
 export const DEFAULT_ASSUMPTIONS: MtfAssumptions = { stcgPct: 20, ltcgPct: 12.5, ltcgThresholdDays: 365, slabRatePct: 30, surchargePct: 0, cessPct: 4 };
 
 export function defaultInstrument(name: string, slabRateTax = false, marginPct = 30): MtfInstrument {
-  const investedAmount = 100000;
-  const expPlPct = 50;
-  const totalInv = investedAmount / (marginPct / 100);
-  const sellValue = totalInv * (1 + expPlPct / 100);
-  return { name, investedAmount, marginPct, dailyRatePct: 0.04, expPlPct, days: 180, charges: computeZerodhaCharges(totalInv, sellValue), slabRateTax };
+  return { name, investedAmount: 100000, marginPct, dailyRatePct: 0.04, expPlPct: 50, days: 180, slabRateTax };
 }
