@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useData } from "../App";
 import { fmt, fmtSigned, lastActual } from "../lib/model";
 import { computeStagedDcf, solveReverseDcf } from "../lib/reverseDcf";
+import { clearGrowthOverride, getGrowthOverride, setGrowthOverride } from "../lib/reverseDcfOverrides";
 import { MethodologyNote, Signed } from "../components/ScreenerTable";
 import { bulkAddCompanies } from "../lib/bulkAdd";
 
@@ -37,6 +38,21 @@ const PROJECTION_YEARS = 10; // fixed — matches the 3 stages below (1-3 / 4-6 
 // (Saigal's own framing — see reverseDcf.ts's module comment for why
 // solving all of growth+margin+terminal-growth from one equation
 // isn't well-posed).
+//
+// Added 2026-09-13 ("we cant apply generic rates across we need
+// specific, so its better you give a link from scan page to main
+// page, were we can override and same can reflect back to scan
+// page") — this page is now the "main page" that link points at: a
+// row's ✏️ Growth link on /reverse-dcf-scan opens THIS page pre-set
+// to that ticker (?ticker=SYMBOL, read via useSearchParams below), and
+// the "💾 Save for Scan" button here persists the current 3 stages to
+// localStorage (src/lib/reverseDcfOverrides.ts) keyed by ticker — the
+// scan page picks it up on its next mount and values that one row
+// against it instead of the auto-decay, every other row unaffected.
+// If a saved override already exists for a ticker when you land on
+// it (either via the link or the plain dropdown), it seeds the 3
+// stages instead of the usual flat-rate seed, so you see your own
+// saved path, not a freshly re-solved one.
 
 const NUM_STEP = "any";
 
@@ -73,8 +89,24 @@ function NumberField({
 export default function ReverseDCF() {
   const { bundle, setBundle } = useData();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const tickers = useMemo(() => Object.keys(bundle.stocks).sort(), [bundle.stocks]);
-  const [ticker, setTicker] = useState<string>(tickers[0] ?? "");
+  // 2026-09-13 — arriving via a Scan-page "✏️ Growth" link preselects
+  // that row's ticker (?ticker=SYMBOL) instead of always defaulting to
+  // the alphabetically-first one. Falls back to the usual default if
+  // the param is missing or isn't a ticker this ledger actually has.
+  const urlTicker = searchParams.get("ticker");
+  const [ticker, setTicker] = useState<string>(() => (urlTicker && bundle.stocks[urlTicker] ? urlTicker : tickers[0] ?? ""));
+  // The lazy initializer above only ever runs ONCE, at mount — on a
+  // hard page load (as opposed to client-side nav from elsewhere in
+  // the app, where bundle.stocks is already populated), bundle.stocks
+  // is still the empty placeholder at that exact moment (api.getAll()
+  // hasn't resolved yet), so it silently falls through to "" and the
+  // ?ticker= param never gets applied once real data actually arrives.
+  // Catches that case the first time tickers has real data to offer.
+  if (ticker === "" && tickers.length > 0) {
+    setTicker(urlTicker && bundle.stocks[urlTicker] ? urlTicker : tickers[0]);
+  }
   const stock = bundle.stocks[ticker];
 
   // 2026-09-11 ("allow user to add more companies to Reverse DCF") —
@@ -189,9 +221,14 @@ export default function ReverseDCF() {
           }).impliedGrowthPct
         : null;
     const g = seed !== null ? Math.round(seed * 10) / 10 : 10;
-    setStage1Pct(g);
-    setStage2Pct(g);
-    setStage3Pct(g);
+    // A saved Scan-page override for THIS ticker wins over the fresh
+    // flat-rate seed — you're seeing your own saved path, not a
+    // re-solved one that would silently differ from what's actually
+    // being used on /reverse-dcf-scan right now.
+    const saved = getGrowthOverride(ticker);
+    setStage1Pct(saved ? saved.stage1Pct : g);
+    setStage2Pct(saved ? saved.stage2Pct : g);
+    setStage3Pct(saved ? saved.stage3Pct : g);
   }
 
   const targetEvCr = marketCapCr !== null && netDebtCr !== null ? marketCapCr + netDebtCr : null;
@@ -224,6 +261,23 @@ export default function ReverseDCF() {
     setStage1Pct(g);
     setStage2Pct(g);
     setStage3Pct(g);
+  }
+
+  // 2026-09-13 ("same can reflect back to scan page") — persists the
+  // current 3 stages for THIS ticker so /reverse-dcf-scan picks them
+  // up. savedTick just forces the `savedOverride` read below to
+  // re-run after a save/clear (getGrowthOverride itself isn't
+  // reactive state, it's a plain localStorage read).
+  const [savedTick, setSavedTick] = useState(0);
+  const savedOverride = useMemo(() => getGrowthOverride(ticker), [ticker, savedTick]);
+  function saveOverrideForScan() {
+    if (stage1Pct === null || stage2Pct === null || stage3Pct === null) return;
+    setGrowthOverride(ticker, { stage1Pct, stage2Pct, stage3Pct });
+    setSavedTick((t) => t + 1);
+  }
+  function clearOverrideForScan() {
+    clearGrowthOverride(ticker);
+    setSavedTick((t) => t + 1);
   }
 
   const staged = useMemo(() => {
@@ -281,7 +335,10 @@ export default function ReverseDCF() {
         real growth capital). Net Debt defaults to the stock's latest Borrowings (Screener's simplified balance sheet doesn't reliably
         surface a Cash line for this app to net out automatically) — edit it if the company holds meaningful cash, which matters a lot here
         (a cash-rich company's true EV is lower than its market cap — exactly the setup in Saigal's own Putney Computer example). This is a
-        simplified, honestly-labeled proxy for Bloomberg's undisclosed model, not a claim to replicate it exactly.
+        simplified, honestly-labeled proxy for Bloomberg's undisclosed model, not a claim to replicate it exactly. <b>💾 Save for Scan</b>{" "}
+        (2026-09-13, "we cant apply generic rates across we need specific... same can reflect back to scan page") persists this ticker's 3
+        stages to your browser — <button className="underline" onClick={() => navigate("/reverse-dcf-scan")}>Reverse DCF Scan</button> picks
+        it up automatically and values just this one row against it, leaving every other row on its own auto-decayed market-implied rate.
       </MethodologyNote>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
@@ -376,6 +433,27 @@ export default function ReverseDCF() {
           <NumberField label="Years 1–3 (high)" value={stage1Pct ?? 0} onChange={setStage1Pct} suffix="%" />
           <NumberField label="Years 4–6 (medium)" value={stage2Pct ?? 0} onChange={setStage2Pct} suffix="%" />
           <NumberField label="Years 7–10 (low teens)" value={stage3Pct ?? 0} onChange={setStage3Pct} suffix="%" />
+        </div>
+        {/* 2026-09-13 ("we cant apply generic rates across we need
+            specific... same can reflect back to scan page") — this is
+            the "reflect back" half: save THIS stock's 3 stages so the
+            Scan page's own row for it uses them instead of auto-decay. */}
+        <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+          <button onClick={saveOverrideForScan} className="text-xs px-2 py-1 rounded border border-indigo-300 text-indigo-700 hover:border-indigo-400 whitespace-nowrap" title={`Save these 3 stages as ${ticker}'s growth override on Reverse DCF Scan`}>
+            💾 Save for Scan
+          </button>
+          {savedOverride && (
+            <button onClick={clearOverrideForScan} className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-500 hover:border-slate-400 whitespace-nowrap">
+              🗑 Clear saved override
+            </button>
+          )}
+          {savedOverride ? (
+            <span className="text-xs text-emerald-600">
+              ✓ Saved — Reverse DCF Scan will value {ticker} at {fmt(savedOverride.stage1Pct, 1)}% / {fmt(savedOverride.stage2Pct, 1)}% / {fmt(savedOverride.stage3Pct, 1)}%
+            </span>
+          ) : (
+            <span className="text-xs text-slate-400">No saved override for {ticker} — Scan uses its auto-decayed market-implied rate</span>
+          )}
         </div>
       </div>
 

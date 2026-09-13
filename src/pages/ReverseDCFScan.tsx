@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { lastActual } from "../lib/model";
 import { computeStagedDcf, solveReverseDcf } from "../lib/reverseDcf";
+import { getGrowthOverride } from "../lib/reverseDcfOverrides";
 import { Col, GenericTable, MethodologyNote, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
@@ -57,24 +58,20 @@ const DEFAULT_YEARS = 10;
 const STAGE2_DECAY = 0.7;
 const STAGE3_DECAY = 0.4;
 
-// 2026-09-13 ("provide user inputs for rev growth") — an opt-in second
-// mode alongside the fixed-decay reverse-solve above: instead of every
-// stock's own market-implied growth (auto-decayed), value every stock
-// against ONE growth path YOU type in (3 stages, same shape as the
-// single-stock page's own hand-tuned inputs, just applied uniformly
-// across the scan like the fixed decay rule already is). Off by
-// default — existing market-implied behavior is unaffected until this
-// is switched on. The flat market-implied rate is still solved and
-// shown either way (the "Flat Implied Growth (ref)" column), just not
-// used to derive the staged valuation when override mode is on.
-export interface GrowthOverride {
-  enabled: boolean;
-  stage1Pct: number;
-  stage2Pct: number;
-  stage3Pct: number;
-}
-
-function computeRow(ticker: string, stock: any, override: GrowthOverride) {
+// Reworked 2026-09-13 ("we cant apply generic rates across we need
+// specific, so its better you give a link from scan page to main
+// page, were we can override and same can reflect back to scan
+// page") — a blanket single growth path applied to every stock
+// (shipped hours earlier the same session) is gone. Per-ticker
+// instead: each row checks localStorage (getGrowthOverride, see
+// src/lib/reverseDcfOverrides.ts) for a growth path YOU saved for
+// THAT specific stock on its own /reverse-dcf page — present, it's
+// staged straight from your 3 numbers; absent (the default for every
+// stock until you explicitly save one), it's the existing fixed-decay
+// rule off that stock's own market-implied rate, completely
+// unchanged. The "✏️ Edit growth" link per row (below) is how you get
+// to /reverse-dcf to set one.
+function computeRow(ticker: string, stock: any) {
   const currentRevenueCr = lastActual(stock.revenue);
   const marketCapCr = stock.market_cap_cr ?? null;
   const price = stock.current_price ?? null;
@@ -98,20 +95,21 @@ function computeRow(ticker: string, stock: any, override: GrowthOverride) {
   };
 
   const { impliedGrowthPct: flatGrowthPct } = solveReverseDcf({ ...stagedInputs, years: DEFAULT_YEARS, targetEvCr });
+  const customGrowth = getGrowthOverride(ticker);
 
   let valuationGapPct: number | null = null;
   let verdict: string | null = null;
   let impliedPricePerShare: number | null = null;
-  // Override mode ("provide user inputs for rev growth") doesn't need
-  // a solved flat rate at all — it can stage straight from the user's
-  // own 3 inputs, so it still values a stock the market-implied path
-  // couldn't (e.g. a negative-margin story where solveReverseDcf has
-  // nothing to converge on). Market-implied mode is unchanged, still
-  // gated on flatGrowthPct !== null exactly as before.
-  if (override.enabled || flatGrowthPct !== null) {
+  // A saved per-ticker override doesn't need a solved flat rate at
+  // all — it can stage straight from your 3 saved numbers, so it
+  // still values a stock the market-implied path couldn't (e.g. a
+  // negative-margin story where solveReverseDcf has nothing to
+  // converge on). Auto-decay mode is unchanged, still gated on
+  // flatGrowthPct !== null exactly as before.
+  if (customGrowth !== null || flatGrowthPct !== null) {
     const staged = computeStagedDcf(
-      override.enabled
-        ? { ...stagedInputs, stage1Pct: override.stage1Pct, stage2Pct: override.stage2Pct, stage3Pct: override.stage3Pct }
+      customGrowth !== null
+        ? { ...stagedInputs, ...customGrowth }
         : { ...stagedInputs, stage1Pct: flatGrowthPct!, stage2Pct: flatGrowthPct! * STAGE2_DECAY, stage3Pct: Math.max(flatGrowthPct! * STAGE3_DECAY, DEFAULT_TERMINAL_GROWTH) },
     );
     valuationGapPct = ((staged.totalEvCr - targetEvCr) / targetEvCr) * 100;
@@ -131,7 +129,27 @@ function computeRow(ticker: string, stock: any, override: GrowthOverride) {
     verdict,
     flatGrowthPct,
     avg3yGrowth,
+    usingCustomGrowth: customGrowth !== null,
   };
+}
+
+// 2026-09-13 ("its better you give a link from scan page to main
+// page, were we can override and same can reflect back to scan
+// page") — every row's way in to /reverse-dcf to set (or edit) that
+// specific stock's own growth path. stopPropagation keeps this from
+// also triggering GenericTable's own row-click-to-navigate-to-company
+// behavior.
+function GrowthLink({ symbol, usingCustomGrowth }: { symbol: string; usingCustomGrowth?: boolean }) {
+  return (
+    <Link
+      to={`/reverse-dcf?ticker=${encodeURIComponent(symbol)}`}
+      onClick={(e) => e.stopPropagation()}
+      className={`text-[11px] whitespace-nowrap underline ${usingCustomGrowth ? "text-emerald-700 font-medium" : "text-slate-400"}`}
+      title={usingCustomGrowth ? "Using your own saved growth for this stock — click to edit" : "Using auto-decayed market-implied growth — click to set your own"}
+    >
+      {usingCustomGrowth ? "✏️ custom" : "✏️ auto"}
+    </Link>
+  );
 }
 
 const COLS: Col[] = [
@@ -182,6 +200,7 @@ const COLS: Col[] = [
     label: "Flat Implied Growth (ref)",
     render: (r) => (r.flatGrowthPct !== null ? <Signed v={r.flatGrowthPct} digits={1} /> : "—"),
   },
+  { key: "growthLink", label: "Growth", render: (r) => <GrowthLink symbol={r.symbol} usingCustomGrowth={r.usingCustomGrowth} /> },
   {
     key: "avg3yGrowth",
     label: "3Y Avg Growth (ref)",
@@ -254,6 +273,7 @@ const NSE750_COLS: Col[] = [
     label: "Flat Implied Growth (ref)",
     render: (r) => (r.flat_growth_pct !== null && r.flat_growth_pct !== undefined ? <Signed v={r.flat_growth_pct} digits={1} /> : "—"),
   },
+  { key: "growthLink", label: "Growth", render: (r) => <GrowthLink symbol={r.symbol} usingCustomGrowth={r.usingCustomGrowth} /> },
   {
     key: "avg_3y_growth_pct",
     label: "3Y Avg Growth (ref)",
@@ -262,18 +282,22 @@ const NSE750_COLS: Col[] = [
   { key: "as_of", label: "As of", align: "left", render: (r) => <span className="text-xs text-slate-400">{r.as_of ?? "—"}</span> },
 ];
 
-// 2026-09-13 ("provide user inputs for rev growth") — recomputes ONE
-// NSE750 row's staged valuation client-side against the user's own
-// growth override, reusing the exact same computeStagedDcf() the
-// ledger tab and the single-stock page both call. Needs the 4 raw
-// inputs (revenue_cr/margin_pct/tax_pct/net_debt_cr) the server started
-// pushing alongside this same change — a row from BEFORE that backend
-// deploy (or not yet re-scanned by its daily batch) won't have them
-// yet, so falls back to the server's own market-implied figures for
-// that row rather than silently showing nothing.
-function recomputeNse750Row(row: any, override: GrowthOverride) {
-  if (!override.enabled) return row;
-  if (row.revenue_cr == null || row.margin_pct == null || row.tax_pct == null) return { ...row, growthOverrideUnavailable: true };
+// Reworked 2026-09-13 (see computeRow's own comment above for the
+// full "why") — recomputes ONE NSE750 row's staged valuation
+// client-side against a per-ticker override YOU saved on that stock's
+// own /reverse-dcf page, reusing the exact same computeStagedDcf()
+// the ledger tab and single-stock page both call. Needs the 4 raw
+// inputs (revenue_cr/margin_pct/tax_pct/net_debt_cr) the server has
+// pushed alongside every NSE750 row since this same change — a row
+// from BEFORE that backend deploy (or not yet re-scanned by its own
+// daily batch) won't have them yet, so falls back to the server's own
+// market-implied figures for that row rather than silently showing
+// nothing (flagged via growthOverrideUnavailable, see NSE750_COLS'
+// Valuation Gap column).
+function recomputeNse750Row(row: any) {
+  const customGrowth = getGrowthOverride(row.symbol);
+  if (customGrowth === null) return { ...row, usingCustomGrowth: false };
+  if (row.revenue_cr == null || row.margin_pct == null || row.tax_pct == null) return { ...row, usingCustomGrowth: false, growthOverrideUnavailable: true };
   const netDebtCr = row.net_debt_cr ?? 0;
   const targetEvCr = (row.market_cap_cr ?? 0) + netDebtCr;
   const staged = computeStagedDcf({
@@ -284,9 +308,7 @@ function recomputeNse750Row(row: any, override: GrowthOverride) {
     terminalGrowthPct: DEFAULT_TERMINAL_GROWTH,
     netCapexPctOfRevenue: 0,
     wcPctOfIncrementalRevenue: 0,
-    stage1Pct: override.stage1Pct,
-    stage2Pct: override.stage2Pct,
-    stage3Pct: override.stage3Pct,
+    ...customGrowth,
   });
   const valuation_gap_pct = targetEvCr > 0 ? ((staged.totalEvCr - targetEvCr) / targetEvCr) * 100 : null;
   const verdict = valuation_gap_pct === null ? null : valuation_gap_pct > 10 ? "undervalued" : valuation_gap_pct < -10 ? "overvalued" : "fairly valued";
@@ -294,25 +316,7 @@ function recomputeNse750Row(row: any, override: GrowthOverride) {
   const sharesCr = price && price > 0 ? (row.market_cap_cr ?? 0) / price : null;
   const impliedEquityCr = staged.totalEvCr - netDebtCr;
   const implied_price_per_share = sharesCr && sharesCr > 0 ? impliedEquityCr / sharesCr : null;
-  return { ...row, implied_price_per_share, valuation_gap_pct, verdict };
-}
-
-function GrowthField({ label, value, onChange }: { label: string; value: number; onChange: (v: number) => void }) {
-  return (
-    <label className="flex flex-col gap-1 text-xs text-slate-600">
-      <span>{label}</span>
-      <div className="flex items-center gap-1">
-        <input
-          type="number"
-          step="any"
-          value={Number.isFinite(value) ? value : ""}
-          onChange={(e) => onChange(parseFloat(e.target.value))}
-          className="w-full px-2 py-1.5 border border-slate-300 rounded text-sm tabular-nums"
-        />
-        <span className="text-slate-400 text-xs">%</span>
-      </div>
-    </label>
-  );
+  return { ...row, implied_price_per_share, valuation_gap_pct, verdict, usingCustomGrowth: true };
 }
 
 export default function ReverseDCFScan() {
@@ -321,21 +325,9 @@ export default function ReverseDCFScan() {
   const watchlist = useWatchlist();
   const [source, setSource] = useState<"ledger" | "nse750">("ledger");
 
-  // 2026-09-13 ("provide user inputs for rev growth" -> "Your own
-  // growth override") — off by default so neither tab's existing
-  // market-implied behavior changes until a user opts in.
-  const [growthEnabled, setGrowthEnabled] = useState(false);
-  const [stage1Growth, setStage1Growth] = useState(15);
-  const [stage2Growth, setStage2Growth] = useState(10);
-  const [stage3Growth, setStage3Growth] = useState(6);
-  const override: GrowthOverride = useMemo(
-    () => ({ enabled: growthEnabled, stage1Pct: stage1Growth, stage2Pct: stage2Growth, stage3Pct: stage3Growth }),
-    [growthEnabled, stage1Growth, stage2Growth, stage3Growth],
-  );
-
   const ledgerRows = useMemo(() => {
     const computed = Object.entries(bundle.stocks)
-      .map(([ticker, stock]) => computeRow(ticker, stock, override))
+      .map(([ticker, stock]) => computeRow(ticker, stock))
       .filter((r): r is NonNullable<typeof r> => r !== null);
     // Rank by Valuation Gap descending — most-undervalued-by-the-staged-
     // DCF first, matching the single-stock page's own verdict logic
@@ -348,12 +340,15 @@ export default function ReverseDCFScan() {
       return b.valuationGapPct - a.valuationGapPct;
     });
     return computed.map((r, i) => ({ ...r, rank: i + 1 }));
-  }, [bundle.stocks, override]);
+  }, [bundle.stocks]);
 
   const nse750Entry = bundle.momentum_screeners["reverseDcfScanNse750"];
   const nse750Rows = useMemo(() => {
-    const recomputed = (nse750Entry?.rows ?? []).map((r: any) => recomputeNse750Row(r, override));
-    if (!override.enabled) return recomputed; // server already sorted/ranked these — unchanged
+    // Re-sort every time (cheap even at 750 rows) rather than only when
+    // some override exists — a saved per-ticker override only ever
+    // perturbs its own row's gap, so this is the simplest correct
+    // approach rather than tracking whether anything actually changed.
+    const recomputed = (nse750Entry?.rows ?? []).map((r: any) => recomputeNse750Row(r));
     recomputed.sort((a: any, b: any) => {
       if (a.valuation_gap_pct == null && b.valuation_gap_pct == null) return 0;
       if (a.valuation_gap_pct == null) return 1;
@@ -361,7 +356,7 @@ export default function ReverseDCFScan() {
       return b.valuation_gap_pct - a.valuation_gap_pct;
     });
     return recomputed.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [nse750Entry, override]);
+  }, [nse750Entry]);
 
   return (
     <div>
@@ -390,29 +385,17 @@ export default function ReverseDCFScan() {
         </button>
       </div>
 
-      {/* 2026-09-13 ("provide user inputs for rev growth") — applies to
-          BOTH tabs (shared state above), since it's the same override
-          mechanism either way: switch off market-implied growth,
-          value every stock against your own 3-stage assumption
-          instead. Off by default. */}
-      <div className="p-3 border border-slate-200 rounded-lg mb-4">
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-2">
-          <input type="checkbox" checked={growthEnabled} onChange={(e) => setGrowthEnabled(e.target.checked)} className="accent-indigo-600" />
-          Use my own growth assumption (instead of each stock's market-implied rate)
-        </label>
-        {growthEnabled && (
-          <div className="grid grid-cols-3 gap-3 max-w-md">
-            <GrowthField label="Years 1-3" value={stage1Growth} onChange={setStage1Growth} />
-            <GrowthField label="Years 4-6" value={stage2Growth} onChange={setStage2Growth} />
-            <GrowthField label="Years 7-10" value={stage3Growth} onChange={setStage3Growth} />
-          </div>
-        )}
-        <p className="text-[11px] text-slate-400 mt-2">
-          {growthEnabled
-            ? "Every row below is now valued against THIS growth path, uniformly — not each stock's own market-implied rate. \"Flat Implied Growth (ref)\" still shows what the market implies, for comparison."
-            : "Off — every row is valued against its own market-implied growth (solved from today's price), auto-decayed across 3 stages."}
-        </p>
-      </div>
+      {/* 2026-09-13 ("we cant apply generic rates across we need
+          specific, so its better you give a link from scan page to
+          main page, were we can override and same can reflect back
+          to scan page") — replaces the earlier same-day blanket
+          override (one growth path for every row) with a per-row
+          "✏️ Growth" link (in the table below) to that specific
+          stock's own /reverse-dcf page, where a saved override
+          reflects straight back here. No page-level toggle needed
+          anymore — every row already shows whether it's using a
+          saved custom path ("✏️ custom") or the default auto-decay
+          ("✏️ auto"). */}
 
       {source === "ledger" ? (
         <>
@@ -424,13 +407,12 @@ export default function ReverseDCFScan() {
             applied uniformly: <b>years 1-3</b> = the flat rate, <b>years 4-6</b> = 70% of it, <b>years 7-10</b> = 40% of it (floored at the
             5% terminal growth rate). <b>Implied Price (staged)</b> and <b>Valuation Gap</b>/<b>Verdict</b> come from that staged calculation
             — the same framing the single-stock page now uses, just with an automatic decay instead of your own hand-picked stages. The{" "}
-            <b>Flat Implied Growth</b> and <b>3Y Avg Growth</b> columns are reference only, same as on the single-stock page. Open a stock's
-            own /reverse-dcf entry to replace the auto-decay with real, hand-tuned assumptions for that specific company — this is a
-            first-pass screen, not a final answer for any one name. A stock with no computable gap sorts to the bottom rather than being
-            dropped. <b>"Use my own growth assumption"</b> above (2026-09-13, "provide user inputs for rev growth") swaps the whole
-            calculation: instead of each stock's own solved market-implied rate, every row is valued against the SAME growth path you type in
-            — turns this from a reverse-DCF screen ("what's the market pricing in") into a forward-DCF screen ("what's this worth if it grows
-            like THIS"). Unaffected when off — market-implied is still the default.
+            <b>Flat Implied Growth</b> and <b>3Y Avg Growth</b> columns are reference only, same as on the single-stock page. Click a row's{" "}
+            <b>✏️ Growth</b> link to open that specific company's own /reverse-dcf page and set a real, hand-tuned growth path for it —
+            (2026-09-13, "we cant apply generic rates across we need specific... link from scan page to main page, were we can override and
+            same can reflect back to scan page") — it saves to your browser and this row picks it up automatically, showing{" "}
+            <b>✏️ custom</b> instead of <b>✏️ auto</b> from then on. Every OTHER row keeps using the auto-decay untouched — this is a
+            per-company override, not a blanket one. A stock with no computable gap sorts to the bottom rather than being dropped.
           </MethodologyNote>
           <GenericTable
             rows={ledgerRows}
@@ -450,11 +432,12 @@ export default function ReverseDCFScan() {
             time — the full list is always a complete, same-day picture by the time all batches have run. No manual "Run now" here (a
             single click would try to process all 750 at once and time out). Same staged-DCF/fixed-decay logic as the ledger view (see that
             tab's own note for the exact decay rule) — server-side, covering the whole market instead of only what you've added.{" "}
-            <b>"Use my own growth assumption"</b> works here too — recomputed live in your browser off the same raw inputs (revenue/margin/
+            The per-row <b>✏️ Growth</b> override works here too — recomputed live in your browser off the same raw inputs (revenue/margin/
             tax/net debt) the server already fetched, no extra requests. A row from BEFORE 2026-09-13 that hasn't been re-scanned by its own
-            daily batch yet won't have those raw inputs backfilled — it falls back to showing the server's own market-implied figures instead
-            of silently going blank (flagged with a small <span className="text-amber-500">*</span> next to its Valuation Gap so it doesn't
-            read as "your growth applied" when it didn't), and catches up automatically once its next scheduled batch runs.
+            daily batch yet won't have those raw inputs backfilled — a saved override for it falls back to showing the server's own
+            market-implied figures instead of silently going blank (flagged with a small <span className="text-amber-500">*</span> next to
+            its Valuation Gap so it doesn't read as "your growth applied" when it didn't), and catches up automatically once its next
+            scheduled batch runs.
           </MethodologyNote>
           <GenericTable
             rows={nse750Rows}
