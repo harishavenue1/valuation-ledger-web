@@ -287,7 +287,23 @@ export function GenericTable({
               // screener that carries one, without needing an index (an
               // index-based key would be unique but changes every sort/
               // filter, forcing needless remounts of every row).
-              const rowKey = r.sector !== undefined ? `${sym}-${r.sector}` : sym;
+              //
+              // 2026-09-13 ("some problem on switching between tables
+              // under strategic page") — Strategic Alpha's own row shape
+              // has neither a real per-row symbol nor a sector: every
+              // ratio row shares the literal placeholder symbol="—" (a
+              // derived ratio isn't a tradable ticker) with no sector
+              // field at all, so ALL FOUR ratio rows collapsed onto the
+              // exact same key "—" — confirmed live as duplicated/
+              // leaking rows across the India/International/Ratios
+              // toggle (the same class of duplicate-key reconciliation
+              // bug the comment above already describes, just a
+              // different screener triggering it). Strategic Alpha rows
+              // DO carry their own unique "asset" name (e.g. "Gold (INR,
+              // ~MCX GOLD1!)") — checked live, no other screener in this
+              // file uses a field called "asset" — so it's checked FIRST
+              // as the most specific, always-unique-when-present key.
+              const rowKey = r.asset !== undefined ? r.asset : r.sector !== undefined ? `${sym}-${r.sector}` : sym;
               return (
                 <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
                   {cols.map((c) => (
