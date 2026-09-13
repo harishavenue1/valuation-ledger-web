@@ -10,6 +10,7 @@ import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
 import TechnicalSummary from "./pages/TechnicalSummary";
 import PortfolioAllocation from "./pages/PortfolioAllocation";
+import PortfolioPerformance from "./pages/PortfolioPerformance";
 import GlobalMacro from "./pages/GlobalMacro";
 import StrategicAlpha from "./pages/StrategicAlpha";
 import BulkBlockDeals from "./pages/BulkBlockDeals";
@@ -144,6 +145,9 @@ export default function App() {
               <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
                 💼 Portfolio
               </NavLink>
+              <NavLink to="/portfolio-performance" className={({ isActive }) => navClass(isActive)}>
+                📊 Perf
+              </NavLink>
               <NavLink to="/global-macro" className={({ isActive }) => navClass(isActive)}>
                 🌍 Macro
               </NavLink>
@@ -196,6 +200,7 @@ export default function App() {
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
+            <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/bulk-block-deals" element={<BulkBlockDeals />} />
