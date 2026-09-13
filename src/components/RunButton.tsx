@@ -35,6 +35,7 @@ const CLOUD_SCREENERS = new Set([
   "grandfatherFatherSon",
   "viraj_screen",
   "52wHigh",
+  "52wLow",
   "allTimeHigh",
   "momentumPersonal",
   "volumeRockers",

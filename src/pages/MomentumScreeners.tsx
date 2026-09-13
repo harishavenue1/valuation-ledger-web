@@ -58,6 +58,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "valueRsiTurnaround", label: "Value RSI Turnaround", emoji: "💎" },
   { key: "grandfatherFatherSon", label: "Grandfather-Father-Son", emoji: "👴" },
   { key: "52wHigh", label: "52-Week High", emoji: "🏔️" },
+  { key: "52wLow", label: "52-Week Low", emoji: "🕳️" },
   { key: "allTimeHigh", label: "All-Time High", emoji: "🗻" },
   { key: "momentumPersonal", label: "momentumPersonal", emoji: "🎯" },
   { key: "smeMomentum", label: "SME Momentum", emoji: "🌱" },
@@ -259,6 +260,15 @@ export default function MomentumScreeners() {
       { key: "high_52w", label: "52W High", render: (r) => fmtNum(r.high_52w) },
       { key: "pct_off_high", label: "% Off High", render: (r) => <Signed v={r.pct_off_high} digits={1} /> },
       { key: "new_high", label: "New High?", render: (r) => (r.new_high ? <span className="text-amber-600 font-semibold">Y</span> : "") },
+    ],
+    "52wLow": [
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "low_52w", label: "52W Low", render: (r) => fmtNum(r.low_52w) },
+      { key: "pct_off_low", label: "% Off Low", render: (r) => <Signed v={r.pct_off_low} digits={1} /> },
+      { key: "new_low", label: "New Low?", render: (r) => (r.new_low ? <span className="text-red-600 font-semibold">Y</span> : "") },
     ],
     allTimeHigh: [
       { key: "symbol", label: "Symbol", align: "left" },
@@ -478,6 +488,13 @@ export default function MomentumScreeners() {
         first. "High" means the highest <b>daily Close</b> over the last ~52 weeks, not the intraday High — a stock can be within band on a
         closing basis while today's intraday high was further away. <b>New High?</b> = today's close is at or above every close in that
         window (a genuine new 52-week high today, not just close to one).
+      </>
+    ),
+    "52wLow": (
+      <>
+        Mirror image of 52-Week High: no numeric score — every stock currently trading within <b>3% above its own trailing 52-week closing
+        low</b> is shown, closest-to-low first. "Low" means the lowest <b>daily Close</b> over the last ~52 weeks, not the intraday Low.{" "}
+        <b>New Low?</b> = today's close is at or below every close in that window (a genuine new 52-week low today, not just close to one).
       </>
     ),
     allTimeHigh: (
