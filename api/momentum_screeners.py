@@ -2910,16 +2910,13 @@ SA_ASSET_UNIVERSE = {
     # quoted directly in percent, e.g. 4.97 = 4.97%, not the old x10
     # CBOE convention) — confirmed live (close 4.97, +0.63% 1D).
     "US 10Y Yield": {"ticker": "^TNX", "tv": "TVC:US10Y", "region": "International"},
-    # India 10Y: ^IN10Y (TradingView's real symbol) was tried first —
-    # confirmed SKIPPED on a live production run (Yahoo doesn't carry
-    # it, as flagged when it was added). User's own call: fall back to
-    # NIFTYGS10YR.NS (Nifty 10yr Benchmark G-Sec bond PRICE index) as a
-    # proxy, "clearly labeled" — the label below says "Price" and the
-    # tag inline explains the inverse relationship (bond price UP =
-    # yield DOWN) so this doesn't read as an actual yield row. Not a
-    # true yield series — a real yield chart isn't available from
-    # Yahoo for India, this is the closest honest substitute.
-    "India 10Y G-Sec (Price, inv. of yield)": {"ticker": "NIFTYGS10YR.NS", "tv": "NSE:NIFTYGS10YR", "region": "India"},
+    # India 10Y: dropped 2026-09-13 ("drop the India 10Y row") after two
+    # dead ends confirmed live in production — ^IN10Y (the real yield
+    # ticker) returns no Yahoo data at all, and its price-index proxy
+    # NIFTYGS10YR.NS returns only a single current data point even on a
+    # 2-year range request (checked directly against Yahoo's own chart
+    # API), so neither can feed this screener's trend/return
+    # calculation. Not available via Yahoo through any route found.
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
