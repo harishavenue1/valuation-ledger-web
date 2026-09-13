@@ -1821,6 +1821,44 @@ def _run_52w_high(symbols, name_map, sector_map):
     return {"label": "52-Week High", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── 52wLow ───────────────────────────────────────────────────────────────
+#
+# Mirror image of 52wHigh above — added 2026-09-13 ("one more page
+# under momentum, 52W Lows"). NSE 750 stocks currently trading within
+# NSE_52W_BAND_PCT% ABOVE their own trailing-52-week closing LOW (same
+# band %, same Close-based convention, same fetch window/helper/
+# staleness guard — everything reused unchanged except the direction
+# of the comparison).
+
+
+def _run_52w_low(symbols, name_map, sector_map):
+    start = (date.today() - timedelta(days=NSE_52W_FETCH_DAYS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start)
+    if daily is None:
+        return None, "no data fetched from yfinance"
+
+    rows, skipped = [], []
+    for sym, g in daily.groupby("symbol"):
+        cd = g.set_index("date")["Close"].sort_index()
+        if len(cd) < NSE_52W_MIN_BARS or (date.today() - cd.index[-1].date()).days > NSE_STALE_DAYS:
+            skipped.append(sym)
+            continue
+        price = float(cd.iloc[-1])
+        low_52w = float(cd.min())
+        pct_off_low = round((price / low_52w - 1) * 100, 2)
+        if pct_off_low > NSE_52W_BAND_PCT:
+            continue  # not "skipped" (bad data) — just outside the band, the normal case for most of the universe
+        rows.append({
+            "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
+            "price": round(price, 2), "low_52w": round(low_52w, 2),
+            "pct_off_low": pct_off_low,
+            "new_low": bool(price <= low_52w),
+        })
+
+    rows.sort(key=lambda r: r["pct_off_low"])  # closest to (or at) the low first
+    return {"label": "52-Week Low", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 # ── allTimeHigh ──────────────────────────────────────────────────────────
 #
 # NSE 750 stocks within ATH_BAND_PCT% of their own all-time closing
@@ -3309,6 +3347,7 @@ SCREENER_RUNNERS = {
     "valueRsiTurnaround": _run_value_rsi_turnaround,
     "grandfatherFatherSon": _run_grandfather_father_son,
     "52wHigh": _run_52w_high,
+    "52wLow": _run_52w_low,
     "allTimeHigh": _run_all_time_high,
     "momentumPersonal": _run_momentum_personal,
     "smeMomentum": _run_sme_momentum,
