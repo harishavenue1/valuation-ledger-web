@@ -2748,21 +2748,21 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # names, those requested tickers are represented via the TradingView
 # link on the single Gold/Silver row instead of a separate row each.
 SA_ASSET_UNIVERSE = {
-    "Nifty 50": {"ticker": "^NSEI", "tv": "NSE:NIFTY"},
-    "Nifty 500": {"ticker": "^CRSLDX", "tv": "NSE:NIFTY500"},
-    "Nifty Smallcap 250": {"ticker": "NIFTYSMLCAP250.NS", "tv": "NSE:NIFTYSMLCAP250"},
-    "Nifty Midcap 150": {"ticker": "NIFTYMIDCAP150.NS", "tv": "NSE:NIFTYMIDCAP150"},
-    "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX"},
-    "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI"},
-    "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY"},
-    "Bitcoin": {"ticker": "BTC-USD", "tv": "COINBASE:BTCUSD"},
-    "Commodity Index (DBC)": {"ticker": "DBC", "tv": "AMEX:DBC"},
+    "Nifty 50": {"ticker": "^NSEI", "tv": "NSE:NIFTY", "region": "India"},
+    "Nifty 500": {"ticker": "^CRSLDX", "tv": "NSE:NIFTY500", "region": "India"},
+    "Nifty Smallcap 250": {"ticker": "NIFTYSMLCAP250.NS", "tv": "NSE:NIFTYSMLCAP250", "region": "India"},
+    "Nifty Midcap 150": {"ticker": "NIFTYMIDCAP150.NS", "tv": "NSE:NIFTYMIDCAP150", "region": "India"},
+    "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX", "region": "International"},
+    "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI", "region": "International"},
+    "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY", "region": "International"},
+    "Bitcoin": {"ticker": "BTC-USD", "tv": "COINBASE:BTCUSD", "region": "International"},
+    "Commodity Index (DBC)": {"ticker": "DBC", "tv": "AMEX:DBC", "region": "International"},
     # 2026-09-13 ("even copper") — same fix as Gold/Silver below: this
     # row shows raw COMEX USD/lb data, so its chart link now points to
     # the actual COMEX contract (COMEX:HG1!), not MCX's own INR-priced
     # copper contract (a different instrument, no dedicated INR row
     # for it exists on this page the way Gold/Silver now have one).
-    "Copper": {"ticker": "HG=F", "tv": "COMEX:HG1!"},
+    "Copper": {"ticker": "HG=F", "tv": "COMEX:HG1!", "region": "International"},
     # 2026-09-13 ("this supposed to be USD OZ Gold ... instead link
     # goes to MCX") — these rows show raw COMEX USD/oz data, so their
     # chart link now points to TVC:GOLD/TVC:SILVER (TradingView's own
@@ -2772,13 +2772,13 @@ SA_ASSET_UNIVERSE = {
     # row at all; now that "Gold (INR, ~MCX GOLD1!)"/"Silver (INR,
     # ~MCX SILVER1!)" exist as their own dedicated rows below, MCX
     # belongs on THOSE links instead, not duplicated here too.
-    "Gold": {"ticker": "GC=F", "tv": "TVC:GOLD"},
-    "Silver": {"ticker": "SI=F", "tv": "TVC:SILVER"},
-    "GOLDCASE": {"ticker": "GOLDCASE.NS", "tv": "NSE:GOLDCASE"},
-    "SILVERCASE": {"ticker": "SILVERCASE.NS", "tv": "NSE:SILVERCASE"},
-    "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL"},
-    "Gold Miners (GDX)": {"ticker": "GDX", "tv": "AMEX:GDX"},
-    "Copper Miners (COPX)": {"ticker": "COPX", "tv": "AMEX:COPX"},
+    "Gold": {"ticker": "GC=F", "tv": "TVC:GOLD", "region": "International"},
+    "Silver": {"ticker": "SI=F", "tv": "TVC:SILVER", "region": "International"},
+    "GOLDCASE": {"ticker": "GOLDCASE.NS", "tv": "NSE:GOLDCASE", "region": "India"},
+    "SILVERCASE": {"ticker": "SILVERCASE.NS", "tv": "NSE:SILVERCASE", "region": "India"},
+    "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL", "region": "International"},
+    "Gold Miners (GDX)": {"ticker": "GDX", "tv": "AMEX:GDX", "region": "International"},
+    "Copper Miners (COPX)": {"ticker": "COPX", "tv": "AMEX:COPX", "region": "International"},
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
@@ -2907,6 +2907,7 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
         if row is None:
             skipped.append(label)
             continue
+        row["region"] = spec["region"]  # 2026-09-13 ("split strategic page to india and international") — see frontend's India/International toggle
         rows.append(row)
 
     # 2026-09-12 ("take the ratios details and move to new page") — the
@@ -2947,6 +2948,7 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
         if row is None:
             skipped.append(label)
             continue
+        row["region"] = "India"  # INR/MCX-linked, regardless of the underlying COMEX fetch
         rows.append(row)
 
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None

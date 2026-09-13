@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import RunButton from "../components/RunButton";
@@ -91,6 +92,18 @@ export default function StrategicAlpha() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const entry = bundle.momentum_screeners["strategicAlpha"];
+  const allRows = entry?.rows ?? [];
+  // Added 2026-09-13 ("split strategic page to india and international
+  // tickets") — every asset in api/momentum_screeners.py's
+  // SA_ASSET_UNIVERSE is now tagged with its own "region" field
+  // ("India" or "International"); this just filters the SAME single
+  // dataset by that tag, same toggle-button pattern Reverse DCF Scan
+  // already uses for its ledger/NSE 750 sources — no separate fetch,
+  // no separate as_of, both views always refresh together.
+  const [region, setRegion] = useState<"india" | "international">("india");
+  const indiaRows = allRows.filter((r: any) => r.region === "India");
+  const internationalRows = allRows.filter((r: any) => r.region === "International");
+  const rows = region === "india" ? indiaRows : internationalRows;
 
   return (
     <div>
@@ -109,8 +122,26 @@ export default function StrategicAlpha() {
         channel's own recurring framework — refreshes daily on Vercel. The Nifty 500/Nifty 50 ratio (and three more relative-strength
         ratios) moved to its own <Link to="/market-ratios" className="underline">📐 Market Ratios</Link> page.
       </p>
+
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setRegion("india")}
+          className={`text-xs px-3 py-1.5 rounded border ${region === "india" ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+        >
+          🇮🇳 India ({indiaRows.length})
+        </button>
+        <button
+          onClick={() => setRegion("international")}
+          className={`text-xs px-3 py-1.5 rounded border ${region === "international" ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+        >
+          🌍 International ({internationalRows.length})
+        </button>
+      </div>
+
       <MethodologyNote>
-        Each asset's trend is <b>Bull</b> if its latest daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
+        The <b>🇮🇳 India</b>/<b>🌍 International</b> toggle above splits the same single dataset by region — both refresh together on the
+        same daily run, just filtered by which market each asset belongs to. Each asset's trend is <b>Bull</b> if its latest daily close is
+        above its own 200-day EMA (on Close, replicating the video's stated rule
         literally — not this app's own OHLC4 standing convention), <b>Bear</b> otherwise. The three <b>% vs EMA</b> columns show only the
         percentage distance from each line (200-day, 50-day, 33-week), not the EMA's own price level — the 50D/33W pair is this app's own
         addition on top of the video's framework (33-week matching myLongTermInvestingStrategy's own exit-rule EMA), both computed on OHLC4
@@ -133,7 +164,7 @@ export default function StrategicAlpha() {
         rotation" (the video itself calls this an undisclosed proprietary system).
       </MethodologyNote>
       <GenericTable
-        rows={entry?.rows ?? []}
+        rows={rows}
         cols={COLS}
         navigate={(t) => navigate(`/company/${t}`)}
         emptyMessage="No Strategic Alpha data yet — click Run now above."
