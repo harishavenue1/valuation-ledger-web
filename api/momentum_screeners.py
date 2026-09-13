@@ -3129,6 +3129,11 @@ SA_RATIO_UNIVERSE = {
     "Nifty Midcap 150 / Nifty 50": ("Nifty Midcap 150", "Nifty 50"),
     "Nifty Smallcap 250 / Nifty 50": ("Nifty Smallcap 250", "Nifty 50"),
     "Gold / Nifty 50": ("Gold", "Nifty 50"),
+    # 2026-09-13 ("under ratios add silver/gold") — the classic
+    # precious-metals ratio (Silver/Gold, rising = silver outperforming
+    # gold, a classic risk-on/industrial-demand read); reuses the raw
+    # COMEX Gold/Silver rows already fetched above, no new ticker.
+    "Silver / Gold": ("Silver", "Gold"),
     # 2026-09-13 ("under ratio add CNXSMALLCAP/CNX500") — CNX Smallcap
     # and CNX 500 are the pre-rebrand NSE names for today's Nifty
     # Smallcap 250 and Nifty 500 (both already fetched above for other
