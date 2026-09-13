@@ -3,8 +3,43 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
-import { GenericTable, NSE_SCREENER_COLS } from "../components/ScreenerTable";
+import { Col, GenericTable, NSE_SCREENER_COLS } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
+
+// 2026-09-13 ("can we add one more column to see where the stock lies
+// in our momentum category page, is it 52WeekLow, 52WeekHigh,
+// AllTimeHigh... add a tag, 52WH, 52WL, ALTH") — cross-references each
+// watchlisted symbol against the 3 named momentum screeners' OWN
+// pushed rows (bundle.momentum_screeners["52wHigh"/"52wLow"/
+// "allTimeHigh"]) and shows every tag that applies (a stock CAN be in
+// more than one — e.g. an all-time-high stock is very often also a
+// 52-week high on the same day). Membership only, no live
+// recomputation — exactly as fresh as each of those 3 screeners' own
+// last refresh (same staleness this page already accepts for
+// "Owned").
+const MOMENTUM_TAG_STYLE: Record<string, string> = {
+  "52WH": "bg-emerald-50 text-emerald-700 border-emerald-300",
+  "52WL": "bg-red-50 text-red-600 border-red-300",
+  ALTH: "bg-indigo-50 text-indigo-700 border-indigo-300",
+};
+
+function MomentumTags({ tags }: { tags: string[] }) {
+  if (!tags.length) return <span className="text-slate-300">—</span>;
+  return (
+    <div className="flex gap-1 flex-wrap">
+      {tags.map((t) => (
+        <span key={t} className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border whitespace-nowrap ${MOMENTUM_TAG_STYLE[t]}`}>
+          {t}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const WATCHLIST_COLS: Col[] = [
+  ...NSE_SCREENER_COLS,
+  { key: "momentumTags", label: "Momentum", render: (r) => <MomentumTags tags={r.momentumTags ?? []} /> },
+];
 
 // Deliberately NOT its own priced dataset — tickers here are just a
 // persisted list (api/watchlist.py); their columns (price/RSI D-W-M/
@@ -64,6 +99,20 @@ export default function Watchlist() {
     return m;
   }, [bundle.viraj_screen.rows]);
 
+  // 2026-09-13 ("add a tag, 52WH, 52WL, ALTH") — symbol sets from each
+  // of the 3 named momentum screeners' own pushed rows, checked per
+  // watchlisted ticker below.
+  const wh52Symbols = useMemo(() => new Set((bundle.momentum_screeners["52wHigh"]?.rows ?? []).map((r: any) => String(r.symbol))), [bundle.momentum_screeners["52wHigh"]]);
+  const wl52Symbols = useMemo(() => new Set((bundle.momentum_screeners["52wLow"]?.rows ?? []).map((r: any) => String(r.symbol))), [bundle.momentum_screeners["52wLow"]]);
+  const athSymbols = useMemo(() => new Set((bundle.momentum_screeners["allTimeHigh"]?.rows ?? []).map((r: any) => String(r.symbol))), [bundle.momentum_screeners["allTimeHigh"]]);
+  function momentumTagsFor(symbol: string): string[] {
+    const tags: string[] = [];
+    if (wh52Symbols.has(symbol)) tags.push("52WH");
+    if (wl52Symbols.has(symbol)) tags.push("52WL");
+    if (athSymbols.has(symbol)) tags.push("ALTH");
+    return tags;
+  }
+
   // Live per-ticker fetch (api/watchlist_detail.py) for whichever
   // watchlisted tickers nseScreener doesn't cover, so they get real
   // RSI/return-% instead of just name+price (2026-08-23, "build
@@ -77,7 +126,7 @@ export default function Watchlist() {
   const outsideNse750: string[] = [];
   const rows = tickers.map((t) => {
     const nse = nseBySymbol.get(t);
-    if (nse) return nse;
+    if (nse) return { ...nse, symbol: t, momentumTags: momentumTagsFor(t) };
     outsideNse750.push(t);
     const vr = virajBySymbol.get(t);
     const stock = bundle.stocks[t];
@@ -102,6 +151,7 @@ export default function Watchlist() {
       name: stock?.name || vr?.name || live?.name || t,
       sector: live?.sector || undefined,
       price: stock?.current_price ?? toNum(vr?.price) ?? toNum(live?.price) ?? null,
+      momentumTags: momentumTagsFor(t),
     };
   });
   // Keyed on the sorted ticker list, not the array reference, so the
@@ -174,8 +224,11 @@ export default function Watchlist() {
         </button>
       </div>
       <p className="text-xs text-slate-500 mb-4">
-        Columns match the NSE Screener tab. Tickers outside NSE 750 get their price/name from Screener.in (auto-fetched) and RSI/returns from a live yfinance lookup instead. Tap ★ on any
-        screener page to add a stock; tap it again here (or there) to remove it. Split below by whether it's an actual Kite holding (from Portfolio Allocation's last refresh) or a pure watch item.
+        Columns match the NSE Screener tab, plus a <b>Momentum</b> tag column (2026-09-13) showing which of the Momentum Screeners' own{" "}
+        <b>52WH</b> (52-Week High), <b>52WL</b> (52-Week Low), or <b>ALTH</b> (All-Time High) tabs a stock currently appears in — a stock can
+        carry more than one at once, or none. Tickers outside NSE 750 get their price/name from Screener.in (auto-fetched) and RSI/returns
+        from a live yfinance lookup instead. Tap ★ on any screener page to add a stock; tap it again here (or there) to remove it. Split below
+        by whether it's an actual Kite holding (from Portfolio Allocation's last refresh) or a pure watch item.
       </p>
 
       {tickers.length === 0 ? (
@@ -189,7 +242,7 @@ export default function Watchlist() {
           </div>
           <GenericTable
             rows={ownedRows}
-            cols={NSE_SCREENER_COLS}
+            cols={WATCHLIST_COLS}
             navigate={(t) => navigate(`/company/${t}`)}
             watchlist={watchlist}
             emptyMessage="None of your watchlist is currently in your portfolio."
@@ -200,7 +253,7 @@ export default function Watchlist() {
           </div>
           <GenericTable
             rows={notOwnedRows}
-            cols={NSE_SCREENER_COLS}
+            cols={WATCHLIST_COLS}
             navigate={(t) => navigate(`/company/${t}`)}
             watchlist={watchlist}
             emptyMessage="Everything on your watchlist is currently in your portfolio."
