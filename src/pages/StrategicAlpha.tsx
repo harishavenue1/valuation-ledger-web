@@ -106,11 +106,18 @@ export default function StrategicAlpha() {
   // the standalone Market Ratios page/screener (added earlier the same
   // day) was folded back into this same strategicAlpha screener,
   // tagged region="Ratios", rather than staying a separate page.
-  const [region, setRegion] = useState<"india" | "international" | "ratios">("india");
+  // Grew a fourth tab the same day — "Factor Rotation"
+  // (Momentum50/Alpha50/MulticapMomentumQuality50/Value50), the family
+  // v1's own module comment explicitly deferred ("no direct Yahoo
+  // ticker found for any of the three"). Re-checked live: some of
+  // these DO have a real ticker after all (see SA_ASSET_UNIVERSE's own
+  // note for which are raw indices vs. real tracking ETFs).
+  const [region, setRegion] = useState<"india" | "international" | "ratios" | "factor">("india");
   const indiaRows = allRows.filter((r: any) => r.region === "India");
   const internationalRows = allRows.filter((r: any) => r.region === "International");
   const ratiosRows = allRows.filter((r: any) => r.region === "Ratios");
-  const rows = region === "india" ? indiaRows : region === "international" ? internationalRows : ratiosRows;
+  const factorRows = allRows.filter((r: any) => r.region === "Factor");
+  const rows = region === "india" ? indiaRows : region === "international" ? internationalRows : region === "ratios" ? ratiosRows : factorRows;
 
   return (
     <div>
@@ -148,17 +155,30 @@ export default function StrategicAlpha() {
         >
           📐 Ratios ({ratiosRows.length})
         </button>
+        <button
+          onClick={() => setRegion("factor")}
+          className={`text-xs px-3 py-1.5 rounded border ${region === "factor" ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+        >
+          🏭 Factor ({factorRows.length})
+        </button>
       </div>
 
       <MethodologyNote>
-        The <b>🇮🇳 India</b>/<b>🌍 International</b>/<b>📐 Ratios</b> toggle above splits the same single dataset three ways — all refresh
-        together on the same daily run, just filtered by which bucket each asset belongs to. <b>📐 Ratios</b> is relative-strength ratios
-        (numerator Close ÷ denominator Close, treated as its own synthetic price series run through the exact same trend logic as every
-        other row): <b>Nifty 500 / Nifty 50</b> is the video's own original rule (rising = broader market leading, opportunities outside
-        large-caps); <b>Nifty Midcap 150 / Nifty 50</b> and <b>Nifty Smallcap 250 / Nifty 50</b> extend the same idea down the cap curve;{" "}
+        The <b>🇮🇳 India</b>/<b>🌍 International</b>/<b>📐 Ratios</b>/<b>🏭 Factor</b> toggle above splits the same single dataset four ways
+        — all refresh together on the same daily run, just filtered by which bucket each asset belongs to. <b>🏭 Factor</b> is the "Factor
+        Rotation" family the video's own framework calls for — v1 originally left this out entirely ("no direct Yahoo ticker found for any
+        of the three"), re-checked 2026-09-13 and every one of them turned out to have a real ticker after all: <b>Nifty Alpha 50</b>,{" "}
+        <b>Nifty500 Momentum 50</b>, <b>Nifty500 Value 50</b>, and <b>Nifty500 Quality 50</b> have real raw index tickers (the latter three
+        confirmed live via the user's own TradingView screenshots showing each exact NSE-native symbol actually quoted); <b>Nifty500
+        Multicap Momentum Quality 50</b> has no raw index ticker but DOES have a real, actually-traded ETF tracking it, used as the proxy
+        (same precedent GOLDCASE/SILVERCASE already set for gold/silver). <b>📐 Ratios</b> is relative-strength ratios (numerator Close ÷
+        denominator Close, treated as its own synthetic price series run through the exact same trend logic as every other row):{" "}
+        <b>Nifty 500 / Nifty 50</b> is the video's own original rule (rising = broader market leading, opportunities outside large-caps);{" "}
+        <b>Nifty Midcap 150 / Nifty 50</b> and <b>Nifty Smallcap 250 / Nifty 50</b> extend the same idea down the cap curve;{" "}
         <b>Gold / Nifty 50</b> tracks the classic risk-off/risk-on rotation between gold and Indian equities; <b>Nifty Smallcap 250 / Nifty
-        500</b> (CNX Smallcap / CNX 500 in the old pre-rebrand NSE names) is the same broad-vs-narrow read as Nifty 500/Nifty 50, one rung
-        further down the cap curve. Ratio rows have no chart link
+        500</b>, <b>Nifty500 Momentum 50 / Nifty 500</b>, <b>Nifty500 Value 50 / Nifty 500</b>, <b>Nifty500 Quality 50 / Nifty 500</b>, and{" "}
+        <b>Nifty Microcap 250 / Nifty 500</b> (CNX names in the old pre-rebrand NSE convention where requested) all measure a segment or
+        factor sleeve against the broad market instead of large-caps specifically. Ratio rows have no chart link
         (a ratio isn't a single tradable symbol) and their 50D/33W EMAs are computed as if Open/High/Low all equal Close (a ratio of closing
         prices has no real intraday range) — a reasonable approximation, not real OHLC data. Each asset's trend is <b>Bull</b> if its latest
         daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
@@ -179,10 +199,9 @@ export default function StrategicAlpha() {
         This is a fixed, point-in-time calibration, not a formula that self-corrects if the real duty/premium drifts over time. Their Close
         cell links to the real MCX chart on TradingView even though the price shown is the derived-and-calibrated approximation.
         <b>Nifty Microcap 250</b> and <b>Nifty MidSmallcap 400</b> were added 2026-09-13; Microcap 250 had no fetchable Yahoo ticker when first
-        requested (several formats tried, all 404) — a different one turned up since, not independently re-verified before shipping, so if it's
-        showing "—" it means that attempt also came up empty. <b>Not built</b>: Factor Rotation
-        (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
-        rotation" (the video itself calls this an undisclosed proprietary system).
+        requested (several formats tried, all 404) — a different one turned up since, confirmed live via the user's own TradingView
+        screenshot. <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week MA), and "country rotation" (the video itself calls
+        this an undisclosed proprietary system).
       </MethodologyNote>
       <GenericTable
         rows={rows}
