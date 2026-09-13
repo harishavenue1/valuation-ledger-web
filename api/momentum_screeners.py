@@ -2770,6 +2770,39 @@ SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
 SA_EMA33W_PERIOD = 33
 
+# INR-derived Gold/Silver (approximating MCX GOLD1!/SILVER1!) — added
+# 2026-09-13, see _run_strategic_alpha's own module comment for why
+# this is derived rather than fetched from a real MCX feed. COMEX
+# quotes USD per troy ounce; India conventionally quotes gold per 10
+# grams and silver per kilogram.
+SA_TROY_OZ_TO_GRAMS = 31.1034768
+SA_GOLD_GRAMS_PER_QUOTE_UNIT = 10
+SA_SILVER_GRAMS_PER_QUOTE_UNIT = 1000
+
+
+def _sa_inr_commodity_hist(usd_hist, usdinr_hist, grams_per_quote_unit):
+    """Converts a USD-per-troy-ounce OHLC history into an approximate
+    INR-per-`grams_per_quote_unit`-grams OHLC history using the daily
+    USDINR rate — NOT including import duty/GST/making charges, so the
+    absolute level runs below the real MCX print (a fixed, roughly
+    constant markup), but day-to-day % moves and EMA/RSI trend reads
+    should track closely. Reuses _sa_ratio_hist's own
+    common-index-then-combine shape (different combining formula:
+    multiply-and-scale here, divide there)."""
+    if usd_hist is None or usdinr_hist is None:
+        return None
+    common_idx = usd_hist.index.intersection(usdinr_hist.index)
+    if len(common_idx) < SA_EMA_PERIOD + 10:
+        return None
+    factor = (usdinr_hist["Close"].reindex(common_idx) / SA_TROY_OZ_TO_GRAMS) * grams_per_quote_unit
+    out = pd.DataFrame(index=common_idx)
+    for col in ("Open", "High", "Low", "Close"):
+        out[col] = usd_hist[col].reindex(common_idx) * factor
+    out = out.dropna()
+    if len(out) < SA_EMA_PERIOD + 10:
+        return None
+    return out
+
 
 def _sa_trend_row(label, ticker, tv_symbol, hist):
     if hist is None or len(hist) < SA_EMA_PERIOD + 10:
@@ -2850,6 +2883,35 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     # it now lives on its own page/screener (see marketRatios below,
     # _run_market_ratios) alongside three more ratio pairs, so it's no
     # longer computed as part of this screener.
+
+    # 2026-09-13 ("add GOLD1! & SILVER1! tickers which are indian mcx
+    # based tickers") — checked live whether real MCX futures data is
+    # reachable: Kite's search_instruments DOES have real MCX gold/
+    # silver contracts, but Kite only works from an interactive Claude
+    # session (same constraint as portfolioAllocation) — no good for a
+    # page that refreshes on an unattended daily cron. User's own
+    # suggestion instead: derive an approximate INR price from the
+    # already-fetched COMEX USD futures (Gold/Silver above) via the
+    # daily USDINR rate — no import duty/GST included, so the absolute
+    # level runs below the real MCX print, but day-to-day % moves and
+    # EMA/RSI trend reads should track closely (a roughly constant
+    # markup barely moves relative changes, which is all this page's
+    # own Bull/Bear + return-% framework actually uses). Distinct from
+    # the existing GOLDCASE/SILVERCASE rows (real NSE-traded
+    # commodity-tracking instruments, not derived) and from the raw
+    # Gold/Silver COMEX rows above (kept unchanged, USD global view).
+    usdinr_hist = _gxc_fetch_history("USDINR=X")
+    gold_inr_hist = _sa_inr_commodity_hist(hist.get("Gold"), usdinr_hist, SA_GOLD_GRAMS_PER_QUOTE_UNIT)
+    silver_inr_hist = _sa_inr_commodity_hist(hist.get("Silver"), usdinr_hist, SA_SILVER_GRAMS_PER_QUOTE_UNIT)
+    for label, derived_hist, tv in (
+        ("Gold (INR, ~MCX GOLD1!)", gold_inr_hist, "MCX:GOLD1!"),
+        ("Silver (INR, ~MCX SILVER1!)", silver_inr_hist, "MCX:SILVER1!"),
+    ):
+        row = _sa_trend_row(label, tv.split(":")[1], tv, derived_hist)
+        if row is None:
+            skipped.append(label)
+            continue
+        rows.append(row)
 
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 

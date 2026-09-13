@@ -117,10 +117,14 @@ export default function StrategicAlpha() {
         per this app's standing convention, so they're not directly comparable to the 200D EMA's Close-only basis. <b>1D/1W/1M/3M/6M/1Y %</b>{" "}
         are plain trailing returns as of the last close, same calculation globalCountryEtfs/globalCurrencies already use. Every row's{" "}
         <b>Close</b> price is itself the TradingView link.{" "}
-        <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — no MCX or literal spot feed is fetchable from here, so these
-        same numbers also stand in for the requested GOLDM1!/SILVER1!/"GOLD US$/OZ"/"SILVER US$/OZ" tickers (their Close cell links to the
-        actual MCX contracts on TradingView, even though the price data shown is the COMEX proxy); see <b>Portfolio Allocation</b> for the
-        INR-adjusted version of the same two. <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
+        <b>Gold</b>/<b>Silver</b> here are raw COMEX USD futures (GC=F/SI=F) — the global USD view, unchanged. <b>Gold (INR, ~MCX GOLD1!)</b>
+        /<b>Silver (INR, ~MCX SILVER1!)</b> are added 2026-09-13: real MCX futures data is only reachable via Kite, which only works from an
+        interactive Claude session (same limit as Portfolio Allocation) — no good for a page that refreshes on an unattended daily cron. So
+        these are DERIVED instead: the same COMEX USD price converted to INR at the daily USDINR rate (per 10g for gold, per kg for silver,
+        India's own quoting convention) — no import duty/GST/making-charge premium included, so the absolute level runs a few percent below
+        the real MCX print, but day-to-day % moves and the Bull/Bear trend read should track closely, which is all this page's own framework
+        actually uses. Their Close cell links to the real MCX chart on TradingView even though the price shown is the derived approximation.
+        <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
         it's left out rather than faked with a rough stand-in — same principle as everything below. <b>Not built</b>: Factor Rotation
         (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
         rotation" (the video itself calls this an undisclosed proprietary system).
