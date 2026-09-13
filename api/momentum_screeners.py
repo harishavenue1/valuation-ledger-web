@@ -2793,22 +2793,39 @@ SA_TROY_OZ_TO_GRAMS = 31.1034768
 SA_GOLD_GRAMS_PER_QUOTE_UNIT = 10
 SA_SILVER_GRAMS_PER_QUOTE_UNIT = 1000
 
+# India markup (import duty + GST + local exchange premium combined) —
+# added 2026-09-13 ("wrong value expected 152784" / "wrong ... expected
+# 234974") after the FIRST cut (pure bullion-equivalent conversion, no
+# markup) came in noticeably below the user's own live MCX quotes.
+# EMPIRICALLY CALIBRATED against those two live quotes on 2026-09-13,
+# not derived from a duty-rate citation — solve markup = real/derived-1
+# for each: gold 152784 / 135646.41 - 1 = +12.63%, silver 234974 /
+# 200560.65 - 1 = +17.16%. The two differ (not one shared "India
+# markup"), consistent with gold and silver having different real-world
+# duty/premium structures. This is a fixed point-in-time calibration —
+# if the real MCX/derived gap drifts over time (duty rates or the
+# local premium change), these two constants are the ones to re-tune,
+# the same way the rest of this derivation was designed to be checked
+# against reality rather than trusted blindly.
+SA_GOLD_INDIA_MARKUP_PCT = 12.63
+SA_SILVER_INDIA_MARKUP_PCT = 17.16
 
-def _sa_inr_commodity_hist(usd_hist, usdinr_hist, grams_per_quote_unit):
+
+def _sa_inr_commodity_hist(usd_hist, usdinr_hist, grams_per_quote_unit, india_markup_pct=0.0):
     """Converts a USD-per-troy-ounce OHLC history into an approximate
     INR-per-`grams_per_quote_unit`-grams OHLC history using the daily
-    USDINR rate — NOT including import duty/GST/making charges, so the
-    absolute level runs below the real MCX print (a fixed, roughly
-    constant markup), but day-to-day % moves and EMA/RSI trend reads
-    should track closely. Reuses _sa_ratio_hist's own
-    common-index-then-combine shape (different combining formula:
-    multiply-and-scale here, divide there)."""
+    USDINR rate, then applies a flat `india_markup_pct` (import duty +
+    GST + local premium, empirically calibrated — see the module
+    comment above) so the absolute level actually matches the real MCX
+    print, not just tracks its day-to-day % moves. Reuses
+    _sa_ratio_hist's own common-index-then-combine shape (different
+    combining formula: multiply-and-scale here, divide there)."""
     if usd_hist is None or usdinr_hist is None:
         return None
     common_idx = usd_hist.index.intersection(usdinr_hist.index)
     if len(common_idx) < SA_EMA_PERIOD + 10:
         return None
-    factor = (usdinr_hist["Close"].reindex(common_idx) / SA_TROY_OZ_TO_GRAMS) * grams_per_quote_unit
+    factor = (usdinr_hist["Close"].reindex(common_idx) / SA_TROY_OZ_TO_GRAMS) * grams_per_quote_unit * (1 + india_markup_pct / 100)
     out = pd.DataFrame(index=common_idx)
     for col in ("Open", "High", "Low", "Close"):
         out[col] = usd_hist[col].reindex(common_idx) * factor
@@ -2906,17 +2923,22 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     # page that refreshes on an unattended daily cron. User's own
     # suggestion instead: derive an approximate INR price from the
     # already-fetched COMEX USD futures (Gold/Silver above) via the
-    # daily USDINR rate — no import duty/GST included, so the absolute
-    # level runs below the real MCX print, but day-to-day % moves and
-    # EMA/RSI trend reads should track closely (a roughly constant
-    # markup barely moves relative changes, which is all this page's
-    # own Bull/Bear + return-% framework actually uses). Distinct from
-    # the existing GOLDCASE/SILVERCASE rows (real NSE-traded
-    # commodity-tracking instruments, not derived) and from the raw
-    # Gold/Silver COMEX rows above (kept unchanged, USD global view).
+    # daily USDINR rate — International Gold USD/oz × USDINR ÷
+    # SA_TROY_OZ_TO_GRAMS × grams-per-quote-unit, the user's own
+    # verified formula. The FIRST cut (that formula alone) landed
+    # ~13-17% below the user's live MCX quotes — confirmed live that
+    # the implied USDINR being used (~95.7) is a plausible real rate,
+    # not a bad fetch, so the gap is import duty + GST + local exchange
+    # premium, not a formula bug. SA_GOLD_INDIA_MARKUP_PCT/
+    # SA_SILVER_INDIA_MARKUP_PCT (see their own comment above) close
+    # that gap, empirically calibrated against those live quotes.
+    # Distinct from the existing GOLDCASE/SILVERCASE rows (real
+    # NSE-traded commodity-tracking instruments, not derived) and from
+    # the raw Gold/Silver COMEX rows above (kept unchanged, USD global
+    # view).
     usdinr_hist = _gxc_fetch_history("USDINR=X")
-    gold_inr_hist = _sa_inr_commodity_hist(hist.get("Gold"), usdinr_hist, SA_GOLD_GRAMS_PER_QUOTE_UNIT)
-    silver_inr_hist = _sa_inr_commodity_hist(hist.get("Silver"), usdinr_hist, SA_SILVER_GRAMS_PER_QUOTE_UNIT)
+    gold_inr_hist = _sa_inr_commodity_hist(hist.get("Gold"), usdinr_hist, SA_GOLD_GRAMS_PER_QUOTE_UNIT, SA_GOLD_INDIA_MARKUP_PCT)
+    silver_inr_hist = _sa_inr_commodity_hist(hist.get("Silver"), usdinr_hist, SA_SILVER_GRAMS_PER_QUOTE_UNIT, SA_SILVER_INDIA_MARKUP_PCT)
     for label, derived_hist, tv in (
         ("Gold (INR, ~MCX GOLD1!)", gold_inr_hist, "MCX:GOLD1!"),
         ("Silver (INR, ~MCX SILVER1!)", silver_inr_hist, "MCX:SILVER1!"),
