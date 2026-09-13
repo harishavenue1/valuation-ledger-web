@@ -3439,6 +3439,18 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
             "verdict": verdict,
             "flat_growth_pct": implied_growth,
             "avg_3y_growth_pct": avg3y,
+            # 2026-09-13 ("provide user inputs for rev growth") — raw
+            # inputs the staged DCF itself needs, alongside the already-
+            # computed market-implied result above. Without these, the
+            # frontend has no way to recompute a staged valuation against
+            # a user's OWN growth assumption (only the server ever solves
+            # the flat market-implied rate) — with them, ReverseDCFScan.tsx
+            # can call the exact same computeStagedDcf() client-side, just
+            # swapping in whatever stage1/2/3 growth the user typed.
+            "revenue_cr": revenue0,
+            "margin_pct": margin,
+            "tax_pct": tax,
+            "net_debt_cr": net_debt,
             "as_of": date.today().isoformat(),
         })
 
