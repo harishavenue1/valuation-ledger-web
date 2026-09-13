@@ -2757,9 +2757,23 @@ SA_ASSET_UNIVERSE = {
     "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY"},
     "Bitcoin": {"ticker": "BTC-USD", "tv": "COINBASE:BTCUSD"},
     "Commodity Index (DBC)": {"ticker": "DBC", "tv": "AMEX:DBC"},
-    "Copper": {"ticker": "HG=F", "tv": "MCX:COPPER1!"},
-    "Gold": {"ticker": "GC=F", "tv": "MCX:GOLDM1!"},
-    "Silver": {"ticker": "SI=F", "tv": "MCX:SILVER1!"},
+    # 2026-09-13 ("even copper") — same fix as Gold/Silver below: this
+    # row shows raw COMEX USD/lb data, so its chart link now points to
+    # the actual COMEX contract (COMEX:HG1!), not MCX's own INR-priced
+    # copper contract (a different instrument, no dedicated INR row
+    # for it exists on this page the way Gold/Silver now have one).
+    "Copper": {"ticker": "HG=F", "tv": "COMEX:HG1!"},
+    # 2026-09-13 ("this supposed to be USD OZ Gold ... instead link
+    # goes to MCX") — these rows show raw COMEX USD/oz data, so their
+    # chart link now points to TVC:GOLD/TVC:SILVER (TradingView's own
+    # "GOLD US$/OZ"/"SILVER US$/OZ" symbols — matches the original
+    # request's own naming exactly), not MCX. The MCX link used to
+    # live here as a stand-in for when there was no real MCX-priced
+    # row at all; now that "Gold (INR, ~MCX GOLD1!)"/"Silver (INR,
+    # ~MCX SILVER1!)" exist as their own dedicated rows below, MCX
+    # belongs on THOSE links instead, not duplicated here too.
+    "Gold": {"ticker": "GC=F", "tv": "TVC:GOLD"},
+    "Silver": {"ticker": "SI=F", "tv": "TVC:SILVER"},
     "GOLDCASE": {"ticker": "GOLDCASE.NS", "tv": "NSE:GOLDCASE"},
     "SILVERCASE": {"ticker": "SILVERCASE.NS", "tv": "NSE:SILVERCASE"},
     "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL"},
