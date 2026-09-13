@@ -43,7 +43,9 @@ const CLOUD_SCREENERS = new Set([
   "globalCountryEtfs",
   "globalCurrencies",
   "strategicAlpha",
-  "marketRatios",
+  // marketRatios folded into strategicAlpha 2026-09-13 ("merge the
+  // strategic and ratios page under strategic") — no longer its own
+  // screener key, so no separate entry here.
   // smeMomentum deliberately NOT here — confirmed live 2026-09-05 that
   // nseindia.com's Emerge feed (the only source for this data) times
   // out from Vercel's datacenter IP, so it can't run there at all. It

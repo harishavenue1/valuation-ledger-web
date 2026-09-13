@@ -2948,11 +2948,35 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
         row["region"] = spec["region"]  # 2026-09-13 ("split strategic page to india and international") — see frontend's India/International toggle
         rows.append(row)
 
-    # 2026-09-12 ("take the ratios details and move to new page") — the
-    # Nifty 500/Nifty 50 relative-strength ratio row used to live here;
-    # it now lives on its own page/screener (see marketRatios below,
-    # _run_market_ratios) alongside three more ratio pairs, so it's no
-    # longer computed as part of this screener.
+    # 2026-09-12 ("take the ratios details and move to new page") then
+    # 2026-09-13 ("merge the strategic and ratios page under
+    # strategic") — the Nifty 500/Nifty 50 relative-strength ratio row
+    # (and 3 more ratio pairs added along the way) briefly lived on
+    # their own page/screener (marketRatios); folded back into this
+    # same screener/cron, tagged region="Ratios" so the frontend's
+    # existing India/International toggle just grows a third tab
+    # instead of needing a separate page again. SA_RATIO_UNIVERSE/
+    # _sa_ratio_hist (defined further below in this file — fine, Python
+    # only needs them to exist by the time this function is actually
+    # CALLED, not by the time it's defined) are unchanged from the
+    # standalone marketRatios screener, just invoked from here now.
+    needed = {label for pair in SA_RATIO_UNIVERSE.values() for label in pair}
+    # `hist.get(label) or ...` would be wrong here — a DataFrame's
+    # truthiness is ambiguous to Python (raises ValueError), not simply
+    # falsy-when-empty like a list/dict, so this needs an explicit
+    # `is None` check instead.
+    ratio_hist_cache = {
+        label: hist[label] if hist.get(label) is not None else _gxc_fetch_history(SA_ASSET_UNIVERSE[label]["ticker"])
+        for label in needed
+    }
+    for label, (num_label, den_label) in SA_RATIO_UNIVERSE.items():
+        ratio_hist = _sa_ratio_hist(ratio_hist_cache.get(num_label), ratio_hist_cache.get(den_label))
+        row = _sa_trend_row(label, "—", None, ratio_hist)
+        if row is None:
+            skipped.append(label)
+            continue
+        row["region"] = "Ratios"
+        rows.append(row)
 
     # 2026-09-13 ("add GOLD1! & SILVER1! tickers which are indian mcx
     # based tickers") — checked live whether real MCX futures data is
@@ -2992,15 +3016,20 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
-# ── marketRatios ─────────────────────────────────────────────────────────────
+# ── Market Ratios (folded into strategicAlpha, region="Ratios") ─────────────
 #
 # Added 2026-09-12 ("take the ratios details and move to new page, add
-# Midcap/Nifty50, SmallCap/Nifty50, Gold/Nifty50") — split out of
-# strategicAlpha's own "Nifty 500 / Nifty 50 ratio" row (the video's own
-# stated rule: a rising ratio means the numerator is outperforming the
-# denominator) and generalized to a small family of relative-strength
-# ratio pairs, each on its own page/table now instead of one row buried
-# inside Strategic Alpha.
+# Midcap/Nifty50, SmallCap/Nifty50, Gold/Nifty50") as its own page/
+# screener, split out of strategicAlpha's own "Nifty 500 / Nifty 50
+# ratio" row (the video's own stated rule: a rising ratio means the
+# numerator is outperforming the denominator). Folded back in
+# 2026-09-13 ("merge the strategic and ratios page under strategic") —
+# see _run_strategic_alpha above, which now computes these directly
+# and tags them region="Ratios" for the frontend's own toggle. Kept as
+# their own named constant/helper here (not inlined into
+# _run_strategic_alpha's body) since SA_RATIO_UNIVERSE is a distinct
+# piece of config and _sa_ratio_hist is a genuinely separate
+# transformation, not because anything still calls them standalone.
 #
 # Reuses _sa_trend_row UNCHANGED (not duplicated) by building a
 # synthetic OHLC history for the ratio itself — Open/High/Low are all
@@ -3028,22 +3057,6 @@ def _sa_ratio_hist(numerator_hist, denominator_hist):
     if len(ratio) < SA_EMA_PERIOD + 10:
         return None
     return pd.DataFrame({"Open": ratio, "High": ratio, "Low": ratio, "Close": ratio})
-
-
-def _run_market_ratios(symbols, name_map, sector_map):
-    needed = {label for pair in SA_RATIO_UNIVERSE.values() for label in pair}
-    hist = {label: _gxc_fetch_history(SA_ASSET_UNIVERSE[label]["ticker"]) for label in needed}
-
-    rows, skipped = [], []
-    for label, (num_label, den_label) in SA_RATIO_UNIVERSE.items():
-        ratio_hist = _sa_ratio_hist(hist.get(num_label), hist.get(den_label))
-        row = _sa_trend_row(label, "—", None, ratio_hist)
-        if row is None:
-            skipped.append(label)
-            continue
-        rows.append(row)
-
-    return {"label": "Market Ratios", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 # ── reverseDcfScanNse750 ─────────────────────────────────────────────────────
@@ -3356,7 +3369,6 @@ SCREENER_RUNNERS = {
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
     "strategicAlpha": _run_strategic_alpha,
-    "marketRatios": _run_market_ratios,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
 }
 
