@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { fmt, fmtSigned } from "../lib/model";
 import { MethodologyNote } from "../components/ScreenerTable";
-import { computeMtfRow, computeMtfTotals, computeZerodhaCharges, defaultInstrument, DEFAULT_ASSUMPTIONS, DEFAULT_DAYS, MtfAssumptions, MtfInstrument } from "../lib/mtf";
+import { computeMtfRow, computeMtfTotals, defaultInstrument, DEFAULT_ASSUMPTIONS, DEFAULT_DAYS, MtfAssumptions, MtfInstrument } from "../lib/mtf";
 
 // MTF Calculator — added 2026-09-13, "can we build this as a new page"
 // after reviewing the user's own MTF-Gold/MTF-Silver Google Sheet, and
@@ -92,9 +92,9 @@ function NumberField({ label, value, onChange, suffix, title }: { label: string;
   );
 }
 
-function MetricCard({ label, caption, value, sub, tone }: { label: string; caption?: string; value: string; sub?: string; tone?: "profit" | "loss" }) {
+function MetricCard({ label, caption, value, sub, tone, title }: { label: string; caption?: string; value: string; sub?: string; tone?: "profit" | "loss"; title?: string }) {
   return (
-    <div>
+    <div title={title} className={title ? "cursor-help" : undefined}>
       <div className="text-xs text-slate-500">
         {label} {caption && <span className="text-slate-400">({caption})</span>}
       </div>
@@ -120,15 +120,28 @@ function InstrumentCard({
   assumptions: MtfAssumptions;
   dayBuckets: number[];
 }) {
-  const { totalInv, funded, sellValue, leverageX } = computeMtfTotals(inst);
+  const { totalInv, funded, leverageX, chargesBreakdown } = computeMtfTotals(inst);
   const live = computeMtfRow(inst, assumptions, inst.days);
   const rows = dayBuckets.map((d) => computeMtfRow(inst, assumptions, d));
   const investedPct = totalInv > 0 ? (inst.investedAmount / totalInv) * 100 : 0;
   const fundedPct = 100 - investedPct;
   const isLtcg = inst.days > assumptions.ltcgThresholdDays;
 
-  function recalcZerodhaCharges() {
-    onChange({ ...inst, charges: computeZerodhaCharges(totalInv, sellValue) });
+  // 2026-09-13 ("remove the charges as input tab, it must via rules not
+  // a user input" then "give a breakdown with percentages of charges on
+  // mouse over") — Charges is no longer editable (derived fresh from
+  // computeZerodhaChargesBreakdown every render); this formats that
+  // breakdown as a native-tooltip string (each component's ₹ and % of
+  // the total) for the "Brokerage + Charges" metric card below.
+  function chargesTooltip(b: typeof chargesBreakdown): string {
+    const pct = (v: number) => (b.total > 0 ? (v / b.total) * 100 : 0);
+    return [
+      `Brokerage: ₹${fmt(b.brokerage, 2)} (${fmt(pct(b.brokerage), 1)}%)`,
+      `STT: ₹${fmt(b.stt, 2)} (${fmt(pct(b.stt), 1)}%)`,
+      `Stamp duty: ₹${fmt(b.stampDuty, 2)} (${fmt(pct(b.stampDuty), 1)}%)`,
+      `Pledge/unpledge: ₹${fmt(b.pledgeUnpledge, 2)} (${fmt(pct(b.pledgeUnpledge), 1)}%)`,
+      `Total: ₹${fmt(b.total, 2)}`,
+    ].join("\n");
   }
 
   return (
@@ -152,9 +165,12 @@ function InstrumentCard({
       </div>
 
       {/* Secondary inputs Zerodha derives live per-stock (Margin%,
-          Leverage) or states as a flat platform rate (Daily Interest,
-          Charges) — all manual/editable here. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+          Leverage) or states as a flat platform rate (Daily Interest)
+          — manual/editable here. Charges is NOT here — it's derived
+          purely from Zerodha's own formula (rule-based, not a user
+          input); see the "Brokerage + Charges" metric card below,
+          hover it for the itemized breakdown. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-5">
         <NumberField
           label="Margin %"
           value={inst.marginPct}
@@ -169,12 +185,6 @@ function InstrumentCard({
           suffix="%/day"
           title="Zerodha's real MTF rate is a flat 0.04%/day (₹40 per lakh funded), charged from T+1 until sold — not annualized"
         />
-        <div className="flex flex-col gap-1">
-          <NumberField label="Charges" value={inst.charges} onChange={(v) => onChange({ ...inst, charges: v })} suffix="₹" title="Brokerage + STT + stamp duty + pledge/unpledge" />
-          <button onClick={recalcZerodhaCharges} className="text-[11px] text-indigo-600 underline text-left" title="Recompute from Zerodha's own documented formula for this trade's current size">
-            ↺ Zerodha's formula
-          </button>
-        </div>
         <label
           className="flex flex-col gap-1 text-xs text-slate-600"
           title="Gold/silver (and other non-'listed security' assets) aren't taxed at the flat STCG rate — short-term gains follow your own income slab instead, and surcharge+cess stack on top of the resulting tax. Uncheck for equity/ETF instruments."
@@ -197,7 +207,7 @@ function InstrumentCard({
           it") — all reflect inst.days, the slider above. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-lg p-4 mt-1">
         <MetricCard label="Applicable interest" caption={`${inst.dailyRatePct}% per day`} value={`₹${fmt(live.intPaid, 0)}`} />
-        <MetricCard label="Brokerage + Charges" value={`₹${fmt(live.charges, 0)}`} />
+        <MetricCard label="Brokerage + Charges" value={`₹${fmt(live.charges, 0)}`} title={chargesTooltip(chargesBreakdown)} />
         <MetricCard
           label="Tax"
           caption={`${fmt(live.taxRatePct, 2)}% ${isLtcg ? "LTCG" : inst.slabRateTax ? "slab" : "STCG"}${inst.slabRateTax ? " +surcharge/cess" : ""}`}
@@ -335,7 +345,9 @@ export default function MTFCalculator() {
         exactly to Zerodha's own ₹1,85,040 (Funded × 0.04%/day × days, simple interest, compounding ignored); <b>Brokerage + Charges</b>{" "}
         (brokerage 0.3% or ₹20/order — whichever's LOWER — both legs, STT 0.1% delivery both legs, stamp duty 0.015% buy leg, pledge/unpledge
         ₹15+18% GST each way) lands ~3% under Zerodha's own ₹9,831.02 for the same trade (smaller statutory items — exchange transaction
-        charges, SEBI fees, GST on brokerage — aren't modeled; click "↺ Zerodha's formula" to reseed it after changing the sliders).{" "}
+        charges, SEBI fees, GST on brokerage — aren't modeled). Charges is <b>not a user input</b> (2026-09-13, "it must via rules not a user
+        input") — it's recomputed fresh from this formula every time the sliders change; hover the metric card for the itemized ₹/%
+        breakdown (2026-09-13, "give a breakdown with percentages of charges on mouse over").{" "}
         <b>Tax</b> is the one metric Zerodha's own calculator doesn't have at all — added here (2026-09-13, "I guess only tax is not part of
         zerodha, lets add it"): STCG below {assumptions.ltcgThresholdDays} days held, LTCG above it, floored at zero (a loss doesn't generate a
         tax credit). <b>Slab-rate tax</b> (checked by default for Gold/Silver, 2026-09-13 "for gold and silver STCG is slab rate ... include
