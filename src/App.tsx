@@ -15,6 +15,7 @@ import StrategicAlpha from "./pages/StrategicAlpha";
 import BulkBlockDeals from "./pages/BulkBlockDeals";
 import ReverseDCF from "./pages/ReverseDCF";
 import ReverseDCFScan from "./pages/ReverseDCFScan";
+import MTFCalculator from "./pages/MTFCalculator";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -110,7 +111,7 @@ export default function App() {
                 "Tracker", "Screen(ers)", "Summary", "Allocation") and
                 tightened text size/gaps rather than adding a scrollbar
                 or wrapping to a second row. */}
-            <nav className="flex gap-2.5 text-xs whitespace-nowrap">
+            <nav className="flex gap-2 text-xs whitespace-nowrap">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
@@ -157,6 +158,9 @@ export default function App() {
               <NavLink to="/reverse-dcf-scan" className={({ isActive }) => navClass(isActive)}>
                 📋 DCF Scan
               </NavLink>
+              <NavLink to="/mtf-calculator" className={({ isActive }) => navClass(isActive)}>
+                📐 MTF
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -193,6 +197,7 @@ export default function App() {
             <Route path="/bulk-block-deals" element={<BulkBlockDeals />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
+            <Route path="/mtf-calculator" element={<MTFCalculator />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
