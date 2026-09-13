@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { lastActual } from "../lib/model";
 import { solveReverseDcf } from "../lib/reverseDcf";
-import { Col, GenericTable, MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-12 — "found another way to calculate reverse dcf
@@ -78,7 +78,7 @@ const COLS: Col[] = [
   { key: "rank", label: "Rank" },
   { key: "symbol", label: "Symbol", align: "left" },
   { key: "name", label: "Name", align: "left" },
-  { key: "price", label: "Price", render: (r) => fmtNum(r.price, 2) },
+  { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
   { key: "marketCapCr", label: "Market Cap", render: (r) => (r.marketCapCr != null ? `${fmtNum(r.marketCapCr, 0)} Cr` : "—") },
   {
     key: "impliedGrowthPct",
@@ -140,7 +140,7 @@ const NSE750_COLS: Col[] = [
   { key: "rank", label: "Rank" },
   { key: "symbol", label: "Symbol", align: "left" },
   { key: "name", label: "Name", align: "left" },
-  { key: "price", label: "Price", render: (r) => fmtNum(r.price, 2) },
+  { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
   { key: "market_cap_cr", label: "Market Cap", render: (r) => (r.market_cap_cr != null ? `${fmtNum(r.market_cap_cr, 0)} Cr` : "—") },
   {
     key: "implied_growth_pct",
