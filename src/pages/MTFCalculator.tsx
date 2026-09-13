@@ -400,9 +400,10 @@ export default function MTFCalculator() {
         capital-gains tax. Set your own <b>Income slab rate</b> and <b>Surcharge</b> bracket in Shared assumptions (this app has no notion of
         your actual income, so these are manual); <b>Cess</b> defaults to the standard flat 4%. Uncheck "Slab-rate tax" on any instrument to
         use the plain equity STCG%/LTCG% instead (no surcharge/cess) — unaffected, same as before. <b>Profit & Loss</b> = P/L − Tax − Charges
-        − Interest, and its % = Profit & Loss ÷ (Invested + Interest) — this differs
-        from Zerodha's own displayed %, which divides by Invested alone; kept as the interest-adjusted version per this session's earlier,
-        explicit decision. <b>Margin%</b>/<b>Leverage</b> stays a manual input — Zerodha looks this up live, per stock (e.g. GOLDCASE 28%/
+        − Interest, and its % = Profit & Loss ÷ Invested — matches Zerodha's own convention now (2026-09-13, "switch it to investment only, so
+        it wont be double counted": Interest is already subtracted once in the numerator, so adding it to the denominator too doesn't change
+        the rupee figure, but it did mechanically shrink the % the longer you held — reversed once spotted live on the page). <b>Margin%</b>/
+        <b>Leverage</b> stays a manual input — Zerodha looks this up live, per stock (e.g. GOLDCASE 28%/
         3.57x, RELIANCE ~22.6%/4.42x), which this app can't fetch headlessly. Below each card's live result: the same instrument run across
         every day bucket in the shared list below at once (highlighted row = the slider's current day count) — Zerodha's own page only ever
         shows one day count at a time.

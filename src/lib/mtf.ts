@@ -71,6 +71,19 @@
 // the default for anything else) are unaffected — plain stcgPct/
 // ltcgPct, no surcharge/cess, same as every earlier version of this
 // file.
+//
+// Reversed 2026-09-13 ("switch it to investment only, so it wont be
+// double counted") — PAT(Lev)%'s denominator (correction #1, kept
+// through every update above) is now plain Invested, not Invested +
+// IntPaid. User caught this live on the page, questioning why Final
+// Profit % read 87.22% when Final Profit ÷ Investment alone gives
+// 103.36% — Interest is already subtracted out of the numerator once,
+// so adding it to the denominator too doesn't double-count the RUPEE
+// amount, but it does mechanically shrink the % the longer you hold,
+// for a cost already reflected in Final Profit — the exact same shape
+// of complaint that motivated correction #1 against Tax in the first
+// place, just recognized later for Interest too. Also now matches
+// both the plain intuitive reading and Zerodha's own real convention.
 
 export interface MtfInstrument {
   name: string;
@@ -184,8 +197,19 @@ export function computeMtfRow(inst: MtfInstrument, assumptions: MtfAssumptions, 
 
   const finalProfit = pl - tax - charges - intPaid;
   const totalCashOut = invested + tax + charges + intPaid;
-  const patLevBase = invested + intPaid;
-  const patLevPct = patLevBase > 0 ? (finalProfit / patLevBase) * 100 : null;
+  // 2026-09-13 ("switch it to investment only, so it wont be double
+  // counted") — was Invested + IntPaid (a fix applied earlier this
+  // session, over the original sheet's Invested+Tax+Charges+IntPaid).
+  // User caught it live on the page: Interest is already subtracted
+  // out of the numerator (finalProfit) once, so adding it into the
+  // denominator too doesn't literally double-count the RUPEE amount,
+  // but it does shrink the % purely as a side effect of holding
+  // longer (more interest -> bigger denominator -> lower %) even
+  // though that cost is already reflected in finalProfit — confusing
+  // in practice, and it doesn't match the plain, intuitive reading
+  // (return on your own money) or Zerodha's own real convention
+  // either. Denominator is just Invested now.
+  const patLevPct = invested > 0 ? (finalProfit / invested) * 100 : null;
 
   const finalProfitWoLev = invested * (inst.expPlPct / 100) * (1 - taxRatePct / 100) - charges;
   const patWoLevPct = invested > 0 ? (finalProfitWoLev / invested) * 100 : null;
