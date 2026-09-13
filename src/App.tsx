@@ -16,6 +16,7 @@ import BulkBlockDeals from "./pages/BulkBlockDeals";
 import ReverseDCF from "./pages/ReverseDCF";
 import ReverseDCFScan from "./pages/ReverseDCFScan";
 import MTFCalculator from "./pages/MTFCalculator";
+import TurtleWealth from "./pages/TurtleWealth";
 import Watchlist from "./pages/Watchlist";
 import Guide from "./pages/Guide";
 import Settings from "./pages/Settings";
@@ -161,6 +162,9 @@ export default function App() {
               <NavLink to="/mtf-calculator" className={({ isActive }) => navClass(isActive)}>
                 📐 MTF
               </NavLink>
+              <NavLink to="/turtle-wealth" className={({ isActive }) => navClass(isActive)}>
+                🐢 Turtle
+              </NavLink>
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -198,6 +202,7 @@ export default function App() {
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
+            <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />

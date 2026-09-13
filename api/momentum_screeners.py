@@ -3356,6 +3356,11 @@ def _rdcf_fetch_fundamentals(ticker):
             continue  # template present but Screener.in has no real annual numbers for this ticker yet
         opm_row = next((v for k, v in pl_rows.items() if "opm" in k.lower()), None)
         tax_row = next((v for k, v in pl_rows.items() if k.lower().strip() == "tax %"), None)
+        # 2026-09-13 ("turtleWealth ... ALL TIME PRICE, SALES, PROFIT") —
+        # same "net profit" substring match _screener_fetch.py's own
+        # find_row(pl_rows, "net profit") uses, ported here (not
+        # cross-imported — see this function's own docstring).
+        net_profit_row = next((v for k, v in pl_rows.items() if "net profit" in k.lower()), None)
 
         borrowings = None
         bs = next((s for s in soup.find_all("section")
@@ -3378,10 +3383,12 @@ def _rdcf_fetch_fundamentals(ticker):
             continue
         opm_latest = next((v for v in reversed(opm_row) if v is not None), None) if opm_row else None
         tax_latest = next((v for v in reversed(tax_row) if v is not None), None) if tax_row else None
+        net_profit_hist = [v for v in net_profit_row if v is not None] if net_profit_row else []
         return {
             "current_price": current_price,
             "marketcap": marketcap,
             "revenue_hist": revenue_hist,  # ascending chronological, oldest -> newest (same convention as bundle.stocks.revenue)
+            "net_profit_hist": net_profit_hist,  # same convention — added for turtleWealth's ATH-profit check
             "opm_pct": opm_latest,
             "tax_pct": tax_latest,
             "borrowings": borrowings,
@@ -3475,6 +3482,123 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
     return {"label": "Reverse DCF Scan — NSE 750", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
 
 
+# ── turtleWealth ──────────────────────────────────────────────────────────
+#
+# Added 2026-09-13 ("lets build one more page turtleWealth on main page
+# logic is very simple NSE750 Universe, ALL TIME PRICE, SALES, PROFIT"),
+# after the user shared screenshots of Turtle Wealth's own "Stock
+# Selection Process" slide (turtlewealth.in, a SEBI-registered PMS/RA —
+# Portfolio Manager INP000006758 / RA INH000019868). Their full
+# 5-pillar framework is All-Time-High Price (Technical) -> All-Time-
+# High Profit (Fundamental) -> All-Time-High Outperformance
+# (Momentum) -> Pre-Decided Exit (Downside Protection) -> Dynamic Risk
+# Allocation (Risk Control), plus a second slide scoring every stock
+# ADD/HOLD/EXIT by how many of (ATH Price, ATH Profit, Outperformance
+# vs sector+BSE500) it meets. Full detail at their own
+# turtlewealth.in/turtle-quant-process/ page. This is deliberately
+# ONLY the first slice the user asked for — ATH PRICE + ATH SALES +
+# ATH PROFIT, three flags, no scoring/exit/risk-allocation logic yet
+# (a natural v2 if wanted later, once Outperformance-vs-sector and a
+# "Turtle Exit Price" rule are actually defined).
+#
+# ATH PRICE reuses the exact same bulk yfinance weekly-close approach
+# _run_all_time_high already uses (ATH_MIN_BARS/ATH_BAND_PCT, this
+# file's own established "at least ~1yr of weekly bars, within 3% of
+# the max counts as at/near the high" convention) — cheap enough to
+# run on every batch's own slice, no separate cron needed for it.
+# ATH SALES / ATH PROFIT need real fundamentals (annual P&L history),
+# which only comes from a per-stock Screener.in fetch — same
+# rate-limited, ~1 req/sec constraint as reverseDcfScanNse750, so this
+# reuses the EXACT SAME batched-cron design (offset/limit slicing the
+# universe across ~10 scheduled runs a day, merge-on-read against
+# whatever's already stored) rather than reinventing it — see that
+# screener's own module comment for the full reasoning. Reuses
+# _rdcf_fetch_fundamentals (extended above to also return
+# net_profit_hist) rather than a second near-identical fetch function.
+#
+# "All-time high" sales/profit here means: the LATEST annual figure in
+# Screener's own P&L table (however many years back that table goes —
+# typically ~10-12) is greater than or equal to every prior year in
+# that same table. Not a claim to check the company's literal entire
+# listed history beyond what Screener's own table shows — same
+# "honest proxy, not the real thing" framing every other screener in
+# this file already uses for its own data-source limits.
+def _tw_is_ath(hist):
+    """True if the LATEST value in an ascending chronological history is
+    >= every prior value (ties count — matches _run_all_time_high's own
+    `price >= ath` convention, not a strict `>`)."""
+    vals = [v for v in hist if v is not None]
+    if len(vals) < 2:
+        return None  # not enough history to call it either way
+    return bool(vals[-1] >= max(vals))
+
+
+def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
+    weekly = _ms_fetch_weekly_max(symbols)
+    ath_price_by_symbol = {}
+    if weekly is not None:
+        for sym, g in weekly.groupby("symbol"):
+            cw = g.set_index("date")["Close"].sort_index()
+            if len(cw) < ATH_MIN_BARS or (date.today() - cw.index[-1].date()).days > NSE_STALE_DAYS + 5:
+                continue
+            price = float(cw.iloc[-1])
+            ath = float(cw.max())
+            ath_price_by_symbol[sym] = {
+                "price": round(price, 2),
+                "pct_off_ath": round((price / ath - 1) * 100, 2),
+                "price_ath": bool(price >= ath * (1 - ATH_BAND_PCT / 100)),
+            }
+
+    new_rows = []
+    for sym in symbols:
+        fund = _rdcf_fetch_fundamentals(sym)
+        time.sleep(1.0)  # same Screener.in pacing every other per-ticker fetch in this file already uses
+        if fund is None:
+            continue
+        revenue_hist = fund.get("revenue_hist") or []
+        profit_hist = fund.get("net_profit_hist") or []
+        sales_ath = _tw_is_ath(revenue_hist)
+        profit_ath = _tw_is_ath(profit_hist)
+        athp = ath_price_by_symbol.get(sym)
+        price_ath = athp["price_ath"] if athp else None
+
+        new_rows.append({
+            "symbol": sym,
+            "name": name_map.get(sym, sym),
+            "sector": sector_map.get(sym, ""),
+            "price": athp["price"] if athp else fund.get("current_price"),
+            "pct_off_ath": athp["pct_off_ath"] if athp else None,
+            "price_ath": price_ath,
+            "latest_sales_cr": revenue_hist[-1] if revenue_hist else None,
+            "sales_ath": sales_ath,
+            "latest_profit_cr": profit_hist[-1] if profit_hist else None,
+            "profit_ath": profit_ath,
+            "all_three": bool(price_ath and sales_ath and profit_ath),
+            "as_of": date.today().isoformat(),
+        })
+
+    # Merge with whatever's already stored — same batched-cron reasoning
+    # as reverseDcfScanNse750 (see that screener's own comment).
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    existing_rows = all_screeners.get("turtleWealth", {}).get("rows", [])
+    by_symbol = {r["symbol"]: r for r in existing_rows}
+    for r in new_rows:
+        by_symbol[r["symbol"]] = r
+    merged = list(by_symbol.values())
+    # All-three matches first (Turtle Wealth's own "ADD/Super Performers"
+    # bucket, minus the Outperformance leg this v1 doesn't compute yet),
+    # then by how close to its own price ATH within that group.
+    merged.sort(key=lambda r: (not r.get("all_three"), -(r.get("pct_off_ath") if r.get("pct_off_ath") is not None else -999)))
+    for i, r in enumerate(merged, 1):
+        r["rank"] = i
+
+    return {"label": "Turtle Wealth — NSE 750", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -3499,6 +3623,7 @@ SCREENER_RUNNERS = {
     "globalCurrencies": _run_global_currencies,
     "strategicAlpha": _run_strategic_alpha,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
+    "turtleWealth": _run_turtle_wealth_nse750,
 }
 
 
