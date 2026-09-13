@@ -2794,11 +2794,13 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # bars, mirroring the exact basis myLongTermInvestingStrategy's own
 # 33W EMA exit rule uses. Every ticker below was checked live against
 # Yahoo's chart API before shipping (2y range, full OHLC) — one
-# requested name, Nifty Microcap 250, has NO Yahoo ticker (several
-# tried: NIFTYMICROCAP250.NS, ^NIFTYMICROCAP250, ^CNXMICROCAP250 — all
-# 404), so it's left out rather than faked with a rough stand-in, same
-# principle as MidSmallcap400/Factor Rotation/Market Breadth being left
-# out of v1. Three more requested names collapse onto tickers this
+# requested name, Nifty Microcap 250, had NO Yahoo ticker in v1
+# (several tried: NIFTYMICROCAP250.NS, ^NIFTYMICROCAP250,
+# ^CNXMICROCAP250 — all 404) — added back 2026-09-13 once
+# NIFTY_MICROCAP250.NS (underscore, none of those three earlier
+# attempts) turned up; see its own entry above for the verification
+# caveat. Nifty MidSmallcap 400 was also left out of v1, added the
+# same day. Three more requested names collapse onto tickers this
 # screener already carries — GOLDM1!/"GOLD US$/OZ" and GC=F (no MCX or
 # spot gold feed is fetchable from here, same COMEX-proxy reasoning
 # Portfolio Allocation's own Gold/Silver rows already use) and
@@ -2811,6 +2813,20 @@ SA_ASSET_UNIVERSE = {
     "Nifty 500": {"ticker": "^CRSLDX", "tv": "NSE:NIFTY500", "region": "India"},
     "Nifty Smallcap 250": {"ticker": "NIFTYSMLCAP250.NS", "tv": "NSE:NIFTYSMLCAP250", "region": "India"},
     "Nifty Midcap 150": {"ticker": "NIFTYMIDCAP150.NS", "tv": "NSE:NIFTYMIDCAP150", "region": "India"},
+    # 2026-09-13 ("add Nifty MidSmallCap400 Index" / "also Nifty
+    # MicroCap250 Index") — the module comment above noted "Nifty
+    # Microcap 250 was requested but has no fetchable Yahoo ticker
+    # (several tried)"; NIFTY_MICROCAP250.NS (underscore, not the
+    # plain-concatenation formats presumably tried before) turned up in
+    # a fresh search with a real Yahoo Finance quote page. Not verified
+    # live from here — this sandbox's yfinance access is currently
+    # network-blocked (same class of issue as GC=F/SI=F/USDINR=X
+    # earlier this session, which DO work fine in production) — so
+    # this is added optimistically and will simply skip gracefully
+    # (same as every other unfetchable ticker in this dict) if it
+    # genuinely has no historical data once run live.
+    "Nifty MidSmallcap 400": {"ticker": "NIFTYMIDSML400.NS", "tv": "NSE:NIFTYMIDSML400", "region": "India"},
+    "Nifty Microcap 250": {"ticker": "NIFTY_MICROCAP250.NS", "tv": "NSE:NIFTYMICROCAP250", "region": "India"},
     "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX", "region": "International"},
     "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI", "region": "International"},
     "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY", "region": "International"},
@@ -3065,6 +3081,11 @@ SA_RATIO_UNIVERSE = {
     "Nifty Midcap 150 / Nifty 50": ("Nifty Midcap 150", "Nifty 50"),
     "Nifty Smallcap 250 / Nifty 50": ("Nifty Smallcap 250", "Nifty 50"),
     "Gold / Nifty 50": ("Gold", "Nifty 50"),
+    # 2026-09-13 ("under ratio add CNXSMALLCAP/CNX500") — CNX Smallcap
+    # and CNX 500 are the pre-rebrand NSE names for today's Nifty
+    # Smallcap 250 and Nifty 500 (both already fetched above for other
+    # ratios, so this is a pure reuse, no new ticker).
+    "Nifty Smallcap 250 / Nifty 500": ("Nifty Smallcap 250", "Nifty 500"),
 }
 
 

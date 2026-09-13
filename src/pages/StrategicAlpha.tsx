@@ -28,8 +28,10 @@ import { Col, GenericTable, MethodologyNote, Signed } from "../components/Screen
 // GDX/SIL/COPX miner ETFs), plus a TradingView chart link and 50-day/
 // 33-week EMA columns on every row. See the module comment above
 // api/momentum_screeners.py's SA_ASSET_UNIVERSE for exactly which
-// requested tickers had no fetchable Yahoo data (Nifty Microcap 250)
-// or collapsed onto an existing row (GOLDM1!/"GOLD US$/OZ" and
+// requested tickers had no fetchable Yahoo data (Nifty Microcap 250 —
+// added back 2026-09-13 once a different ticker format turned up, see
+// that dict entry's own caveat) or collapsed onto an existing row
+// (GOLDM1!/"GOLD US$/OZ" and
 // SILVER1!/"SILVER US$/OZ" — no MCX or literal spot feed is fetchable
 // from here, so those are the SAME COMEX-proxy numbers this page's
 // existing Gold/Silver rows already show, just linked via TradingView
@@ -154,7 +156,9 @@ export default function StrategicAlpha() {
         (numerator Close ÷ denominator Close, treated as its own synthetic price series run through the exact same trend logic as every
         other row): <b>Nifty 500 / Nifty 50</b> is the video's own original rule (rising = broader market leading, opportunities outside
         large-caps); <b>Nifty Midcap 150 / Nifty 50</b> and <b>Nifty Smallcap 250 / Nifty 50</b> extend the same idea down the cap curve;{" "}
-        <b>Gold / Nifty 50</b> tracks the classic risk-off/risk-on rotation between gold and Indian equities. Ratio rows have no chart link
+        <b>Gold / Nifty 50</b> tracks the classic risk-off/risk-on rotation between gold and Indian equities; <b>Nifty Smallcap 250 / Nifty
+        500</b> (CNX Smallcap / CNX 500 in the old pre-rebrand NSE names) is the same broad-vs-narrow read as Nifty 500/Nifty 50, one rung
+        further down the cap curve. Ratio rows have no chart link
         (a ratio isn't a single tradable symbol) and their 50D/33W EMAs are computed as if Open/High/Low all equal Close (a ratio of closing
         prices has no real intraday range) — a reasonable approximation, not real OHLC data. Each asset's trend is <b>Bull</b> if its latest
         daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
@@ -174,8 +178,9 @@ export default function StrategicAlpha() {
         implied USDINR the raw formula used (~95.7) was itself a plausible real rate, so the gap was genuinely duty/premium, not a bad fetch.
         This is a fixed, point-in-time calibration, not a formula that self-corrects if the real duty/premium drifts over time. Their Close
         cell links to the real MCX chart on TradingView even though the price shown is the derived-and-calibrated approximation.
-        <b>Nifty Microcap 250</b> was requested but has no fetchable Yahoo ticker (several tried) so
-        it's left out rather than faked with a rough stand-in — same principle as everything below. <b>Not built</b>: Factor Rotation
+        <b>Nifty Microcap 250</b> and <b>Nifty MidSmallcap 400</b> were added 2026-09-13; Microcap 250 had no fetchable Yahoo ticker when first
+        requested (several formats tried, all 404) — a different one turned up since, not independently re-verified before shipping, so if it's
+        showing "—" it means that attempt also came up empty. <b>Not built</b>: Factor Rotation
         (Momentum50/Value50/Quality50 — no matching Yahoo ticker found), Market Breadth (% of NSE stocks above their 30-week MA), and "country
         rotation" (the video itself calls this an undisclosed proprietary system).
       </MethodologyNote>
