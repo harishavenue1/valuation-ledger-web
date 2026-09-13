@@ -2826,7 +2826,47 @@ SA_ASSET_UNIVERSE = {
     # (same as every other unfetchable ticker in this dict) if it
     # genuinely has no historical data once run live.
     "Nifty MidSmallcap 400": {"ticker": "NIFTYMIDSML400.NS", "tv": "NSE:NIFTYMIDSML400", "region": "India"},
-    "Nifty Microcap 250": {"ticker": "NIFTY_MICROCAP250.NS", "tv": "NSE:NIFTYMICROCAP250", "region": "India"},
+    "Nifty Microcap 250": {"ticker": "NIFTY_MICROCAP250.NS", "tv": "NSE:NIFTY_MICROCAP250", "region": "India"},  # TV symbol corrected 2026-09-13 — user's own screenshot shows the underscore, my original guess had none
+    # 2026-09-13 ("add new tab, Nifty 500 Momentum 50, Nifty Alpha 50,
+    # Nifty 500 MultiCap Momentum Quality 50" + several ratio requests
+    # needing the same underlying assets) — this is the "Factor
+    # Rotation" family the v1 module comment above explicitly deferred
+    # ("no direct Yahoo ticker found for any of the three"). Re-checked
+    # live: some of these have a real raw index ticker on Yahoo (Nifty
+    # Alpha 50, Nifty500 Value 50, Nifty500 Quality 50 — the last two
+    # confirmed via the user's own live TradingView screenshots showing
+    # the exact NSE-native symbol is actually quoted); Multicap
+    # Momentum Quality 50 has no raw index ticker but DOES have a real,
+    # actually-traded ETF tracking it, used as the proxy (same "real
+    # market data via a tracking instrument" precedent GOLDCASE/
+    # SILVERCASE already established for gold/silver). None of these
+    # tickers independently confirmed on Yahoo specifically — this
+    # sandbox's yfinance access is currently network-blocked (see the
+    # Microcap 250 entry's own caveat above) — added optimistically,
+    # will skip gracefully if any turns out to have no real data on
+    # Yahoo under this exact string.
+    # 2026-09-13 ("this is momentum" + screenshot) — user's own live
+    # TradingView screenshot confirms the real NSE-native raw index
+    # symbol NIFTY500MOMENTM50 (no underscore) is actually quoted —
+    # switched from the original ETF-proxy guess (Motilal Oswal's
+    # MOMENTUM50.NS) to attempt this raw index ticker instead, same
+    # underscore-vs-no-underscore pattern already confirmed for
+    # Value50/Quality50. Not independently confirmed on Yahoo
+    # specifically — falls back to skipping gracefully like everything
+    # else if Yahoo doesn't carry it under this exact string.
+    "Nifty500 Momentum 50": {"ticker": "NIFTY500MOMENTM50.NS", "tv": "NSE:NIFTY500MOMENTM50", "region": "Factor"},
+    "Nifty Alpha 50": {"ticker": "NIFTYALPHA50.NS", "tv": "NSE:NIFTYALPHA50", "region": "Factor"},  # real raw index ticker
+    "Nifty500 Multicap Momentum Quality 50": {"ticker": "EMULTIMQ.NS", "tv": "NSE:EMULTIMQ", "region": "Factor"},  # Edelweiss ETF proxy — no raw index ticker found
+    "Nifty500 Value 50": {"ticker": "NIFTY500_VALUE_50.NS", "tv": "NSE:NIFTY500_VALUE_50", "region": "Factor"},  # real raw index ticker — TV symbol confirmed live via user screenshot (underscores, not the no-underscore format first guessed)
+    # 2026-09-13 ("nifty500_qlty50 is available") — user's own live
+    # TradingView screenshot confirms the real NSE-native symbol
+    # NIFTY500_QLTY50 (Quality 50 was earlier thought to have NO
+    # fetchable ticker at all, per the note above this dict). Yahoo
+    # ticker not independently confirmed (a Yahoo-specific search
+    # turned up nothing under this or the earlier "QUALITY_50" spelled-
+    # out guess) — added optimistically using the exact confirmed
+    # NSE-native spelling, will skip gracefully if Yahoo doesn't carry it.
+    "Nifty500 Quality 50": {"ticker": "NIFTY500_QLTY50.NS", "tv": "NSE:NIFTY500_QLTY50", "region": "Factor"},
     "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX", "region": "International"},
     "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI", "region": "International"},
     "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY", "region": "International"},
@@ -3086,6 +3126,13 @@ SA_RATIO_UNIVERSE = {
     # Smallcap 250 and Nifty 500 (both already fetched above for other
     # ratios, so this is a pure reuse, no new ticker).
     "Nifty Smallcap 250 / Nifty 500": ("Nifty Smallcap 250", "Nifty 500"),
+    # 2026-09-13 — four more factor/segment ratios vs Nifty 500 (CNX
+    # 500 in the pre-rebrand name), each reusing an asset already
+    # fetched above (Factor tab or India tab) — no new tickers.
+    "Nifty500 Momentum 50 / Nifty 500": ("Nifty500 Momentum 50", "Nifty 500"),
+    "Nifty500 Value 50 / Nifty 500": ("Nifty500 Value 50", "Nifty 500"),
+    "Nifty500 Quality 50 / Nifty 500": ("Nifty500 Quality 50", "Nifty 500"),
+    "Nifty Microcap 250 / Nifty 500": ("Nifty Microcap 250", "Nifty 500"),
 }
 
 
