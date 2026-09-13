@@ -178,7 +178,8 @@ export default function StrategicAlpha() {
         <b>Gold / Nifty 50</b> tracks the classic risk-off/risk-on rotation between gold and Indian equities; <b>Nifty Smallcap 250 / Nifty
         500</b>, <b>Nifty500 Momentum 50 / Nifty 500</b>, <b>Nifty500 Value 50 / Nifty 500</b>, <b>Nifty500 Quality 50 / Nifty 500</b>, and{" "}
         <b>Nifty Microcap 250 / Nifty 500</b> (CNX names in the old pre-rebrand NSE convention where requested) all measure a segment or
-        factor sleeve against the broad market instead of large-caps specifically. Ratio rows have no chart link
+        factor sleeve against the broad market instead of large-caps specifically; <b>Silver / Gold</b> is the classic precious-metals ratio
+        (rising = silver outperforming gold, a risk-on/industrial-demand read). Ratio rows have no chart link
         (a ratio isn't a single tradable symbol) and their 50D/33W EMAs are computed as if Open/High/Low all equal Close (a ratio of closing
         prices has no real intraday range) — a reasonable approximation, not real OHLC data. Each asset's trend is <b>Bull</b> if its latest
         daily close is above its own 200-day EMA (on Close, replicating the video's stated rule
