@@ -2964,6 +2964,17 @@ RDCF_TERMINAL_GROWTH_PCT = 5.0
 RDCF_YEARS = 10
 RDCF_BATCH_SIZE = 80
 
+# Staged-decay verdict — added 2026-09-13 ("Reverse DCF Scan is not
+# exactly as per logic we built later on Rev DCF Page"). Mirrors
+# src/lib/reverseDcf.ts's computeStagedDcf/ReverseDCFScan.tsx's own
+# fixed universal decay rule EXACTLY (same ratios, same terminal
+# floor) — ported, not re-derived, so the two implementations agree.
+# See ReverseDCFScan.tsx's own module comment for why a fixed decay
+# rule (not the single-stock page's hand-tuned 3 stages) is the only
+# option at scan scale.
+RDCF_STAGE2_DECAY = 0.7
+RDCF_STAGE3_DECAY = 0.4
+
 
 def _rdcf_ev_for_growth(revenue0, margin, tax, wacc, years, tg, g):
     prev_rev = revenue0
@@ -3001,6 +3012,27 @@ def _rdcf_solve(revenue0, margin_pct, tax_pct, target_ev):
         else:
             hi = mid
     return round((lo + hi) / 2, 2)
+
+
+def _rdcf_staged_ev(revenue0, margin, tax, wacc, tg, stage1, stage2, stage3):
+    """Same forward calculation as computeStagedDcf in reverseDcf.ts —
+    fixed 10 years (3+3+4), a different growth rate per stage, no
+    netCapex/deltaWC (both 0, same default as the flat solve above).
+    Ported, not re-derived, to keep the two implementations agreeing."""
+    prev_rev = revenue0
+    pv = 0.0
+    final_fcff = 0.0
+    for t in range(1, RDCF_YEARS + 1):
+        g = stage1 if t <= 3 else (stage2 if t <= 6 else stage3)
+        rev = prev_rev * (1 + g)
+        fcff = rev * margin * (1 - tax)
+        pv += fcff / (1 + wacc) ** t
+        prev_rev = rev
+        final_fcff = fcff
+    if wacc <= tg:
+        return float("inf")
+    tv = final_fcff * (1 + tg) / (wacc - tg)
+    return pv + tv / (1 + wacc) ** RDCF_YEARS
 
 
 def _rdcf_fetch_fundamentals(ticker):
@@ -3114,19 +3146,31 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
         tax = fund["tax_pct"] if fund["tax_pct"] is not None else 25.0
         implied_growth = _rdcf_solve(revenue0, margin, tax, target_ev)
         avg3y = _rdcf_avg_3y_growth(fund["revenue_hist"])
-        gap = round(avg3y - implied_growth, 2) if (implied_growth is not None and avg3y is not None) else None
-        verdict = None
-        if gap is not None:
-            verdict = "conservative" if gap > 3 else ("aggressive" if gap < -3 else "in line")
+
+        valuation_gap_pct, verdict, implied_price_per_share = None, None, None
+        if implied_growth is not None:
+            wacc, tg = RDCF_WACC_PCT / 100, RDCF_TERMINAL_GROWTH_PCT / 100
+            stage1 = implied_growth / 100
+            stage2 = stage1 * RDCF_STAGE2_DECAY
+            stage3 = max(stage1 * RDCF_STAGE3_DECAY, tg)
+            staged_ev = _rdcf_staged_ev(revenue0, margin / 100, tax / 100, wacc, tg, stage1, stage2, stage3)
+            valuation_gap_pct = round((staged_ev - target_ev) / target_ev * 100, 2)
+            verdict = "undervalued" if valuation_gap_pct > 10 else ("overvalued" if valuation_gap_pct < -10 else "fairly valued")
+            price = fund["current_price"]
+            shares_cr = fund["marketcap"] / price if price and price > 0 else None  # derived, not stored
+            if shares_cr and shares_cr > 0:
+                implied_price_per_share = round((staged_ev - net_debt) / shares_cr, 2)
+
         new_rows.append({
             "symbol": sym,
             "name": name_map.get(sym, sym),
             "price": fund["current_price"],
             "market_cap_cr": fund["marketcap"],
-            "implied_growth_pct": implied_growth,
-            "avg_3y_growth_pct": avg3y,
-            "gap": gap,
+            "implied_price_per_share": implied_price_per_share,
+            "valuation_gap_pct": valuation_gap_pct,
             "verdict": verdict,
+            "flat_growth_pct": implied_growth,
+            "avg_3y_growth_pct": avg3y,
             "as_of": date.today().isoformat(),
         })
 
@@ -3144,7 +3188,7 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
     for r in new_rows:
         by_symbol[r["symbol"]] = r
     merged = list(by_symbol.values())
-    merged.sort(key=lambda r: (r["gap"] is None, -(r["gap"] if r["gap"] is not None else 0)))
+    merged.sort(key=lambda r: (r.get("valuation_gap_pct") is None, -(r.get("valuation_gap_pct") or 0)))
     for i, r in enumerate(merged, 1):
         r["rank"] = i
 
