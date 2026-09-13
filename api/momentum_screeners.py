@@ -2907,24 +2907,19 @@ SA_ASSET_UNIVERSE = {
     # chart. US 10Y is high-confidence: ^TNX (CBOE Interest Rate 10
     # Year T Note) is a well-documented, actual Yahoo Finance ticker,
     # confirmed live on finance.yahoo.com/quote/%5ETNX (currently
-    # quoted directly in percent, e.g. 4.94 = 4.94%, not the old x10
-    # CBOE convention). India 10Y is LOWER-CONFIDENCE — Yahoo Finance
-    # doesn't reliably carry non-US sovereign bond yields the way it
-    # does US Treasuries; ^IN10Y is TradingView's own symbol (real,
-    # confirmed via TVC:IN10Y) but a websearch could not independently
-    # confirm Yahoo/yfinance actually serves data under that same
-    # ticker (search-summary "confirmations" of this were themselves
-    # just echoing the ticker back, not citing a working example) — the
-    # one real Yahoo-side alternative, NIFTYGS10YR.NS (Nifty 10yr
-    # Benchmark G-Sec bond PRICE index), was deliberately NOT used
-    # instead, since a bond price index trends in the OPPOSITE
-    # direction from its yield and would silently mislabel a falling-
-    # yield rally as "Bear". Added optimistically per this session's
-    # established pattern — will skip gracefully (absent row) if Yahoo
-    # doesn't carry it; confirm with a live production run before
-    # trusting the India row specifically.
+    # quoted directly in percent, e.g. 4.97 = 4.97%, not the old x10
+    # CBOE convention) — confirmed live (close 4.97, +0.63% 1D).
     "US 10Y Yield": {"ticker": "^TNX", "tv": "TVC:US10Y", "region": "International"},
-    "India 10Y Yield": {"ticker": "^IN10Y", "tv": "TVC:IN10Y", "region": "India"},
+    # India 10Y: ^IN10Y (TradingView's real symbol) was tried first —
+    # confirmed SKIPPED on a live production run (Yahoo doesn't carry
+    # it, as flagged when it was added). User's own call: fall back to
+    # NIFTYGS10YR.NS (Nifty 10yr Benchmark G-Sec bond PRICE index) as a
+    # proxy, "clearly labeled" — the label below says "Price" and the
+    # tag inline explains the inverse relationship (bond price UP =
+    # yield DOWN) so this doesn't read as an actual yield row. Not a
+    # true yield series — a real yield chart isn't available from
+    # Yahoo for India, this is the closest honest substitute.
+    "India 10Y G-Sec (Price, inv. of yield)": {"ticker": "NIFTYGS10YR.NS", "tv": "NSE:NIFTYGS10YR", "region": "India"},
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
