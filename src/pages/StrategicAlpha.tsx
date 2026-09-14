@@ -119,12 +119,17 @@ export default function StrategicAlpha() {
   // ticker found for any of the three"). Re-checked live: some of
   // these DO have a real ticker after all (see SA_ASSET_UNIVERSE's own
   // note for which are raw indices vs. real tracking ETFs).
-  const [region, setRegion] = useState<"india" | "international" | "ratios" | "factor">("india");
+  const [region, setRegion] = useState<"india" | "international" | "ratios" | "factor" | "rates">("india");
   const indiaRows = allRows.filter((r: any) => r.region === "India");
   const internationalRows = allRows.filter((r: any) => r.region === "International");
   const ratiosRows = allRows.filter((r: any) => r.region === "Ratios");
   const factorRows = allRows.filter((r: any) => r.region === "Factor");
-  const rows = region === "india" ? indiaRows : region === "international" ? internationalRows : region === "ratios" ? ratiosRows : factorRows;
+  // 2026-09-14 ("add interest rates across countries (major)") — its
+  // own tab rather than folded into International, so the inverse-
+  // yield caveat below only needs to be said once, not repeated per row.
+  const ratesRows = allRows.filter((r: any) => r.region === "Rates");
+  const rows =
+    region === "india" ? indiaRows : region === "international" ? internationalRows : region === "ratios" ? ratiosRows : region === "rates" ? ratesRows : factorRows;
 
   return (
     <div>
@@ -168,11 +173,24 @@ export default function StrategicAlpha() {
         >
           🏭 Factor ({factorRows.length})
         </button>
+        <button
+          onClick={() => setRegion("rates")}
+          className={`text-xs px-3 py-1.5 rounded border ${region === "rates" ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}
+        >
+          📉 Rates ({ratesRows.length})
+        </button>
       </div>
 
       <MethodologyNote>
-        The <b>🇮🇳 India</b>/<b>🌍 International</b>/<b>📐 Ratios</b>/<b>🏭 Factor</b> toggle above splits the same single dataset four ways
-        — all refresh together on the same daily run, just filtered by which bucket each asset belongs to. <b>🏭 Factor</b> is the "Factor
+        The <b>🇮🇳 India</b>/<b>🌍 International</b>/<b>📐 Ratios</b>/<b>🏭 Factor</b>/<b>📉 Rates</b> toggle above splits the same single
+        dataset five ways — all refresh together on the same daily run, just filtered by which bucket each asset belongs to.{" "}
+        <b>📉 Rates</b> is major-country interest rates, added 2026-09-14 — read <b>US 10Y Yield</b> normally (it's a real yield: rising =
+        rates going up), but every OTHER row here is a government-bond ETF's PRICE, not a yield — Yahoo Finance simply carries no sovereign
+        yield series for any country but the US (confirmed live: every direct ticker guessed 404s, and Yahoo's own symbol search returns
+        nothing for "country 10 year bond yield" queries — the same dead end India's own 10Y attempt hit earlier). A bond's price moves{" "}
+        <b>opposite</b> its yield, so for <b>Germany/Eurozone Govt Bonds</b>, <b>UK Gilts</b>, <b>Japan Govt Bonds</b>,{" "}
+        <b>India 5Y G-Sec</b>, and <b>China Bonds</b>: <b>Bull</b> means the bond is rising in price, which means that country's yields are{" "}
+        <b>falling</b> — the opposite sense Bull carries on every other row on this page. <b>🏭 Factor</b> is the "Factor
         Rotation" family the video's own framework calls for — v1 originally left this out entirely ("no direct Yahoo ticker found for any
         of the three"), re-checked 2026-09-13 and every one of them turned out to have a real ticker after all: <b>Nifty Alpha 50</b>,{" "}
         <b>Nifty500 Momentum 50</b>, <b>Nifty500 Value 50</b>, and <b>Nifty500 Quality 50</b> have real raw index tickers (the latter three
