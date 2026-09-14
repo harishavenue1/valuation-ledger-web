@@ -2882,6 +2882,47 @@ SA_ASSET_UNIVERSE = {
     # out guess) — added optimistically using the exact confirmed
     # NSE-native spelling, will skip gracefully if Yahoo doesn't carry it.
     "Nifty500 Quality 50": {"ticker": "NIFTY500_QLTY50.NS", "tv": "NSE:NIFTY500_QLTY50", "region": "Factor"},
+    # 2026-09-14 ("add the momentume ETFs available in NSE") — real,
+    # actually-traded momentum-factor ETFs, not the raw indices above
+    # (Nifty500 Momentum 50/Alpha 50/etc. are raw index levels — no one
+    # can actually buy the index itself). Sourced from NSE's own
+    # official ETF master list (archives.nseindia.com/content/equities/
+    # eq_etfseclist.csv — the same NSE-archives-CSV pattern this file's
+    # own universe fetch already uses, just a different NSE list),
+    # fetched and grepped live for "momentum" 2026-09-14, then every
+    # ticker below independently confirmed live to have real Yahoo
+    # Finance price history before shipping (same standard as every
+    # other asset in this dict). Multiple AMCs list an ETF tracking the
+    # SAME underlying index (e.g. 5 different Nifty200 Momentum 30
+    # ETFs) — one representative per DISTINCT underlying index is kept
+    # here (the earliest-listed, i.e. most-seasoned, one), not all of
+    # them, to avoid a run of near-duplicate rows with byte-identical
+    # numbers (same "one row, not five" precedent the Gold/Silver rows
+    # already set for themselves). Nifty500 Multicap Momentum Quality 50
+    # (EMULTIMQ) is skipped here — already present just above, added
+    # earlier as that factor's only real-ETF proxy. One real NSE
+    # momentum ETF found in the list was deliberately left out:
+    # HYBRIDETF (Mirae Asset's "Nifty200 Momentum 30 Plus 8-13yr G-Sec
+    # 50:50" fund) — a debt/equity hybrid, not a pure momentum-equity
+    # play, not really comparable to the trend/EMA logic every other
+    # row here gets run through.
+    #
+    # Nifty Total Market Momentum Quality 50 (AONETMMQ50, listed
+    # 27-Nov-25) and BSE Midcap 150 Momentum 30 (MOMMIDCAP, listed
+    # 22-Jul-26) are both real, currently-trading ETFs but too recently
+    # listed to have SA_EMA_PERIOD+10 (~210 trading days) of history
+    # yet as of this comment (152 and 40 rows respectively, live-
+    # checked) — _sa_trend_row already skips gracefully (same as any
+    # other under-history asset), so these two rows will simply be
+    # empty for a few more months until they age into the 200-day EMA
+    # window, no further code change needed once they do.
+    "Nifty 200 Momentum 30 ETF": {"ticker": "MOMOMENTUM.NS", "tv": "NSE:MOMOMENTUM", "region": "Factor"},
+    "Nifty 500 Momentum 50 ETF": {"ticker": "MOMENTUM50.NS", "tv": "NSE:MOMENTUM50", "region": "Factor"},
+    "Nifty Midcap 150 Momentum 50 ETF": {"ticker": "MOMIDMTM.NS", "tv": "NSE:MOMIDMTM", "region": "Factor"},
+    "Nifty Smallcap 250 Momentum Quality 100 ETF": {"ticker": "SMALLCAP.NS", "tv": "NSE:SMALLCAP", "region": "Factor"},
+    "Nifty MidSmallcap 400 Momentum Quality 100 ETF": {"ticker": "MIDSMALL.NS", "tv": "NSE:MIDSMALL", "region": "Factor"},
+    "Nifty Total Market Momentum Quality 50 ETF": {"ticker": "AONETMMQ50.NS", "tv": "NSE:AONETMMQ50", "region": "Factor"},
+    "BSE Midcap 150 Momentum 30 ETF": {"ticker": "MOMMIDCAP.NS", "tv": "NSE:MOMMIDCAP", "region": "Factor"},
     "Nasdaq 100": {"ticker": "^NDX", "tv": "NASDAQ:NDX", "region": "International"},
     "KOSPI": {"ticker": "^KS11", "tv": "KRX:KOSPI", "region": "International"},
     "Dollar Index": {"ticker": "DX-Y.NYB", "tv": "TVC:DXY", "region": "International"},
