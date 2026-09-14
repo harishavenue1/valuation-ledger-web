@@ -15,6 +15,7 @@
   "crons": [
     { "path": "/api/refresh_price", "schedule": "15 10 * * *" },
     { "path": "/api/fetch_company", "schedule": "30 23 * * 6" },
+    { "path": "/api/momentum_screeners?screener=benchmarkNse500", "schedule": "18 10 * * *" },
     { "path": "/api/momentum_screeners?screener=Nifty500RelativeStrength", "schedule": "20 10 * * *" },
     { "path": "/api/momentum_screeners?screener=nseScreener", "schedule": "22 10 * * *" },
     { "path": "/api/momentum_screeners?screener=sectorAlpha", "schedule": "24 10 * * *" },

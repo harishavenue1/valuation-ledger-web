@@ -1059,13 +1059,13 @@ def _run_sector_alpha(symbols, name_map, sector_map):
     screener has its own fixed, small list of sector ETF tickers, not
     the per-stock universe every other screener in this file scans."""
     start = (date.today() - timedelta(days=365 * SEC_FETCH_YEARS)).isoformat()
-    try:
-        bench_df = _sec_fetch_series(SEC_BENCHMARK_TICKER, start)
-    except Exception as e:
-        return None, f"benchmark fetch failed: {e}"
-    if bench_df.empty:
-        return None, "no benchmark data fetched from yfinance"
-    bench_data = sorted(_sec_to_records(bench_df), key=lambda r: r["date"])
+    # 2026-09-14 — reads the shared benchmarkNse500 cache instead of an
+    # independent fetch (see that screener's own module comment). Same
+    # {"date","close"} shape _sec_to_records/_sec_returns_for always
+    # expected, so nothing downstream of this line changed.
+    bench_data = _bench_cache_read("1d")
+    if not bench_data:
+        return None, "no benchmark data in shared cache yet (benchmarkNse500 hasn't run)"
     last_date = datetime.strptime(bench_data[-1]["date"], "%Y-%m-%d").date()
     bench = _sec_returns_for(bench_data, last_date)
 
@@ -3551,20 +3551,20 @@ def _tw_r_1y(cw):
 def _tw_fetch_benchmark_r_1y():
     """NIFTY 500's own 52-week return, weekly closes over as much history
     as Yahoo has — same RS_BENCHMARK_TICKER (^CRSLDX) this file's own
-    Nifty500RelativeStrength/sectorStockAlpha screeners already use as
-    THE house benchmark for "vs NSE500", same _tw_r_1y math as every
-    stock gets so the comparison is apples-to-apples (both weekly
-    closes, both the same asof-364-days lookup)."""
-    try:
-        df = yf.download(RS_BENCHMARK_TICKER, period="max", interval="1wk", progress=False, auto_adjust=True)
-    except Exception:
+    Nifty500RelativeStrength/sectorAlpha screeners already use as THE
+    house benchmark for "vs NSE500", same _tw_r_1y math as every stock
+    gets so the comparison is apples-to-apples (both weekly closes,
+    both the same asof-364-days lookup).
+    2026-09-14 — reads the shared benchmarkNse500 cache (weekly rows)
+    instead of an independent yfinance fetch; see that screener's own
+    module comment. Reconstructs the date-indexed Series _tw_r_1y
+    expects from the cache's plain {"date","close"} records."""
+    recs = _bench_cache_read("1wk")
+    if not recs:
         return None
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df[["Close"]].dropna()
-    if df.empty:
-        return None
-    return _tw_r_1y(df["Close"])
+    idx = pd.to_datetime([r["date"] for r in recs])
+    cw = pd.Series([r["close"] for r in recs], index=idx).sort_index()
+    return _tw_r_1y(cw)
 
 
 def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
@@ -3647,6 +3647,88 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
     return {"label": "Turtle Wealth — NSE 750", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
 
 
+# ── benchmarkNse500 (shared cache) ───────────────────────────────────────
+#
+# Added 2026-09-14 ("since we have built a lot of pages, with reusable
+# data and refreshing each takes more time individually, do you think
+# its best we build a centralized database page, and other pages can
+# easily use this page to fetch data") — the NSE 500 benchmark
+# (^CRSLDX) was independently fetched by at least 2 screeners
+# (Nifty500RelativeStrength, sectorAlpha) plus Turtle Wealth's
+# alpha_52w, each hitting Yahoo Finance separately for the exact same
+# data (sectorStockAlpha, despite the similar name, computes its own
+# alpha vs each stock's SECTOR AVERAGE, not vs NSE 500 directly — it
+# was never actually a benchmark-fetch duplicate, corrected here after
+# first assuming it was). This is the first of two de-duplication
+# targets (the user picked "#1+#2" — benchmark cache + NSE 750
+# price-history cache — but scoped down to just #1 in THIS change; see
+# this session's own conversation for why #2 is a deliberate follow-up,
+# not bundled in here: it's 750 symbols' worth of OHLC history, a real
+# storage-design question — folding it into this same shared
+# `momentum_screeners` meta blob every other screener already reads/
+# merges against risks bloating and slowing down ALL of them, which
+# needs its own design pass, not a rushed add-on to this one).
+#
+# Stores BOTH daily (2 years, SEC_FETCH_YEARS-matching window — covers
+# sectorAlpha's own r_1y lookback) and weekly (period="max" — covers
+# Turtle Wealth's need for real multi-year history, not just 52 weeks)
+# closes, tagged by an "interval" field on each row so a single
+# screener/meta-key serves both shapes. Runs EARLY (10:18 UTC,
+# vercel.json) — before every known consumer's own cron — so nothing
+# reads a stale prior-day benchmark value.
+#
+# Migrated to read from here instead of independently fetching:
+# sectorAlpha (wanted the exact `_sec_returns_for`-ready
+# {"date","close"} record shape this cache stores verbatim), and
+# Turtle Wealth's alpha_52w (wanted weekly closes as a date-indexed
+# Series — reconstructed from the cached weekly rows). NOT yet
+# migrated: Nifty500RelativeStrength's own _rs_fetch_benchmark() —
+# it consumes a raw DataFrame in a different downstream shape than the
+# other three; migrating it needs its own small adapter, left as a
+# clearly-flagged follow-up rather than rushed into this same change.
+def _run_benchmark_nse500_cache(symbols, name_map, sector_map):
+    """Ignores symbols/name_map/sector_map (the NSE-750 universe) — this
+    is a single-ticker cache refresh, not a per-stock scan."""
+    rows = []
+    try:
+        daily_df = _sec_fetch_series(SEC_BENCHMARK_TICKER, (date.today() - timedelta(days=365 * SEC_FETCH_YEARS)).isoformat())
+        for rec in _sec_to_records(daily_df):
+            rows.append({"date": rec["date"], "close": rec["close"], "interval": "1d"})
+    except Exception:
+        pass
+    try:
+        weekly_df = yf.download(RS_BENCHMARK_TICKER, period="max", interval="1wk", progress=False, auto_adjust=True)
+        if isinstance(weekly_df.columns, pd.MultiIndex):
+            weekly_df.columns = weekly_df.columns.get_level_values(0)
+        weekly_df = weekly_df[["Close"]].dropna()
+        for d, c in weekly_df["Close"].items():
+            rows.append({"date": d.date().isoformat(), "close": float(c), "interval": "1wk"})
+    except Exception:
+        pass
+
+    if not rows:
+        return None, "no benchmark data fetched from yfinance (both daily and weekly attempts failed)"
+    return {"label": "NSE 500 Benchmark Cache", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
+def _bench_cache_read(interval):
+    """Shared read helper for every consumer migrated to this cache —
+    opens its own short-lived connection (same established pattern
+    reverseDcfScanNse750/turtleWealth already use for their own
+    merge-on-read), filters to one interval, returns the plain
+    {"date","close"} record list sorted ascending. Empty list (not an
+    exception) if the cache hasn't run yet or came back empty — callers
+    already handle "no benchmark data" gracefully today, same as before
+    this cache existed."""
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    cached = all_screeners.get("benchmarkNse500", {}).get("rows", [])
+    return sorted(({"date": r["date"], "close": r["close"]} for r in cached if r.get("interval") == interval), key=lambda r: r["date"])
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -3672,6 +3754,7 @@ SCREENER_RUNNERS = {
     "strategicAlpha": _run_strategic_alpha,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
     "turtleWealth": _run_turtle_wealth_nse750,
+    "benchmarkNse500": _run_benchmark_nse500_cache,
 }
 
 
