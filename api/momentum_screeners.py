@@ -2634,6 +2634,18 @@ GCE_ETF_UNIVERSE = {
 GCE_TIMEFRAMES = [("1w", 7), ("1m", 30), ("3m", 91), ("6m", 182), ("1y", 365)]
 GCE_MIN_ALPHA_1Y_TAG = 20  # same "not worth tagging below this" bar as the original script
 
+# 2026-09-14 ("what is wrong here" — a screenshot of AMEX:ENZL's
+# TradingView chart showing "This symbol doesn't exist") — exactly the
+# one-off mislisting the module comment above always expected ("not
+# individually verified per-ticker... if a specific one turns out to
+# be mislisted, that's a one-off fix"). Live-checked on TradingView:
+# ENZL (iShares MSCI New Zealand ETF) is actually listed under
+# NASDAQ:ENZL, not AMEX:ENZL. Kept as a small override dict rather than
+# reshaping GCE_ETF_UNIVERSE itself (every other entry's blanket AMEX
+# assumption is unconfirmed but unchallenged) — extend this dict for
+# any future one-off the same way.
+GCE_TV_EXCHANGE_OVERRIDE = {"ENZL": "NASDAQ"}
+
 
 def _gxc_fetch_history(ticker, period="2y"):
     try:
@@ -2692,7 +2704,8 @@ def _run_global_country_etfs(symbols, name_map, sector_map):
         # way Gold/Silver/Copper's own chart-link mismatches were
         # caught and fixed earlier.
         close = round(float(h["Close"].dropna().iloc[-1]), 2) if h is not None and len(h["Close"].dropna()) else None
-        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(f'AMEX:{ticker}')}"
+        exch = GCE_TV_EXCHANGE_OVERRIDE.get(ticker, "AMEX")
+        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(f'{exch}:{ticker}')}"
         row = {"country": label, "symbol": ticker, "sector": region, "close": close, "tradingview_url": tv_url}
         alphas = {}
         for tf, days in GCE_TIMEFRAMES:
