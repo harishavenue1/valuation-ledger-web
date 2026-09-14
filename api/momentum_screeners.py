@@ -4058,6 +4058,18 @@ TOP100_US_STOCKS = {
     "GILD": ("Gilead Sciences", "NASDAQ"), "DE": ("Deere & Company", "NYSE"), "TJX": ("TJX Companies", "NYSE"),
     "VRTX": ("Vertex Pharmaceuticals", "NASDAQ"), "MDLZ": ("Mondelez International", "NASDAQ"),
     "LMT": ("Lockheed Martin", "NYSE"), "ADI": ("Analog Devices", "NASDAQ"), "MU": ("Micron Technology", "NASDAQ"),
+    # 2026-09-14 ("is sandisk not top 100?") — a real gap in the
+    # original hand-picked snapshot: SanDisk (spun back out as its own
+    # public company in 2025) has run from ~$90 to ~$1,544/share over
+    # the past year on the same memory/NAND supercycle that's also
+    # behind Micron's own huge move above — live-checked market cap
+    # ~$226B, comfortably large-cap, no business being left out. Added
+    # rather than swapping out an existing name (no live market-cap
+    # check was run across the other 100 to justify cutting any one of
+    # them) — this snapshot is now 101, not a hard promise of exactly
+    # 100, same "fix one-offs as found" precedent the rest of this
+    # file's own fixed-ticker universes already follow.
+    "SNDK": ("SanDisk", "NASDAQ"),
     "C": ("Citigroup", "NYSE"), "PLD": ("Prologis", "NYSE"), "SBUX": ("Starbucks", "NASDAQ"),
     "MMC": ("Marsh & McLennan", "NYSE"), "AMT": ("American Tower", "NYSE"), "PGR": ("Progressive", "NYSE"),
     "REGN": ("Regeneron Pharmaceuticals", "NASDAQ"), "NEE": ("NextEra Energy", "NYSE"), "EOG": ("EOG Resources", "NYSE"),
