@@ -3289,6 +3289,17 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
 # API key needed — FRED's own CSV export endpoint
 # (fredgraph.csv?id=<series>) is public.
 #
+# NOT on a daily cron: live-confirmed 2026-09-14 that
+# fred.stlouisfed.org's own WAF/TLS fingerprinting blocks Vercel's
+# serverless IP outright — two separate manual triggers from
+# production both timed out at ~76s with all 5 series failing, not a
+# transient blip. Registered in SCREENER_RUNNERS (so an interactive
+# session can still call it and POST the result to
+# /api/momentum_screeners directly) but has no vercel.json cron entry
+# and is tagged in RunButton.tsx's LOCAL_ONLY_SCREENERS — same
+# "reachable locally, blocked from Vercel" situation smeMomentum
+# already has for a different host.
+#
 # Genuinely different SHAPE from every other row on this page, not
 # just a different data source: OECD's non-US series are MONTHLY
 # (US's own DGS10 is daily), so a ~24-point 2-year window never clears

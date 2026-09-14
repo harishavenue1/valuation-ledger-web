@@ -93,6 +93,19 @@ const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = 
     skill: "SmeMomentum",
     reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",
   },
+  // Added 2026-09-14 — fred.stlouisfed.org's own WAF/TLS fingerprinting
+  // blocks Vercel's serverless IP outright (confirmed live: two
+  // separate manual triggers both timed out at ~76s, 5/5 series
+  // failing every time — not transient), same class of issue as
+  // smeMomentum above, just a different blocked host. Data source
+  // itself is fine and fast from an interactive session (or any
+  // regular machine) — no dedicated skill script exists for this one
+  // yet, "CountryYields" here just names the routine, not a real
+  // ~/.claude/skills/ folder.
+  countryYields: {
+    skill: "CountryYields",
+    reason: "fred.stlouisfed.org blocks Vercel's serverless IP — refresh by asking Claude to recompute and push countryYields (fetches fine from an interactive session)",
+  },
   // Added 2026-09-06 — Kite holdings are only reachable through the
   // mcp__kite__get_holdings MCP tool, callable from an interactive
   // Claude session, never from an unattended Vercel cron (no Kite API
