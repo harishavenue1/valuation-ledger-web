@@ -248,11 +248,24 @@ export default function StrategicAlpha() {
         searched FRED directly and found no comparable 10-year series for it (only a short-term interbank rate, a different, non-comparable
         number), so it's left out rather than shown as something it isn't.
       </MethodologyNote>
-      {region === "rates" && yieldsRows.length > 0 && (
+      {region === "rates" && (
         <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
-          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600">
-            Actual 10Y Govt Bond Yields {yieldsEntry?.as_of && <span className="text-slate-400 font-normal">— refreshed {yieldsEntry.as_of}</span>}
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600 flex items-center gap-2">
+            <span>
+              Actual 10Y Govt Bond Yields {yieldsEntry?.as_of && <span className="text-slate-400 font-normal">— refreshed {yieldsEntry.as_of}</span>}
+            </span>
+            {/* 2026-09-14 — fred.stlouisfed.org blocks Vercel's serverless
+                IP (confirmed live, see RunButton.tsx's own comment on
+                this entry), so this has no daily cron — RunButton falls
+                through to its LOCAL_ONLY_SCREENERS note here instead of
+                a real "Run now" click. */}
+            <span className="ml-auto">
+              <RunButton screener="countryYields" />
+            </span>
           </div>
+          {yieldsRows.length === 0 ? (
+            <div className="px-3 py-4 text-xs text-slate-400">No yield data yet — see the refresh note above.</div>
+          ) : (
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-100">
@@ -275,6 +288,7 @@ export default function StrategicAlpha() {
               ))}
             </tbody>
           </table>
+          )}
         </div>
       )}
       <GenericTable
