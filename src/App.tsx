@@ -14,7 +14,6 @@ import PortfolioPerformance from "./pages/PortfolioPerformance";
 import GlobalMacro from "./pages/GlobalMacro";
 import StrategicAlpha from "./pages/StrategicAlpha";
 import Top100UsStocks from "./pages/Top100UsStocks";
-import BulkBlockDeals from "./pages/BulkBlockDeals";
 import ReverseDCF from "./pages/ReverseDCF";
 import ReverseDCFScan from "./pages/ReverseDCFScan";
 import MTFCalculator from "./pages/MTFCalculator";
@@ -158,9 +157,6 @@ export default function App() {
               <NavLink to="/top100-us-stocks" className={({ isActive }) => navClass(isActive)}>
                 🇺🇸 Top100 US
               </NavLink>
-              <NavLink to="/bulk-block-deals" className={({ isActive }) => navClass(isActive)}>
-                📦 Deals
-              </NavLink>
               <NavLink to="/reverse-dcf" className={({ isActive }) => navClass(isActive)}>
                 🔄 Rev DCF
               </NavLink>
@@ -208,7 +204,6 @@ export default function App() {
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
-            <Route path="/bulk-block-deals" element={<BulkBlockDeals />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
