@@ -3407,7 +3407,26 @@ def _rdcf_fetch_fundamentals(ticker):
                 continue
             label = cells[0].get_text(strip=True).rstrip("+").strip()
             pl_rows[label] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
-        sales_row = next((v for k, v in pl_rows.items() if "sales" in k.lower()), None)
+        # 2026-09-14 ("why ... turtle-wealth shows only 676 tickers") —
+        # live-checked HDFCBANK/BAJFINANCE: banks/NBFCs/HFCs label their
+        # P&L top line "Revenue", never "Sales" (no "OPM %" row either —
+        # "Financing Margin %" instead), so this previously returned
+        # None for ~50-60 financial-sector names in the NSE 750
+        # universe, silently dropping them from the shared fundamentals
+        # cache and everything downstream of it. Now matches "revenue"
+        # as a fallback (same any-of-["sales","revenue"] pattern
+        # _mp_fetch_fundamentals's own quarterly parse already uses a
+        # few hundred lines up) and tags which one matched via
+        # is_financial_style_revenue, so callers can decide for
+        # themselves whether a bank-style "Revenue" figure fits their
+        # own use — see turtleWealth (uses it) vs reverseDcfScanNse750
+        # (still excludes it, below) for why this is a per-consumer
+        # choice, not a blanket fix.
+        sales_key = next((k for k in pl_rows if "sales" in k.lower()), None)
+        is_financial_style_revenue = sales_key is None
+        if sales_key is None:
+            sales_key = next((k for k in pl_rows if "revenue" in k.lower()), None)
+        sales_row = pl_rows.get(sales_key) if sales_key else None
         if not sales_row or len(sales_row) < 4 or all(v is None for v in sales_row):
             continue  # template present but Screener.in has no real annual numbers for this ticker yet
         opm_row = next((v for k, v in pl_rows.items() if "opm" in k.lower()), None)
@@ -3448,6 +3467,7 @@ def _rdcf_fetch_fundamentals(ticker):
             "opm_pct": opm_latest,
             "tax_pct": tax_latest,
             "borrowings": borrowings,
+            "is_financial_style_revenue": is_financial_style_revenue,
         }
     return None
 
@@ -3537,6 +3557,17 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
     for sym in symbols:
         fund = fund_cache.get(sym)
         if fund is None or fund["marketcap"] is None:
+            continue
+        # 2026-09-14 — banks/NBFCs/HFCs now DO get real fundamentals
+        # data (see _rdcf_fetch_fundamentals's own comment) but this
+        # screen's revenue x margin x (1-tax) cash-flow DCF model
+        # doesn't fit how financials actually earn money (net interest
+        # margin + capital, not a revenue-margin FCFF model) — keep
+        # excluding them here specifically, same as before this fix,
+        # per Harish's own choice ("fix for Turtle Wealth only") when
+        # asked. Turtle Wealth's own simpler ATH-trend check has no
+        # such model-fit issue, so it uses this same data unfiltered.
+        if fund.get("is_financial_style_revenue"):
             continue
         revenue0 = fund["revenue_hist"][-1]
         if revenue0 is None or revenue0 <= 0:
