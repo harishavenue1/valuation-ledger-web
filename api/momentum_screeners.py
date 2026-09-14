@@ -3268,6 +3268,109 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── countryYields ────────────────────────────────────────────────────────
+#
+# Added 2026-09-14 — "I asked for actual Rates of the bonds traded...
+# like US 10Y is at 4.99, want to other countries". The Rates tab's
+# bond-ETF-price rows (above) are a real but INDIRECT signal (price,
+# inverse of yield) — this is the direct one: actual current 10-year
+# government bond yield LEVELS, in percent, same units as "US 10Y
+# Yield" already shows.
+#
+# Yahoo Finance has none of this for non-US countries (confirmed dead,
+# see the Rates section's own comment above) — FRED (fred.stlouisfed.org,
+# the St. Louis Fed's public data service) does, sourced from the
+# OECD's "long-term interest rates" series (IRLTLT01, defined by the
+# OECD as the 10-year government bond yield) for every country except
+# China, which isn't an OECD member/partner covered by that series —
+# searched FRED directly for a China alternative, found only a
+# short-term interbank rate (a different, un-comparable number), so
+# China is left out here rather than shown as something it isn't. No
+# API key needed — FRED's own CSV export endpoint
+# (fredgraph.csv?id=<series>) is public.
+#
+# Genuinely different SHAPE from every other row on this page, not
+# just a different data source: OECD's non-US series are MONTHLY
+# (US's own DGS10 is daily), so a ~24-point 2-year window never clears
+# _sa_trend_row's SA_EMA_PERIOD+10 (~210 bar) minimum — reusing that
+# machinery here would just return None for every non-US country,
+# right back to looking unavailable. This is its own simple "latest
+# level + change vs a year ago" computation instead, not a trend
+# table.
+FRED_10Y_YIELD_SERIES = {
+    "United States": ("DGS10", "Daily — US Treasury 10Y Constant Maturity Rate"),
+    "Germany": ("IRLTLT01DEM156N", "Monthly — OECD long-term interest rate (govt bond yield)"),
+    "UK": ("IRLTLT01GBM156N", "Monthly — OECD long-term interest rate (govt bond yield)"),
+    "Japan": ("IRLTLT01JPM156N", "Monthly — OECD long-term interest rate (govt bond yield)"),
+    "India": ("INDIRLTLT01STM", "Monthly — OECD long-term interest rate (govt bond yield)"),
+}
+
+
+def _fred_fetch_series(series_id):
+    """FRED's public CSV export — no API key needed. Returns ascending
+    [(date_iso, value), ...], skipping FRED's own "." placeholder for a
+    missing observation (holidays/gaps) rather than crashing on it.
+    Uses urllib.request, NOT this file's usual requests.get — live-
+    confirmed 2026-09-14 that fred.stlouisfed.org's own WAF/TLS
+    fingerprinting blocks the requests/urllib3 stack outright (consistent
+    15s read-timeout on every attempt, 0 retries succeeded) while
+    urllib.request reaches it instantly — some CDN-fronted sites are
+    fussier about client TLS fingerprints than others, seen once before
+    in this file for a different host class of issue, not assumed to
+    generalize beyond FRED specifically."""
+    try:
+        req = urllib.request.Request(f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}",
+                                      headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = resp.read().decode("utf-8")
+        rows = []
+        for row in csv.DictReader(io.StringIO(text)):
+            date_str, val_str = row.get("observation_date"), row.get(series_id)
+            if not date_str or val_str in (None, ".", ""):
+                continue
+            try:
+                rows.append((date_str, float(val_str)))
+            except ValueError:
+                continue
+        rows.sort(key=lambda r: r[0])
+        return rows or None
+    except Exception:
+        return None
+
+
+def _fred_yield_row(country, series_id, note):
+    data = _fred_fetch_series(series_id)
+    if not data:
+        return None
+    latest_date, latest_val = data[-1]
+    latest_dt = datetime.strptime(latest_date, "%Y-%m-%d").date()
+    cutoff = latest_dt - timedelta(days=365)
+    year_ago = next((v for d, v in reversed(data) if datetime.strptime(d, "%Y-%m-%d").date() <= cutoff), None)
+    return {
+        "country": country,
+        "series_id": series_id,
+        "note": note,
+        "latest_yield_pct": round(latest_val, 2),
+        "as_of": latest_date,
+        "chg_vs_1y_ago_bps": round((latest_val - year_ago) * 100, 1) if year_ago is not None else None,
+    }
+
+
+def _run_country_yields(symbols, name_map, sector_map):
+    """Ignores symbols/name_map/sector_map (the NSE-750 universe) — its
+    own small fixed country list, same pattern as strategicAlpha's own
+    fixed-ticker screeners."""
+    rows, skipped = [], []
+    for country, (series_id, note) in FRED_10Y_YIELD_SERIES.items():
+        row = _fred_yield_row(country, series_id, note)
+        if row is None:
+            skipped.append(country)
+            continue
+        rows.append(row)
+    rows.sort(key=lambda r: -r["latest_yield_pct"])
+    return {"label": "Country 10Y Government Bond Yields", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 # ── Market Ratios (folded into strategicAlpha, region="Ratios") ─────────────
 #
 # Added 2026-09-12 ("take the ratios details and move to new page, add
@@ -4273,6 +4376,7 @@ SCREENER_RUNNERS = {
     "nse750Fundamentals": _run_nse750_fundamentals_cache,
     "nse750PriceCache": _run_nse750_price_cache,
     "top100UsStocks": _run_top100_us_stocks,
+    "countryYields": _run_country_yields,
 }
 
 
