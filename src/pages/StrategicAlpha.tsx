@@ -38,6 +38,13 @@ import { Col, GenericTable, MethodologyNote, Signed } from "../components/Screen
 // instead of duplicated as their own rows).
 const COLS: Col[] = [
   { key: "asset", label: "Asset", align: "left" },
+  // 2026-09-14 ("add column to show ticker names") — the raw ticker
+  // string each row's Close/chart link is actually built from (r.symbol,
+  // same field _sa_trend_row already sets — "—" for the Ratios tab's
+  // synthetic numerator/denominator rows, which have no single real
+  // ticker). Shown as-is, Yahoo-style suffixes included (.NS/^prefix),
+  // same convention Top 100 US Stocks' own Ticker column already uses.
+  { key: "symbol", label: "Ticker", align: "left" },
   {
     // 2026-09-11 ("give tradingview to close price itself so column is
     // saved") — the Close cell IS the TradingView link now, freeing up
