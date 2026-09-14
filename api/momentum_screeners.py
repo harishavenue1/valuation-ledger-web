@@ -2584,7 +2584,14 @@ GCE_ETF_UNIVERSE = {
     "Taiwan": ("EWT", "Asia-Pacific"),
     "Peru": ("EPU", "Americas"),
     "Chile": ("ECH", "Americas"),
-    "Colombia": ("GXG", "Americas"),
+    # 2026-09-14 ("check tickers in the list as well, some do have
+    # issues") — GXG (Global X MSCI Colombia ETF) is delisted; live-
+    # checked via yfinance ("possibly delisted; no price data found").
+    # Global X renamed/re-ticker'd the SAME fund to COLO — confirmed
+    # live: yfinance's own longName for COLO is still "Global X MSCI
+    # Colombia ETF", 251 trading days of real history, and
+    # AMEX:COLO loads a real TradingView chart (unlike AMEX:GXG).
+    "Colombia": ("COLO", "Americas"),
     "Austria": ("EWO", "Europe"),
     "Israel": ("EIS", "Middle East/Africa"),
     "Netherlands": ("EWN", "Europe"),
@@ -2626,7 +2633,16 @@ GCE_ETF_UNIVERSE = {
     "Asia ex-Japan (AAXJ)": ("AAXJ", "Global/Broad"),
     "Latin America (ILF)": ("ILF", "Global/Broad"),
     "Europe (VGK)": ("VGK", "Global/Broad"),
-    "Frontier Markets (FM)": ("FM", "Global/Broad"),
+    # 2026-09-14 ("check tickers in the list as well, some do have
+    # issues") — Frontier Markets (FM, iShares MSCI Frontier and Select
+    # EM ETF) is delisted; live-confirmed two ways: yfinance ("possibly
+    # delisted; no price data found") and TradingView (AMEX:FM shows
+    # "This symbol doesn't exist"). Searched for a live replacement
+    # tracking the same frontier-markets segment — nothing turned up
+    # except mutual funds (not exchange-traded, no comparable daily
+    # price series), so this row is dropped rather than guess at a
+    # ticker. A real frontier-markets ETF can be added back if/when one
+    # is confirmed live, same as every other entry here.
     "Qatar": ("QAT", "Middle East/Africa"),
     "UAE": ("UAE", "Middle East/Africa"),
     "Kuwait": ("KWT", "Middle East/Africa"),
@@ -4084,7 +4100,11 @@ TOP100_US_STOCKS = {
     "NFLX": ("Netflix", "NASDAQ"), "JNJ": ("Johnson & Johnson", "NYSE"), "BAC": ("Bank of America", "NYSE"),
     "ABBV": ("AbbVie", "NYSE"), "CRM": ("Salesforce", "NYSE"), "ORCL": ("Oracle", "NYSE"),
     "KO": ("Coca-Cola", "NYSE"), "CVX": ("Chevron", "NYSE"), "MRK": ("Merck", "NYSE"),
-    "WMT": ("Walmart", "NYSE"), "PEP": ("PepsiCo", "NASDAQ"), "ADBE": ("Adobe", "NASDAQ"),
+    # 2026-09-14 ("check tickers in the list as well, some do have
+    # issues") — live-checked via TradingView symbol search: Walmart
+    # now trades on NASDAQ, not NYSE (a real listing switch since this
+    # snapshot's original best-effort guess).
+    "WMT": ("Walmart", "NASDAQ"), "PEP": ("PepsiCo", "NASDAQ"), "ADBE": ("Adobe", "NASDAQ"),
     "AMD": ("Advanced Micro Devices", "NASDAQ"), "TMO": ("Thermo Fisher Scientific", "NYSE"),
     "LIN": ("Linde", "NASDAQ"), "ACN": ("Accenture", "NYSE"), "MCD": ("McDonald's", "NYSE"),
     "CSCO": ("Cisco Systems", "NASDAQ"), "ABT": ("Abbott Laboratories", "NYSE"), "WFC": ("Wells Fargo", "NYSE"),
@@ -4115,7 +4135,16 @@ TOP100_US_STOCKS = {
     # file's own fixed-ticker universes already follow.
     "SNDK": ("SanDisk", "NASDAQ"),
     "C": ("Citigroup", "NYSE"), "PLD": ("Prologis", "NYSE"), "SBUX": ("Starbucks", "NASDAQ"),
-    "MMC": ("Marsh & McLennan", "NYSE"), "AMT": ("American Tower", "NYSE"), "PGR": ("Progressive", "NYSE"),
+    # 2026-09-14 ("check tickers in the list as well, some do have
+    # issues") — MMC stopped returning any data on yfinance (get_info's
+    # own longName came back None too — not a transient fetch glitch).
+    # Live-checked via TradingView symbol search: Marsh & McLennan's
+    # common stock now trades under MRSH (NYSE) — MMC still exists as a
+    # symbol root but only for the company's bonds now (e.g. MMC.GG),
+    # not the equity. Confirmed live: yfinance's MRSH returns real
+    # recent daily bars, longName "Marsh & McLennan Companies, Inc.",
+    # exchange NYQ (NYSE).
+    "MRSH": ("Marsh & McLennan", "NYSE"), "AMT": ("American Tower", "NYSE"), "PGR": ("Progressive", "NYSE"),
     "REGN": ("Regeneron Pharmaceuticals", "NASDAQ"), "NEE": ("NextEra Energy", "NYSE"), "EOG": ("EOG Resources", "NYSE"),
     "ETN": ("Eaton", "NYSE"), "KLAC": ("KLA Corporation", "NASDAQ"), "PANW": ("Palo Alto Networks", "NASDAQ"),
     "SO": ("Southern Company", "NYSE"), "DUK": ("Duke Energy", "NYSE"), "CB": ("Chubb", "NYSE"),
