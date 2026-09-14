@@ -43,6 +43,17 @@ const CLOUD_SCREENERS = new Set([
   "globalCountryEtfs",
   "globalCurrencies",
   "strategicAlpha",
+  // 2026-09-14 — Top 100 US Stocks (api/momentum_screeners.py's
+  // top100UsStocks) runs the same way strategicAlpha does (one bulk
+  // fetch of a fixed small ticker list, no batching), just missed
+  // being added here when the page shipped — same class of oversight
+  // nseScreener/sectorAlpha/sectorStockAlpha had above on 2026-08-30.
+  // Without this, "Run now" silently fell through to the dead
+  // local-poller path (see LocalRunButton's own comment) instead of
+  // actually calling the Vercel endpoint — caught 2026-09-14 ("US page
+  // not refreshed with stocks") when the page's first-ever cron run
+  // hadn't happened yet AND the manual fallback didn't work either.
+  "top100UsStocks",
   // marketRatios folded into strategicAlpha 2026-09-13 ("merge the
   // strategic and ratios page under strategic") — no longer its own
   // screener key, so no separate entry here.
