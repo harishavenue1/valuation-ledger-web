@@ -3961,6 +3961,96 @@ def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_v
     return combined.reset_index(drop=True)
 
 
+# ── top100UsStocks ───────────────────────────────────────────────────────
+#
+# Added 2026-09-14 — "add a new page for top 100 US Stocks, replicate
+# and one more col with alpha over Nasdaq 100", from a screenshot of
+# this file's own Strategic Alpha table (Close / 1D-1W-1M-3M-6M-1Y % /
+# % vs 200D-50D-33W EMA / Trend). Reuses _sa_trend_row UNCHANGED (the
+# same per-asset trend/return computation strategicAlpha/the Market
+# Ratios rows already share) against a fixed large-cap US stock
+# universe instead of India/global indices — same "duplicate a small
+# per-row shape, don't fork the whole screener" precedent Market Ratios
+# already set for itself.
+#
+# TOP100_US_STOCKS is a hand-picked snapshot of ~100 well-known US
+# mega/large-caps (roughly the S&P 100 universe), NOT a live
+# index-membership fetch — same convention GCE_ETF_UNIVERSE/
+# SA_ASSET_UNIVERSE already use elsewhere in this file (S&P 100
+# constituents actually change periodically; this is a point-in-time
+# list, not something that self-updates). The NYSE/NASDAQ exchange tag
+# on each TradingView link is best-effort, not individually verified
+# per ticker — same "fix one-offs later" precedent those two universes'
+# own module comments already set.
+#
+# alpha_1y (the "one more col" asked for) = the stock's own 1Y % return
+# minus Nasdaq 100's (^NDX) 1Y % return over the same window — the same
+# stock-minus-benchmark convention globalCountryEtfs' own alpha_1y
+# column already uses, just a different benchmark index.
+TOP100_US_BENCHMARK_TICKER = "^NDX"  # Nasdaq 100
+
+TOP100_US_STOCKS = {
+    "AAPL": ("Apple", "NASDAQ"), "MSFT": ("Microsoft", "NASDAQ"), "GOOGL": ("Alphabet", "NASDAQ"),
+    "AMZN": ("Amazon", "NASDAQ"), "NVDA": ("Nvidia", "NASDAQ"), "META": ("Meta Platforms", "NASDAQ"),
+    "TSLA": ("Tesla", "NASDAQ"), "BRK-B": ("Berkshire Hathaway", "NYSE"), "AVGO": ("Broadcom", "NASDAQ"),
+    "LLY": ("Eli Lilly", "NYSE"), "JPM": ("JPMorgan Chase", "NYSE"), "V": ("Visa", "NYSE"),
+    "UNH": ("UnitedHealth Group", "NYSE"), "XOM": ("Exxon Mobil", "NYSE"), "MA": ("Mastercard", "NYSE"),
+    "COST": ("Costco Wholesale", "NASDAQ"), "HD": ("Home Depot", "NYSE"), "PG": ("Procter & Gamble", "NYSE"),
+    "NFLX": ("Netflix", "NASDAQ"), "JNJ": ("Johnson & Johnson", "NYSE"), "BAC": ("Bank of America", "NYSE"),
+    "ABBV": ("AbbVie", "NYSE"), "CRM": ("Salesforce", "NYSE"), "ORCL": ("Oracle", "NYSE"),
+    "KO": ("Coca-Cola", "NYSE"), "CVX": ("Chevron", "NYSE"), "MRK": ("Merck", "NYSE"),
+    "WMT": ("Walmart", "NYSE"), "PEP": ("PepsiCo", "NASDAQ"), "ADBE": ("Adobe", "NASDAQ"),
+    "AMD": ("Advanced Micro Devices", "NASDAQ"), "TMO": ("Thermo Fisher Scientific", "NYSE"),
+    "LIN": ("Linde", "NASDAQ"), "ACN": ("Accenture", "NYSE"), "MCD": ("McDonald's", "NYSE"),
+    "CSCO": ("Cisco Systems", "NASDAQ"), "ABT": ("Abbott Laboratories", "NYSE"), "WFC": ("Wells Fargo", "NYSE"),
+    "DHR": ("Danaher", "NYSE"), "GE": ("GE Aerospace", "NYSE"), "DIS": ("Walt Disney", "NYSE"),
+    "TXN": ("Texas Instruments", "NASDAQ"), "VZ": ("Verizon Communications", "NYSE"), "PM": ("Philip Morris International", "NYSE"),
+    "NOW": ("ServiceNow", "NYSE"), "INTU": ("Intuit", "NASDAQ"), "IBM": ("IBM", "NYSE"),
+    "CAT": ("Caterpillar", "NYSE"), "AMGN": ("Amgen", "NASDAQ"), "CMCSA": ("Comcast", "NASDAQ"),
+    "QCOM": ("Qualcomm", "NASDAQ"), "SPGI": ("S&P Global", "NYSE"), "PFE": ("Pfizer", "NYSE"),
+    "UNP": ("Union Pacific", "NYSE"), "AXP": ("American Express", "NYSE"), "GS": ("Goldman Sachs", "NYSE"),
+    "RTX": ("RTX Corporation", "NYSE"), "LOW": ("Lowe's", "NYSE"), "HON": ("Honeywell", "NASDAQ"),
+    "COP": ("ConocoPhillips", "NYSE"), "ISRG": ("Intuitive Surgical", "NASDAQ"), "T": ("AT&T", "NYSE"),
+    "BKNG": ("Booking Holdings", "NASDAQ"), "ELV": ("Elevance Health", "NYSE"), "SYK": ("Stryker", "NYSE"),
+    "MDT": ("Medtronic", "NYSE"), "BLK": ("BlackRock", "NYSE"), "ADP": ("Automatic Data Processing", "NASDAQ"),
+    "MS": ("Morgan Stanley", "NYSE"), "SCHW": ("Charles Schwab", "NYSE"), "BSX": ("Boston Scientific", "NYSE"),
+    "GILD": ("Gilead Sciences", "NASDAQ"), "DE": ("Deere & Company", "NYSE"), "TJX": ("TJX Companies", "NYSE"),
+    "VRTX": ("Vertex Pharmaceuticals", "NASDAQ"), "MDLZ": ("Mondelez International", "NASDAQ"),
+    "LMT": ("Lockheed Martin", "NYSE"), "ADI": ("Analog Devices", "NASDAQ"), "MU": ("Micron Technology", "NASDAQ"),
+    "C": ("Citigroup", "NYSE"), "PLD": ("Prologis", "NYSE"), "SBUX": ("Starbucks", "NASDAQ"),
+    "MMC": ("Marsh & McLennan", "NYSE"), "AMT": ("American Tower", "NYSE"), "PGR": ("Progressive", "NYSE"),
+    "REGN": ("Regeneron Pharmaceuticals", "NASDAQ"), "NEE": ("NextEra Energy", "NYSE"), "EOG": ("EOG Resources", "NYSE"),
+    "ETN": ("Eaton", "NYSE"), "KLAC": ("KLA Corporation", "NASDAQ"), "PANW": ("Palo Alto Networks", "NASDAQ"),
+    "SO": ("Southern Company", "NYSE"), "DUK": ("Duke Energy", "NYSE"), "CB": ("Chubb", "NYSE"),
+    "CI": ("Cigna", "NYSE"), "EQIX": ("Equinix", "NASDAQ"), "APD": ("Air Products and Chemicals", "NYSE"),
+    "FDX": ("FedEx", "NYSE"), "NKE": ("Nike", "NYSE"), "UPS": ("United Parcel Service", "NYSE"),
+}
+
+
+def _run_top100_us_stocks(symbols, name_map, sector_map):
+    """Ignores symbols/name_map/sector_map (the NSE-750 universe) — this
+    screener has its own fixed 100-US-stock universe, same pattern as
+    strategicAlpha/sectorAlpha's own fixed-ticker-list screeners."""
+    bench_hist = _gxc_fetch_history(TOP100_US_BENCHMARK_TICKER)
+    bench_r_1y = _gxc_pct_return(bench_hist, 365)
+
+    rows, skipped = [], []
+    for ticker, (name, exch) in TOP100_US_STOCKS.items():
+        hist = _gxc_fetch_history(ticker)
+        tv_symbol = f"{exch}:{ticker.replace('-', '.')}"
+        row = _sa_trend_row(name, ticker, tv_symbol, hist)
+        if row is None:
+            skipped.append(ticker)
+            continue
+        row["alpha_1y"] = None if row["r_1y"] is None or bench_r_1y is None else round(row["r_1y"] - bench_r_1y, 2)
+        rows.append(row)
+
+    rows.sort(key=lambda r: (r["alpha_1y"] is None, -(r["alpha_1y"] if r["alpha_1y"] is not None else -999)))
+    for i, r in enumerate(rows, 1):
+        r["rank"] = i
+    return {"label": "Top 100 US Stocks", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -3989,6 +4079,7 @@ SCREENER_RUNNERS = {
     "benchmarkNse500": _run_benchmark_nse500_cache,
     "nse750Fundamentals": _run_nse750_fundamentals_cache,
     "nse750PriceCache": _run_nse750_price_cache,
+    "top100UsStocks": _run_top100_us_stocks,
 }
 
 
