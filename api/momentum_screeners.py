@@ -183,7 +183,10 @@ def _rs_returns_for(data, last_date):
 
 def _run_rs(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=30 * RS_FETCH_MONTHS_BUFFER)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 ("how much time more can be saved" -> "yes go ahead") —
+    # reads the shared nse750PriceCache instead of an independent
+    # yfinance fetch; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     # 2026-09-14 ("hope all momentum pages and also other pages reuse
     # the cache") — reads the shared benchmarkNse500 cache instead of
     # this screener's own independent fetch (the old _rs_fetch_benchmark()
@@ -297,7 +300,9 @@ def _ltis_signal_asof(weekly_df, asof_date):
 
 def _run_ltis(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * LTIS_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's
+    # own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -430,7 +435,8 @@ def _wrs_fresh_ema33_breakdown(wdf):
 
 def _run_weekly_signals(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * LTIS_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -587,7 +593,8 @@ def _sm_walk_state(ind):
 
 def _run_smart_money(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * SM_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start, need_ohlc=True)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -661,7 +668,8 @@ def _wi_compute_rank_row(weekly):
 
 def _run_weekend_investing(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=30 * WI_FETCH_MONTHS_BUFFER)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -762,7 +770,8 @@ def _qb_compute_signal(weekly):
 
 def _run_quant_bollinger(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * QB_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start, need_hl=True)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start, need_hl=True)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -879,7 +888,8 @@ def _nse_build_row(symbol, name, sector, cd, cw, cm):
 
 def _run_nse_screener(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * NSE_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -1250,7 +1260,8 @@ def _ssa_build_rows(symbols, name_map, sector_map):
     so this is factored out rather than duplicated. Returns (rows,
     skipped); NOT sorted/ranked — each caller ranks it their own way."""
     start = (date.today() - timedelta(days=365 * SSA_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, None
 
@@ -1510,7 +1521,8 @@ def _mab_analyze(close, ohlc4, ema_period, recency_periods):
 
 def _run_ma_breakout(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * MAB_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start, need_ohlc=True)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -1607,7 +1619,8 @@ def _val_rsi_series(close, period=14):
 
 def _run_value_rsi_turnaround(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * VAL_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -1703,7 +1716,8 @@ GFS_LOOKBACK_DAYS = 10  # trading days to look back for the daily RSI pullback l
 
 def _run_grandfather_father_son(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=365 * GFS_FETCH_YEARS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start, need_ohlc=True)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start, need_ohlc=True)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -1793,7 +1807,8 @@ NSE_52W_MIN_BARS = 100    # need a real chunk of the year's history to trust the
 
 def _run_52w_high(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=NSE_52W_FETCH_DAYS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -1831,7 +1846,8 @@ def _run_52w_high(symbols, name_map, sector_map):
 
 def _run_52w_low(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=NSE_52W_FETCH_DAYS)).isoformat()
-    daily = _ms_fetch_daily(symbols, start)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -2487,7 +2503,8 @@ VR_TOP_N = 20
 
 def _run_volume_rockers(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=VR_FETCH_DAYS_BUFFER)).isoformat()
-    daily = _ms_fetch_daily(symbols, start, need_volume=True)
+    # 2026-09-14 — reads the shared nse750PriceCache; see that cache's own module comment.
+    daily = _price_cache_read(symbols, start, need_volume=True)
     if daily is None:
         return None, "no data fetched from yfinance"
 
@@ -3803,6 +3820,147 @@ def _bench_cache_read(interval):
     return sorted(({"date": r["date"], "close": r["close"]} for r in cached if r.get("interval") == interval), key=lambda r: r["date"])
 
 
+# ── nse750PriceCache (shared cache) ──────────────────────────────────────
+#
+# Added 2026-09-14 ("hope all momentum pages and also other pages reuse
+# the cache pages" / "how much time more can be saved" / "yes go
+# ahead") — this is de-duplication target #2, deliberately deferred
+# out of the benchmarkNse500 change (see that screener's own module
+# comment for why: "it's 750 symbols' worth of OHLC history, a real
+# storage-design question — folding it into this same shared
+# momentum_screeners meta blob every other screener already reads/
+# merges against risks bloating and slowing down ALL of them").
+#
+# 13 screeners independently ran their own chunked yfinance bulk
+# download of the SAME NSE-750 universe's daily OHLCV history, just
+# with different lookback windows (55 days to 5 years) and different
+# column subsets (Close-only / +High+Low / +Open / +Volume) — audited
+# live, ~16-17 min/day of duplicated fetch time, by far the largest
+# remaining opportunity after the fundamentals cache. One is excluded:
+# momentumPersonal fetches Chartink's own qualifying-symbol list, NOT
+# the NSE-750 universe (Chartink covers the full NSE cash segment,
+# a superset) — migrating it would silently drop any qualifying symbol
+# outside NSE 750, so it keeps its own independent fetch.
+#
+# Design, given the storage-bloat risk flagged above: this cache gets
+# its OWN dedicated meta key ("nse750PriceCache"), NOT nested inside
+# the shared "momentum_screeners" blob every other screener read/
+# rewrites — a 750-symbol x 5-year OHLCV dataset is tens of MB, and
+# every one of the other 20+ screeners would otherwise pay to
+# deserialize/reserialize it on every single run even though they
+# never touch price data. The do_GET handler still unconditionally
+# writes SOMETHING into "momentum_screeners" for this screener key too
+# (that's baked into the shared handler, not worth a special-case
+# branch there) — so push_rows below is deliberately just a tiny
+# one-row status summary, not the bulk data.
+#
+# Stores 5 years (PRICE_CACHE_FETCH_YEARS — the longest window any
+# migrated consumer needs: nseScreener/valueRsiTurnaround/
+# grandfatherFatherSon) of full daily OHLCV, since _ms_fetch_daily's
+# underlying yf.download call already pulls every column from Yahoo
+# regardless of which ones a given caller keeps — fetching the union
+# once costs no more time than fetching Close alone would have.
+# Organized as {"data": {symbol: [[date, O, H, L, C, V], ...]}}
+# (ascending, rounded) rather than flat rows-with-a-symbol-field: same
+# total price data, but avoids repeating the symbol string on every
+# single row, and lets a reader slice straight to the symbols it wants
+# with a dict lookup instead of a full-table filter. No batching
+# needed unlike reverseDcfScanNse750/turtleWealth/nse750Fundamentals —
+# this is one bulk chunked yfinance download for the whole universe,
+# not 750 rate-limited per-symbol Screener.in fetches, and that shape
+# already runs comfortably inside the 300s cap today (nseScreener's own
+# 5-year fetch measured 93.2s live) — so a single daily cron, full
+# overwrite each run, same as benchmarkNse500.
+PRICE_CACHE_FETCH_YEARS = 5
+
+
+def _run_nse750_price_cache(symbols, name_map, sector_map):
+    """Ignores name_map/sector_map — a straight bulk OHLCV refresh of the
+    NSE-750 universe, not a per-stock scan with derived fields."""
+    start = (date.today() - timedelta(days=365 * PRICE_CACHE_FETCH_YEARS)).isoformat()
+    daily = _ms_fetch_daily(symbols, start, need_ohlc=True, need_volume=True)
+    if daily is None:
+        return None, "no price data fetched from yfinance"
+
+    by_symbol = {}
+    total_rows = 0
+    for sym, g in daily.groupby("symbol"):
+        g = g.sort_values("date")
+        rows = []
+        for _, r in g.iterrows():
+            vol = r.get("Volume")
+            rows.append([
+                r["date"].date().isoformat(),
+                round(float(r["Open"]), 2),
+                round(float(r["High"]), 2),
+                round(float(r["Low"]), 2),
+                round(float(r["Close"]), 2),
+                int(vol) if pd.notna(vol) else None,
+            ])
+        if rows:
+            by_symbol[sym] = rows
+            total_rows += len(rows)
+
+    if not by_symbol:
+        return None, "no price data survived per-symbol grouping"
+
+    conn = get_conn()
+    try:
+        set_meta(conn, "nse750PriceCache", {"as_of": date.today().isoformat(), "data": by_symbol})
+    finally:
+        conn.close()
+
+    return {
+        "label": "NSE 750 Daily Price Cache",
+        "push_rows": [{"symbols_cached": len(by_symbol), "rows_total": total_rows, "as_of": date.today().isoformat()}],
+        "scanned": len(by_symbol), "skipped": len(symbols) - len(by_symbol),
+    }, None
+
+
+def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_volume=False):
+    """Drop-in replacement for _ms_fetch_daily(symbols, start_iso, ...) —
+    same signature, same returned shape (a DataFrame with a "date"
+    column, the requested price columns, and a "symbol" column) — so
+    every migrated consumer's downstream logic (groupby("symbol"),
+    column access, etc.) needed zero changes, only this one line's
+    function name swapped. Reads the WHOLE shared cache once per call
+    (same "read once per batch, not per-symbol" discipline as
+    _fund_cache_read_all) then slices to just the requested symbols/
+    window/columns in memory."""
+    conn = get_conn()
+    try:
+        cache = get_meta(conn, "nse750PriceCache", {})
+    finally:
+        conn.close()
+    data = cache.get("data", {})
+    if not data:
+        return None
+
+    cols = ["Open", "High", "Low", "Close"] if need_ohlc else (["Close", "High", "Low"] if need_hl else ["Close"])
+    if need_volume:
+        cols = cols + ["Volume"]
+
+    frames = []
+    for sym in symbols:
+        rows = data.get(sym)
+        if not rows:
+            continue
+        filtered = [r for r in rows if r[0] >= start_iso]
+        if not filtered:
+            continue
+        df = pd.DataFrame(filtered, columns=["date", "Open", "High", "Low", "Close", "Volume"])
+        df["date"] = pd.to_datetime(df["date"])
+        df = df[["date"] + cols].dropna()
+        if df.empty:
+            continue
+        df["symbol"] = sym
+        frames.append(df)
+    if not frames:
+        return None
+    combined = pd.concat(frames)
+    return combined.reset_index(drop=True)
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -3830,6 +3988,7 @@ SCREENER_RUNNERS = {
     "turtleWealth": _run_turtle_wealth_nse750,
     "benchmarkNse500": _run_benchmark_nse500_cache,
     "nse750Fundamentals": _run_nse750_fundamentals_cache,
+    "nse750PriceCache": _run_nse750_price_cache,
 }
 
 
