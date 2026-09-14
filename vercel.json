@@ -31,6 +31,7 @@
     { "path": "/api/momentum_screeners?screener=globalCurrencies", "schedule": "38 10 * * *" },
     { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
     { "path": "/api/momentum_screeners?screener=top100UsStocks", "schedule": "41 10 * * *" },
+    { "path": "/api/momentum_screeners?screener=countryYields", "schedule": "42 10 * * *" },
     { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80", "schedule": "0 9 * * *" },
     { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80", "schedule": "6 9 * * *" },
     { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80", "schedule": "12 9 * * *" },

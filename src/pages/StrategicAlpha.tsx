@@ -101,6 +101,14 @@ export default function StrategicAlpha() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const entry = bundle.momentum_screeners["strategicAlpha"];
+  // 2026-09-14 ("want to [see actual rates for] other countries") —
+  // separate small screener/table, not folded into the main GenericTable
+  // above: countryYields is monthly-cadence FRED data (a "latest level +
+  // change vs a year ago" shape), genuinely different from every other
+  // row's daily trend/EMA shape, so it gets its own compact table
+  // instead of forcing a mismatched shape into shared columns.
+  const yieldsEntry = bundle.momentum_screeners["countryYields"];
+  const yieldsRows: any[] = yieldsEntry?.rows ?? [];
   const allRows = entry?.rows ?? [];
   // Added 2026-09-13 ("split strategic page to india and international
   // tickets") — every asset in api/momentum_screeners.py's
@@ -232,8 +240,43 @@ export default function StrategicAlpha() {
         returns no Yahoo data at all, and a price-index proxy (NIFTYGS10YR.NS) returns only a single current data point from Yahoo even on a
         2-year range request — neither can feed this screener's trend/return calculation. Not available via Yahoo through any route found.{" "}
         <b>Not built</b>: Market Breadth (% of NSE stocks above their 30-week MA), and "country rotation" (the video itself calls this an
-        undisclosed proprietary system).
+        undisclosed proprietary system). <b>Actual 10Y Govt Bond Yields</b> (below, on the 📉 Rates tab) is a separate small table, added
+        2026-09-14 — real yield LEVELS (not price, not a trend table) for the US plus every major country FRED (fred.stlouisfed.org, the
+        St. Louis Fed's free public data service) actually carries one for: Germany, UK, Japan, and India, sourced from the OECD's own
+        "long-term interest rate" series (defined as the 10-year government bond yield). US updates daily (Treasury's own series); the
+        other four update monthly (OECD's own cadence, usually 2-3 months behind — see each row's own "as of"). China is not shown here —
+        searched FRED directly and found no comparable 10-year series for it (only a short-term interbank rate, a different, non-comparable
+        number), so it's left out rather than shown as something it isn't.
       </MethodologyNote>
+      {region === "rates" && yieldsRows.length > 0 && (
+        <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600">
+            Actual 10Y Govt Bond Yields {yieldsEntry?.as_of && <span className="text-slate-400 font-normal">— refreshed {yieldsEntry.as_of}</span>}
+          </div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-100">
+                <th className="px-3 py-1.5 font-medium">Country</th>
+                <th className="px-3 py-1.5 font-medium">Yield</th>
+                <th className="px-3 py-1.5 font-medium">As of</th>
+                <th className="px-3 py-1.5 font-medium">vs 1Y ago</th>
+              </tr>
+            </thead>
+            <tbody>
+              {yieldsRows.map((r) => (
+                <tr key={r.country} className="border-b border-slate-50 last:border-0">
+                  <td className="px-3 py-1.5">{r.country}</td>
+                  <td className="px-3 py-1.5 font-medium">{r.latest_yield_pct != null ? `${r.latest_yield_pct}%` : "—"}</td>
+                  <td className="px-3 py-1.5 text-slate-400">{r.as_of}</td>
+                  <td className={`px-3 py-1.5 ${r.chg_vs_1y_ago_bps > 0 ? "text-emerald-600" : r.chg_vs_1y_ago_bps < 0 ? "text-red-600" : ""}`}>
+                    {r.chg_vs_1y_ago_bps != null ? `${r.chg_vs_1y_ago_bps > 0 ? "+" : ""}${r.chg_vs_1y_ago_bps} bps` : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
       <GenericTable
         rows={rows}
         cols={COLS}
