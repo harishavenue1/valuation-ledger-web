@@ -138,16 +138,6 @@ RS_TOP_N = 30
 RS_MIN_HISTORY_DAYS = 35
 
 
-def _rs_fetch_benchmark():
-    start = (date.today() - timedelta(days=30 * RS_FETCH_MONTHS_BUFFER)).isoformat()
-    df = yf.download(RS_BENCHMARK_TICKER, start=start, interval="1d", progress=False, auto_adjust=True)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    df = df[["Close"]].dropna()
-    df.index.name = "date"
-    return df.reset_index()
-
-
 def _rs_to_records(df_slice):
     out = []
     for _, row in df_slice.sort_values("date").iterrows():
@@ -194,12 +184,20 @@ def _rs_returns_for(data, last_date):
 def _run_rs(symbols, name_map, sector_map):
     start = (date.today() - timedelta(days=30 * RS_FETCH_MONTHS_BUFFER)).isoformat()
     daily = _ms_fetch_daily(symbols, start)
-    bench_df = _rs_fetch_benchmark()
-    if daily is None or bench_df.empty:
-        return None, "no data fetched from yfinance"
+    # 2026-09-14 ("hope all momentum pages and also other pages reuse
+    # the cache") — reads the shared benchmarkNse500 cache instead of
+    # this screener's own independent fetch (the old _rs_fetch_benchmark()
+    # helper, since removed — it did the exact same yf.download the
+    # cache itself now does, so keeping it around unused would've just
+    # been dead code, not a real rollback path). Same {"date","close"}
+    # record shape _rs_to_records already produced, so nothing
+    # downstream of this line changed. The cache's own 2-year daily
+    # window comfortably covers this screener's 9-month need.
+    bench_data = _bench_cache_read("1d")
+    if daily is None or not bench_data:
+        return None, "no data fetched from yfinance" if daily is None else "no benchmark data in shared cache yet (benchmarkNse500 hasn't run)"
 
     stocks_data = {sym: _rs_to_records(g) for sym, g in daily.groupby("symbol")}
-    bench_data = sorted(_rs_to_records(bench_df), key=lambda r: r["date"])
     last_date = datetime.strptime(bench_data[-1]["date"], "%Y-%m-%d").date()
     bench = _rs_returns_for(bench_data, last_date)
     bench_by_date = {r["date"]: r["close"] for r in bench["data"]}
@@ -3678,14 +3676,14 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
 # reads a stale prior-day benchmark value.
 #
 # Migrated to read from here instead of independently fetching:
-# sectorAlpha (wanted the exact `_sec_returns_for`-ready
-# {"date","close"} record shape this cache stores verbatim), and
-# Turtle Wealth's alpha_52w (wanted weekly closes as a date-indexed
-# Series — reconstructed from the cached weekly rows). NOT yet
-# migrated: Nifty500RelativeStrength's own _rs_fetch_benchmark() —
-# it consumes a raw DataFrame in a different downstream shape than the
-# other three; migrating it needs its own small adapter, left as a
-# clearly-flagged follow-up rather than rushed into this same change.
+# sectorAlpha and Nifty500RelativeStrength (both wanted the exact
+# `_rs_to_records`/`_sec_returns_for`-ready {"date","close"} record
+# shape this cache stores verbatim — Nifty500RelativeStrength's own
+# _rs_fetch_benchmark() did the identical yf.download the cache itself
+# now does, so it was removed rather than left as unused dead code),
+# and Turtle Wealth's alpha_52w (wanted weekly closes as a date-indexed
+# Series — reconstructed from the cached weekly rows). Every known
+# ^CRSLDX-fetching consumer in this file is migrated as of 2026-09-14.
 def _run_benchmark_nse500_cache(symbols, name_map, sector_map):
     """Ignores symbols/name_map/sector_map (the NSE-750 universe) — this
     is a single-ticker cache refresh, not a per-stock scan."""
