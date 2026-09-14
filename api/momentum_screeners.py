@@ -3026,7 +3026,13 @@ SA_ASSET_UNIVERSE = {
     # confirmed live on finance.yahoo.com/quote/%5ETNX (currently
     # quoted directly in percent, e.g. 4.97 = 4.97%, not the old x10
     # CBOE convention) — confirmed live (close 4.97, +0.63% 1D).
-    "US 10Y Yield": {"ticker": "^TNX", "tv": "TVC:US10Y", "region": "International"},
+    # 2026-09-14 ("add interest rates across countries (major)") —
+    # moved from region="International" into its own "Rates" tab
+    # (below), now that there's more than one rate-flavored row to
+    # group. Still the only row here that's a REAL yield, not a bond-
+    # price proxy — see the block below for why every other country
+    # couldn't get the same treatment.
+    "US 10Y Yield": {"ticker": "^TNX", "tv": "TVC:US10Y", "region": "Rates"},
     # India 10Y: dropped 2026-09-13 ("drop the India 10Y row") after two
     # dead ends confirmed live in production — ^IN10Y (the real yield
     # ticker) returns no Yahoo data at all, and its price-index proxy
@@ -3034,6 +3040,35 @@ SA_ASSET_UNIVERSE = {
     # 2-year range request (checked directly against Yahoo's own chart
     # API), so neither can feed this screener's trend/return
     # calculation. Not available via Yahoo through any route found.
+    #
+    # 2026-09-14 ("add interest rates across countries (major)") —
+    # re-confirmed live that Yahoo Finance genuinely carries no
+    # sovereign bond YIELD series for any country but the US (every
+    # ^XX10Y-style ticker guessed 404s, and yfinance's own Search()
+    # returns zero results for "<country> 10 year bond yield" queries)
+    # — same dead end India's own attempt already hit, not new. What
+    # IS real and live-fetchable: government-bond ETF PRICES for a few
+    # major economies. A bond's price moves OPPOSITE its yield (price
+    # up = yield down), so these rows are a real, honest signal about
+    # rate direction, just an INVERTED one — this screener's own
+    # Bull/Bear tag (price above/below its 200-day EMA) would read
+    # "Bull" exactly when yields are FALLING, the opposite sense every
+    # other row's Bull/Bear carries. Tagged region="Rates" (its own
+    # tab, not mixed into International) specifically so the frontend
+    # can carry one clear explanation for the whole group instead of
+    # relying on every viewer to infer it per row. Every ticker below
+    # live-verified two ways before shipping: yfinance liveness (real
+    # multi-year price history, not a single stale point like the
+    # India-10Y dead end) and its own longName/category confirming it's
+    # actually THAT country's government bonds, not something
+    # similarly-named (caught 2026-09-14: the first Japan candidate
+    # tried, 1482.T, turned out to be a JPY-hedged US TREASURY fund
+    # traded in Tokyo, not a JGB fund at all).
+    "Germany/Eurozone Govt Bonds": {"ticker": "IEGA.L", "tv": "EURONEXT:IEGA", "region": "Rates"},
+    "UK Gilts": {"ticker": "IGLT.L", "tv": "LSE:IGLT", "region": "Rates"},
+    "Japan Govt Bonds": {"ticker": "2561.T", "tv": "TSE:2561", "region": "Rates"},
+    "India 5Y G-Sec": {"ticker": "GILT5YBEES.NS", "tv": "NSE:GILT5YBEES", "region": "Rates"},
+    "China Bonds": {"ticker": "CBON", "tv": "AMEX:CBON", "region": "Rates"},
 }
 SA_EMA_PERIOD = 200
 SA_EMA50D_PERIOD = 50
