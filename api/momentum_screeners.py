@@ -2976,9 +2976,41 @@ SA_ASSET_UNIVERSE = {
     "Silver": {"ticker": "SI=F", "tv": "TVC:SILVER", "region": "International"},
     "GOLDCASE": {"ticker": "GOLDCASE.NS", "tv": "NSE:GOLDCASE", "region": "India"},
     "SILVERCASE": {"ticker": "SILVERCASE.NS", "tv": "NSE:SILVERCASE", "region": "India"},
+    # 2026-09-14 ("as per our macro skills [sheet]... did we cover all
+    # in the app" -> "yes go ahead") — the macro_dashboard_09Aug26.xlsx
+    # sheet behind MacroRegimeRadar's own Commodities tab has 5 more
+    # commodities this file never carried: Palladium, Platinum, Brent
+    # Crude, WTI Crude, Natural Gas. Same TVC-spot-feed pattern Gold/
+    # Silver already use where TradingView has one (Palladium/Platinum/
+    # Brent/WTI all do); Natural Gas doesn't have a clean TVC spot
+    # symbol, so it uses NYMEX's own continuous-futures contract
+    # (NG1!) instead — same "COMEX:HG1!" precedent Copper above already
+    # set for itself when TVC had no spot feed for it either. Every
+    # symbol here live-verified on TradingView before shipping (same
+    # standard as every other asset in this dict).
+    "Palladium": {"ticker": "PA=F", "tv": "TVC:PALLADIUM", "region": "International"},
+    "Platinum": {"ticker": "PL=F", "tv": "TVC:PLATINUM", "region": "International"},
+    "Brent Crude": {"ticker": "BZ=F", "tv": "TVC:UKOIL", "region": "International"},
+    "WTI Crude Oil": {"ticker": "CL=F", "tv": "TVC:USOIL", "region": "International"},
+    "Natural Gas": {"ticker": "NG=F", "tv": "NYMEX:NG1!", "region": "International"},
+    # The sheet's own Rotation ETFs tab also specifically names GOLDBEES/
+    # SILVERBEES (Nippon India's gold/silver ETFs) — added alongside
+    # (not swapped for) the existing GOLDCASE/SILVERCASE rows above,
+    # since those are a DIFFERENT AMC's funds tracking the same metal,
+    # not the same instrument under a different name (unlike GXG/COLO
+    # elsewhere in this file, which really were the same fund
+    # re-ticker'd) — dropping either would lose real, distinct
+    # information rather than deduplicate it.
+    "GOLDBEES": {"ticker": "GOLDBEES.NS", "tv": "NSE:GOLDBEES", "region": "India"},
+    "SILVERBEES": {"ticker": "SILVERBEES.NS", "tv": "NSE:SILVERBEES", "region": "India"},
     "Silver Miners (SIL)": {"ticker": "SIL", "tv": "AMEX:SIL", "region": "International"},
     "Gold Miners (GDX)": {"ticker": "GDX", "tv": "AMEX:GDX", "region": "International"},
     "Copper Miners (COPX)": {"ticker": "COPX", "tv": "AMEX:COPX", "region": "International"},
+    # Global Uranium (URA) / Sprott Uranium Miners (URNM) — the sheet's
+    # Rotation ETFs tab's own uranium pair, alongside the existing
+    # metals-miner ETFs just above (same region, same pattern).
+    "Global Uranium (URA)": {"ticker": "URA", "tv": "AMEX:URA", "region": "International"},
+    "Sprott Uranium Miners (URNM)": {"ticker": "URNM", "tv": "AMEX:URNM", "region": "International"},
     # 2026-09-13 ("under international add" + a TradingView screenshot
     # of an "Emerging Markets Basket - FXCM" instrument) — FXCM's own
     # basket is a proprietary CFD product, not something Yahoo Finance
