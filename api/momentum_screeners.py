@@ -3403,11 +3403,81 @@ def _rdcf_avg_3y_growth(revenue_hist):
     return round(sum(last3) / len(last3), 2)
 
 
-def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
+# ── nse750Fundamentals (shared cache) ────────────────────────────────────
+#
+# Added 2026-09-14 ("start with higher time savings", after an audit —
+# "list all pages its common details... so common details can be
+# built from centralised page" — found reverseDcfScanNse750 and
+# turtleWealth BOTH independently ran a full 750-stock, 10-batch,
+# ~28-minute Screener.in fetch every single day via the exact same
+# _rdcf_fetch_fundamentals(), on separate crons, for ~90% identical
+# data. Measured against the alternative (a shared daily NSE 750
+# PRICE cache, 13 consumers but each only ~80s) — this one wins on
+# raw time saved: ~56 min/day of duplicated Screener.in scraping down
+# to ~28 min/day, a live-measured saving roughly double the price
+# cache's ~16 min/day, despite touching fewer screeners.
+#
+# Same batched-cron design both consumers already used individually
+# (10 crons of 80 stocks, merge-on-read) — now runs ONCE, earlier in
+# the day (09:00-09:54 UTC, vercel.json), so both consumers' own
+# existing 11:00/12:00 blocks find a populated cache to read instead
+# of fetching. Their own 10-batch cron STRUCTURE is left unchanged in
+# this same change (each batch now does a fast in-memory dict lookup
+# instead of ~80 rate-limited fetches, so those batches will finish in
+# well under a second each) — collapsing them down to fewer/larger
+# batches is a natural, low-risk follow-up once this is proven stable
+# for a few days, not rushed into the same change as the cache itself.
+def _run_nse750_fundamentals_cache(symbols, name_map, sector_map):
     new_rows = []
     for sym in symbols:
         fund = _rdcf_fetch_fundamentals(sym)
         time.sleep(1.0)  # same Screener.in pacing every other per-ticker fetch in this file already uses
+        if fund is None:
+            continue
+        new_rows.append({"symbol": sym, "as_of": date.today().isoformat(), **fund})
+
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    existing_rows = all_screeners.get("nse750Fundamentals", {}).get("rows", [])
+    by_symbol = {r["symbol"]: r for r in existing_rows}
+    for r in new_rows:
+        by_symbol[r["symbol"]] = r
+    merged = list(by_symbol.values())
+
+    return {"label": "NSE 750 Fundamentals Cache", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
+
+
+def _fund_cache_read_all():
+    """Reads the WHOLE shared fundamentals cache ONCE per batch
+    invocation (not per-symbol — an 80-stock loop calling this per
+    symbol would just trade 80 Screener.in fetches for 80 Postgres
+    round-trips, missing the point), returns a plain {symbol: row}
+    dict for fast in-memory lookups. Each row has the exact same shape
+    _rdcf_fetch_fundamentals() always returned (current_price,
+    marketcap, revenue_hist, net_profit_hist, opm_pct, tax_pct,
+    borrowings) — consumers need zero changes to their OWN downstream
+    logic, only the fetch-vs-lookup swap itself."""
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    return {r["symbol"]: r for r in all_screeners.get("nse750Fundamentals", {}).get("rows", [])}
+
+
+def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
+    # 2026-09-14 ("start with higher time savings") — reads the shared
+    # nse750Fundamentals cache instead of an independent per-symbol
+    # Screener.in fetch; see that cache's own module comment. No sleep
+    # needed anymore — this is now a fast in-memory dict lookup, not a
+    # live network request.
+    fund_cache = _fund_cache_read_all()
+    new_rows = []
+    for sym in symbols:
+        fund = fund_cache.get(sym)
         if fund is None or fund["marketcap"] is None:
             continue
         revenue0 = fund["revenue_hist"][-1]
@@ -3594,10 +3664,16 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
                 "alpha_52w": None if r_1y is None or bench_r_1y is None else round(r_1y - bench_r_1y, 2),
             }
 
+    # 2026-09-14 ("start with higher time savings") — reads the shared
+    # nse750Fundamentals cache instead of an independent per-symbol
+    # Screener.in fetch (this was the same fetch reverseDcfScanNse750
+    # ran independently, both hitting Screener.in for ~90% identical
+    # data — see that cache's own module comment). No sleep needed
+    # anymore — a fast in-memory dict lookup, not a live network call.
+    fund_cache = _fund_cache_read_all()
     new_rows = []
     for sym in symbols:
-        fund = _rdcf_fetch_fundamentals(sym)
-        time.sleep(1.0)  # same Screener.in pacing every other per-ticker fetch in this file already uses
+        fund = fund_cache.get(sym)
         if fund is None:
             continue
         revenue_hist = fund.get("revenue_hist") or []
@@ -3753,6 +3829,7 @@ SCREENER_RUNNERS = {
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
     "turtleWealth": _run_turtle_wealth_nse750,
     "benchmarkNse500": _run_benchmark_nse500_cache,
+    "nse750Fundamentals": _run_nse750_fundamentals_cache,
 }
 
 
