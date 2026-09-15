@@ -262,13 +262,13 @@ function InstrumentCard({
           only decomposition of the already-verified finalProfitWoLev/
           patWoLevPct formulas, not new logic. */}
       <div className="overflow-x-auto mt-6">
-        <table className="text-sm border-collapse w-full" style={{ minWidth: 1500 }}>
+        <table className="text-sm border-collapse w-full" style={{ minWidth: 1580 }}>
           <thead className="text-slate-500 text-xs">
             <tr>
               <th rowSpan={2} className="text-right px-2 py-1.5 align-bottom">
                 Days
               </th>
-              <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-indigo-50/50 text-indigo-700 font-semibold">
+              <th colSpan={7} className="text-center px-2 py-1 border-b border-slate-200 bg-indigo-50/50 text-indigo-700 font-semibold">
                 With Leverage (MTF)
               </th>
               <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-slate-100 text-slate-600 font-semibold border-l border-slate-300">
@@ -281,6 +281,19 @@ function InstrumentCard({
             <tr>
               <th className="text-right px-2 py-1 bg-indigo-50/50">Gross Profit</th>
               <th className="text-right px-2 py-1 bg-indigo-50/50">Interest</th>
+              {/* 2026-09-15 ("add a column for perDayinterest under MTF
+                  lev") — interest accrues as flat simple interest
+                  (Funded × Daily Interest Rate, no compounding — see
+                  this page's own methodology note), so this is the
+                  same constant rupee figure on every row (intPaid/days
+                  cancels the days out) rather than something that
+                  varies by day count — shown anyway as a quick
+                  per-day reference next to the cumulative Interest
+                  column, without needing to do that division by hand.
+                  MTF-only: the Without-Leverage side's own Interest is
+                  always 0 (no funding), so a per-day figure there
+                  would just be 0 on every row — not worth the column. */}
+              <th className="text-right px-2 py-1 bg-indigo-50/50">Interest/Day</th>
               <th className="text-right px-2 py-1 bg-indigo-50/50">Charges</th>
               <th className="text-right px-2 py-1 bg-indigo-50/50">Tax</th>
               <th className="text-right px-2 py-1 bg-indigo-50/50">Final Profit</th>
@@ -303,6 +316,7 @@ function InstrumentCard({
                   {/* With leverage */}
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.intPaid, 0)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.days > 0 ? r.intPaid / r.days : 0, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
                     {fmt(r.tax, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
