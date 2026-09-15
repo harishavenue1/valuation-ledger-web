@@ -3569,6 +3569,54 @@ def _rdcf_staged_ev(revenue0, margin, tax, wacc, tg, stage1, stage2, stage3):
     return pv + tv / (1 + wacc) ** RDCF_YEARS
 
 
+def _rdcf_trailing_contiguous_start(period_labels):
+    """2026-09-15 ("data wrong on turtle wealth" — DIACABS/Diamond Power
+    Infrastructure showing Profit ATH with +143.5% alpha) — live-
+    checked: its P&L table's own year columns jump straight from
+    "Mar 2017" to "Mar 2024" (Diamond Power went through NCLT
+    insolvency resolution in between — delisted/not reporting for 7
+    years, a fundamentally different capital structure after
+    emerging). revenue_hist/net_profit_hist previously flattened every
+    column into one ascending list with no idea years weren't
+    consecutive, so _tw_is_ath compared today's post-resolution TTM
+    profit against a pre-insolvency peak as if it were one continuous
+    business — mathematically "an all-time high" (193 > the old 126 Cr
+    peak), substantively a name change stitched onto a bankruptcy.
+
+    period_labels: the P&L table's own <thead> column labels, aligned
+    1:1 with each row's value list (e.g. ["Mar 2009", ..., "Mar 2017",
+    "Mar 2024", ..., "Mar 2026", "TTM"]). Returns the index where the
+    most recent unbroken run of consecutive fiscal years begins — every
+    ATH-style multi-year comparison this file does should only ever
+    look at years[start:], never across a reporting gap. TTM always
+    attaches to whatever run it follows (it's the same trailing period
+    as the latest fiscal year, not a year of its own) and never itself
+    breaks a run; an unparseable label is treated the same way."""
+    years = []
+    for lbl in period_labels:
+        if lbl == "TTM":
+            years.append(None)
+            continue
+        m = re.search(r"(\d{4})", lbl or "")
+        years.append(int(m.group(1)) if m else None)
+    n = len(years)
+    if n == 0:
+        return 0
+    start = n - 1
+    last_real_year = None
+    for i in range(n - 1, -1, -1):
+        y = years[i]
+        if y is None:
+            start = i
+            continue
+        if last_real_year is None or last_real_year - y == 1:
+            last_real_year = y
+            start = i
+        else:
+            break
+    return start
+
+
 def _rdcf_fetch_fundamentals(ticker):
     """Annual (not quarterly — see _mp_fetch_fundamentals above for
     momentumPersonal's own quarterly fetch, a different need) P&L +
@@ -3610,13 +3658,23 @@ def _rdcf_fetch_fundamentals(ticker):
         table = pl.find("table")
         if not table:
             continue
+        # 2026-09-15 — see _rdcf_trailing_contiguous_start's own comment
+        # for why: the year header row itself is the only way to know
+        # whether the P&L table's columns are actually consecutive
+        # fiscal years, or span a delisting/insolvency-resolution gap.
+        pl_cutoff = 0
+        thead = table.find("thead")
+        if thead:
+            period_labels = [th.get_text(strip=True) for th in thead.find_all("th")][1:]
+            if period_labels:
+                pl_cutoff = _rdcf_trailing_contiguous_start(period_labels)
         pl_rows = {}
         for tr in table.find("tbody").find_all("tr"):
             cells = tr.find_all("td")
             if len(cells) < 2:
                 continue
             label = cells[0].get_text(strip=True).rstrip("+").strip()
-            pl_rows[label] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+            pl_rows[label] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]][pl_cutoff:]
         # 2026-09-14 ("why ... turtle-wealth shows only 676 tickers") —
         # live-checked HDFCBANK/BAJFINANCE: banks/NBFCs/HFCs label their
         # P&L top line "Revenue", never "Sales" (no "OPM %" row either —
