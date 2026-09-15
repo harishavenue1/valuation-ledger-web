@@ -4153,7 +4153,34 @@ def _bench_cache_read(interval):
 # already runs comfortably inside the 300s cap today (nseScreener's own
 # 5-year fetch measured 93.2s live) — so a single daily cron, full
 # overwrite each run, same as benchmarkNse500.
+#
+# 2026-09-15 ("app is not updated with latest prices though it shows
+# run completed") — investigated: the daily cron's own fetch step was
+# fine (it ran, took ~200s), but the FINAL write kept dying with
+# "SSL connection has been closed unexpectedly" — reproduced twice in
+# a row manually, not a one-off flake. Root cause: the single
+# "nse750PriceCache" value was one ~40MB JSON blob (750 symbols x 5yr
+# OHLCV, ~820k rows) written in ONE parameterized query — almost
+# certainly hitting a message-size limit somewhere in the connection
+# path (a pooler in front of Postgres, most likely), not a code logic
+# bug, so it failed the SAME way every single time rather than
+# intermittently. This meant every one of the 13 consumer screeners
+# below was silently reading yesterday's cached prices while their OWN
+# "as_of" still updated (they ran fine — reading a cache is fast and
+# doesn't touch the network) — "run completed" was true and
+# meaningless at the same time.
+#
+# Fixed by sharding the write: PRICE_CACHE_NUM_SHARDS separate meta
+# keys (nse750PriceCache_shard_0..N-1), each ~150 symbols / ~8MB, each
+# written on its OWN short-lived connection — comfortably under
+# whatever limit was being hit. "nse750PriceCache" itself is now just
+# a tiny index (as_of, num_shards, symbols_cached, rows_total), same
+# "tiny status summary" shape push_rows already used — _price_cache_read
+# reads the index first, then merges every shard's data dict in memory
+# before slicing to the requested symbols, so every one of the 13
+# consumers needed zero changes.
 PRICE_CACHE_FETCH_YEARS = 5
+PRICE_CACHE_NUM_SHARDS = 5
 
 
 def _run_nse750_price_cache(symbols, name_map, sector_map):
@@ -4186,9 +4213,33 @@ def _run_nse750_price_cache(symbols, name_map, sector_map):
     if not by_symbol:
         return None, "no price data survived per-symbol grouping"
 
+    # 2026-09-15 — sharded write, see this cache's own module comment
+    # for why a single ~40MB blob kept failing. Symbols sorted first so
+    # the same symbol always lands in the same shard run-to-run (not
+    # load-bearing for correctness — _price_cache_read merges all
+    # shards regardless — just keeps each shard's size stable/
+    # predictable across days rather than shuffling on dict-ordering
+    # quirks).
+    as_of = date.today().isoformat()
+    shard_symbols = sorted(by_symbol.keys())
+    shards = [[] for _ in range(PRICE_CACHE_NUM_SHARDS)]
+    for i, sym in enumerate(shard_symbols):
+        shards[i % PRICE_CACHE_NUM_SHARDS].append(sym)
+
+    for i, syms in enumerate(shards):
+        shard_data = {sym: by_symbol[sym] for sym in syms}
+        conn = get_conn()
+        try:
+            set_meta(conn, f"nse750PriceCache_shard_{i}", {"as_of": as_of, "data": shard_data})
+        finally:
+            conn.close()
+
     conn = get_conn()
     try:
-        set_meta(conn, "nse750PriceCache", {"as_of": date.today().isoformat(), "data": by_symbol})
+        set_meta(conn, "nse750PriceCache", {
+            "as_of": as_of, "num_shards": PRICE_CACHE_NUM_SHARDS,
+            "symbols_cached": len(by_symbol), "rows_total": total_rows,
+        })
     finally:
         conn.close()
 
@@ -4209,12 +4260,25 @@ def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_v
     (same "read once per batch, not per-symbol" discipline as
     _fund_cache_read_all) then slices to just the requested symbols/
     window/columns in memory."""
+    # 2026-09-15 — reads the sharded cache (see its own module comment
+    # for why it's sharded, not one value): the index key first to
+    # learn how many shards exist, then every shard's own data dict,
+    # merged into one {symbol: rows} dict before the unchanged
+    # per-symbol slicing logic below.
     conn = get_conn()
     try:
-        cache = get_meta(conn, "nse750PriceCache", {})
+        index = get_meta(conn, "nse750PriceCache", {})
     finally:
         conn.close()
-    data = cache.get("data", {})
+    num_shards = index.get("num_shards", 0)
+    data = {}
+    for i in range(num_shards):
+        conn = get_conn()
+        try:
+            shard = get_meta(conn, f"nse750PriceCache_shard_{i}", {})
+        finally:
+            conn.close()
+        data.update(shard.get("data", {}))
     if not data:
         return None
 
