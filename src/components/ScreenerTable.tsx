@@ -270,7 +270,26 @@ export function GenericTable({
             </tr>
           </thead>
           <tbody>
-            {sorted.map((r, i) => {
+            {(() => {
+              // 2026-09-15 ("whats wrong here" — a screenshot of Portfolio
+              // Allocation showing the same handful of rows repeated in a
+              // cycle) — a THIRD instance of the same duplicate-React-key
+              // reconciliation bug the two comments below already
+              // describe, this time from portfolioAllocation: two rows
+              // can legitimately share both symbol AND sector (e.g. the
+              // same company held as two separate lots across two
+              // exchanges/products — confirmed live, ACE as a BSE holding
+              // + a same-day NSE position both resolve to the identical
+              // "ACE-Capital Goods" key). Rather than adding yet another
+              // one-off field check to the fallback chain every time a
+              // new screener hits this, this counts each computed key as
+              // it's used and appends a disambiguating suffix on any
+              // repeat — guarantees uniqueness unconditionally, so no
+              // future collision (of any shape) can trigger this class of
+              // bug again. Purely a React reconciliation identity, never
+              // rendered, so this changes no visible behavior.
+              const seenKeys = new Map<string, number>();
+              return sorted.map((r, i) => {
               const sym = String(r.symbol ?? i);
               // Symbol alone isn't a safe React key here: sectorStockAlpha
               // (Stocks vs Sector) legitimately pushes the same stock
@@ -303,7 +322,10 @@ export function GenericTable({
               // ~MCX GOLD1!)") — checked live, no other screener in this
               // file uses a field called "asset" — so it's checked FIRST
               // as the most specific, always-unique-when-present key.
-              const rowKey = r.asset !== undefined ? r.asset : r.sector !== undefined ? `${sym}-${r.sector}` : sym;
+              const baseKey = r.asset !== undefined ? r.asset : r.sector !== undefined ? `${sym}-${r.sector}` : sym;
+              const seenCount = seenKeys.get(baseKey) ?? 0;
+              seenKeys.set(baseKey, seenCount + 1);
+              const rowKey = seenCount === 0 ? baseKey : `${baseKey}-dup${seenCount}`;
               return (
                 <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
                   {cols.map((c) => (
@@ -332,7 +354,8 @@ export function GenericTable({
                   ))}
                 </tr>
               );
-            })}
+              });
+            })()}
           </tbody>
         </table>
       </div>
