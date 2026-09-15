@@ -205,8 +205,16 @@ function InstrumentCard({
       {/* Live result — 4 metrics (Zerodha's own 3, plus Tax, their one
           gap: "I guess only tax is not part of zerodha, lets add
           it") — all reflect inst.days, the slider above. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-lg p-4 mt-1">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4 bg-slate-50 rounded-lg p-4 mt-1">
         <MetricCard label="Applicable interest" caption={`${inst.dailyRatePct}% per day`} value={`₹${fmt(live.intPaid, 0)}`} />
+        {/* 2026-09-15 ("seems its same in all rows instead add as item
+            here") — Interest/Day was briefly a per-row column in the
+            day-bucket table below; since it's flat simple interest
+            (Funded x Daily Interest Rate, no compounding), it's the
+            exact same rupee figure on every single row there — moved
+            here as a single summary figure instead, next to the
+            cumulative Applicable interest it's derived from. */}
+        <MetricCard label="Interest/Day" value={`₹${fmt(inst.days > 0 ? live.intPaid / inst.days : 0, 0)}`} title="Funded amount x Daily Interest Rate — constant regardless of days held, since interest accrues as flat simple interest" />
         <MetricCard label="Brokerage + Charges" value={`₹${fmt(live.charges, 0)}`} title={chargesTooltip(chargesBreakdown)} />
         <MetricCard
           label="Tax"
@@ -262,48 +270,42 @@ function InstrumentCard({
           only decomposition of the already-verified finalProfitWoLev/
           patWoLevPct formulas, not new logic. */}
       <div className="overflow-x-auto mt-6">
-        <table className="text-sm border-collapse w-full" style={{ minWidth: 1580 }}>
+        <table className="text-sm border-collapse w-full" style={{ minWidth: 1500 }}>
           <thead className="text-slate-500 text-xs">
             <tr>
-              <th rowSpan={2} className="text-right px-2 py-1.5 align-bottom">
+              <th rowSpan={2} className="text-center px-2 py-1.5 align-bottom">
                 Days
               </th>
-              <th colSpan={7} className="text-center px-2 py-1 border-b border-slate-200 bg-indigo-50/50 text-indigo-700 font-semibold">
+              <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-indigo-50/50 text-indigo-700 font-semibold">
                 With Leverage (MTF)
               </th>
               <th colSpan={6} className="text-center px-2 py-1 border-b border-slate-200 bg-slate-100 text-slate-600 font-semibold border-l border-slate-300">
                 Without Leverage (Cash)
               </th>
-              <th rowSpan={2} className="text-right px-2 py-1.5 align-bottom border-l border-slate-300">
+              <th rowSpan={2} className="text-center px-2 py-1.5 align-bottom border-l border-slate-300">
                 Leverage Edge
               </th>
             </tr>
             <tr>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Gross Profit</th>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Interest</th>
-              {/* 2026-09-15 ("add a column for perDayinterest under MTF
-                  lev") — interest accrues as flat simple interest
-                  (Funded × Daily Interest Rate, no compounding — see
-                  this page's own methodology note), so this is the
-                  same constant rupee figure on every row (intPaid/days
-                  cancels the days out) rather than something that
-                  varies by day count — shown anyway as a quick
-                  per-day reference next to the cumulative Interest
-                  column, without needing to do that division by hand.
-                  MTF-only: the Without-Leverage side's own Interest is
-                  always 0 (no funding), so a per-day figure there
-                  would just be 0 on every row — not worth the column. */}
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Interest/Day</th>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Charges</th>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Tax</th>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Final Profit</th>
-              <th className="text-right px-2 py-1 bg-indigo-50/50">Final Profit %</th>
-              <th className="text-right px-2 py-1 bg-slate-100 border-l border-slate-300">Gross Profit</th>
-              <th className="text-right px-2 py-1 bg-slate-100">Interest</th>
-              <th className="text-right px-2 py-1 bg-slate-100">Charges</th>
-              <th className="text-right px-2 py-1 bg-slate-100">Tax</th>
-              <th className="text-right px-2 py-1 bg-slate-100">Final Profit</th>
-              <th className="text-right px-2 py-1 bg-slate-100">Final Profit %</th>
+              {/* 2026-09-15 ("keep the columns with header mid
+                  indentended") — column labels centered over their
+                  own column, data cells below stay right-aligned
+                  (tabular-nums, easiest to scan numerically) — headers
+                  don't need that same right-hugging, and centered
+                  reads better for a multi-word label like "Final
+                  Profit %" wrapping or sitting off to one side. */}
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Gross Profit</th>
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Interest</th>
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Charges</th>
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Tax</th>
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Final Profit</th>
+              <th className="text-center px-2 py-1 bg-indigo-50/50">Final Profit %</th>
+              <th className="text-center px-2 py-1 bg-slate-100 border-l border-slate-300">Gross Profit</th>
+              <th className="text-center px-2 py-1 bg-slate-100">Interest</th>
+              <th className="text-center px-2 py-1 bg-slate-100">Charges</th>
+              <th className="text-center px-2 py-1 bg-slate-100">Tax</th>
+              <th className="text-center px-2 py-1 bg-slate-100">Final Profit</th>
+              <th className="text-center px-2 py-1 bg-slate-100">Final Profit %</th>
             </tr>
           </thead>
           <tbody>
@@ -316,7 +318,6 @@ function InstrumentCard({
                   {/* With leverage */}
                   <td className="px-2 py-1.5 text-right tabular-nums">{fmt(r.pl, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.intPaid, 0)}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{fmt(r.days > 0 ? r.intPaid / r.days : 0, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmt(r.charges, 0)}</td>
                   <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
                     {fmt(r.tax, 0)} <span className="text-slate-400">({fmt(r.taxRatePct, 2)}%)</span>
