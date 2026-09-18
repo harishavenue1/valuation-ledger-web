@@ -276,7 +276,7 @@ export default function AllTechnicals() {
     const qbMap = keyBy(ms?.quantBollinger?.rows);
     const smMap = keyBy(ms?.smartMoney?.rows);
 
-    return base.map((b: any, i: number) => {
+    return base.map((b: any) => {
       const sym = b.symbol;
       const rs = rsMap.get(sym);
       const alpha = alphaMap.get(sym);
@@ -294,7 +294,6 @@ export default function AllTechnicals() {
       const sm = smMap.get(sym);
 
       return {
-        rank: i + 1,
         symbol: sym,
         name: b.name,
         sector: b.sector,
@@ -381,6 +380,31 @@ export default function AllTechnicals() {
 
         sm_pct_sma40: sm?.pct_vs_sma40 ?? null,
         sm_signal: sm?.signal ?? null,
+
+        // 2026-09-18 ("instead of only show records matching it show
+        // all but results are none") — presence flags, one per
+        // toggleable group, used ONLY to drive the "only matches"
+        // filter below (never rendered as a column themselves).
+        // Tracked as real map-lookup presence rather than inferred
+        // from field nullness, since a group's own fields can
+        // legitimately be null/false even when the row DID match
+        // (e.g. quantBollinger only ever pushes true signals, so
+        // presence in its map already means "matched" without needing
+        // to null-check qb_signal itself).
+        _has_rs: !!rs,
+        _has_alpha: !!alpha,
+        _has_high52w: !!high52w,
+        _has_low52w: !!low52w,
+        _has_ath: !!ath,
+        _has_mab: !!mab,
+        _has_ribbon: !!ltis || wsRsiMap.has(sym) || wsEmaMap.has(sym),
+        _has_vrt: !!vrt,
+        _has_gfs: !!gfs,
+        _has_momentum: !!mp,
+        _has_volume: !!vr,
+        _has_weekend: !!wi,
+        _has_bollinger: !!qb,
+        _has_smartmoney: !!sm,
       };
     });
   }, [ms]);
@@ -389,6 +413,18 @@ export default function AllTechnicals() {
     const active = COLUMN_GROUPS.filter((g) => enabledGroups.has(g.id)).flatMap((g) => g.cols);
     return [...ALWAYS_COLS, ...active];
   }, [enabledGroups]);
+
+  const [onlyMatches, setOnlyMatches] = useState(true);
+  const displayedRows = useMemo(() => {
+    const base =
+      !onlyMatches || enabledGroups.size === 0
+        ? rows
+        : rows.filter((r: any) => Array.from(enabledGroups).some((id) => r[`_has_${id}`]));
+    // rank recomputed here (1..N of what's actually shown), not baked in
+    // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
+    // 750 should read as "1..25", not gappy original-universe positions.
+    return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
+  }, [rows, enabledGroups, onlyMatches]);
 
   const asOf = ms?.nseScreener?.as_of;
 
@@ -413,26 +449,42 @@ export default function AllTechnicals() {
         any of those tabs (or wait for their cron) to update this one.
       </MethodologyNote>
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           onClick={() => setPickerOpen((v) => !v)}
           className="text-sm px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 font-medium"
         >
           🎛️ Columns ({enabledGroups.size} of {COLUMN_GROUPS.length} groups shown) {pickerOpen ? "▲" : "▼"}
         </button>
-        {pickerOpen && (
-          <div className="mt-2 p-3 border border-slate-200 rounded-lg bg-slate-50 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-            {COLUMN_GROUPS.map((g) => (
-              <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                <input type="checkbox" checked={enabledGroups.has(g.id)} onChange={() => toggleGroup(g.id)} />
-                {g.label}
-              </label>
-            ))}
-          </div>
+        {enabledGroups.size > 0 && (
+          <label className="flex items-center gap-2 text-sm cursor-pointer text-slate-600" title="With this on, only rows that actually have data in at least one checked group are shown — otherwise a sparse screener like Quant Bollinger shows all 750 rows blank">
+            <input type="checkbox" checked={onlyMatches} onChange={(e) => setOnlyMatches(e.target.checked)} />
+            Only show rows with data in the checked columns
+          </label>
         )}
       </div>
+      {pickerOpen && (
+        <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+          {COLUMN_GROUPS.map((g) => (
+            <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={enabledGroups.has(g.id)} onChange={() => toggleGroup(g.id)} />
+              {g.label}
+            </label>
+          ))}
+        </div>
+      )}
 
-      <GenericTable rows={rows} cols={cols} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="No technical data yet — the nseScreener cron hasn't run." />
+      <GenericTable
+        rows={displayedRows}
+        cols={cols}
+        navigate={(t) => navigate(`/company/${t}`)}
+        watchlist={watchlist}
+        emptyMessage={
+          rows.length > 0
+            ? "No stocks currently match the checked columns (e.g. Quant Bollinger can legitimately have zero current breakout signals) — try unchecking \"Only show rows with data\" or a different column group."
+            : "No technical data yet — the nseScreener cron hasn't run."
+        }
+      />
     </div>
   );
 }
