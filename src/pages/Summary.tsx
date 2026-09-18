@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
+import { WatchlistStar } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 import {
   CASE_COLOR,
@@ -38,17 +39,13 @@ const EMA_COLS: [string, string][] = [
   ["ema33w", "33W"],
 ];
 
-// 2026-09-18 — "visual make over to match the screenshot attached" (a
-// dark-card, badge-heavy tracker UI from a different app entirely).
-// Restyled to a dark panel with pill badges, numbered rows, and a
-// per-row trend sparkline — scoped to this page only (rest of the app
-// keeps its light theme); every column here is still backed by real
-// data already in `Stock`/`caseHeadline`, nothing fabricated to match
-// the reference screenshot's look (e.g. no confidence-% badges since
-// we don't have that data, no CMP day-change since Stock carries no
-// intraday field).
-// Index, Watch, Company, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Trend, Own, Remove
-const COL_WIDTHS = [40, 44, 220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 90, 70, 50];
+// Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
+// Base/Bull/Bear widened 150->210 — at 150 the "+20.0% | 20.0x |
+// -73.4%" line was truncating with an ellipsis (2026-08-23
+// screenshot). Other columns bumped up too so the table fills more
+// of the page's max-w-[1800px] shell generously instead of leaving a
+// wide empty gutter, rather than widening only the 3 cutoff columns.
+const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 60, 50];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
@@ -91,108 +88,30 @@ function sortValue(row: Row, col: SortCol): number | string | null {
   }
 }
 
-// Small tinted pill for a signed %, replacing the old plain colored
-// text — matches the reference screenshot's badge-style cells.
-function PctBadge({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-slate-600">—</span>;
-  const up = value >= 0;
-  return (
-    <span
-      className={`inline-block px-1.5 py-0.5 rounded-md text-xs font-semibold tabular-nums ${
-        up ? "bg-emerald-400/10 text-emerald-400" : "bg-rose-400/10 text-rose-400"
-      }`}
-    >
-      {fmtSigned(value)}
-    </span>
-  );
+function PctCell({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-slate-400">—</span>;
+  return <span className={value >= 0 ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{fmtSigned(value)}</span>;
 }
 
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
-  if (!h || h.cagr === null) return <span className="text-slate-600 text-xs">fill PE</span>;
+  if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
   const detail = `${fmtSigned(h.growth, 1)} | ${fmt(h.pe, 1)}x`;
-  const up = h.cagr >= 0;
   return (
-    <div className="overflow-hidden flex flex-col items-center gap-0.5">
-      <div className="text-[10px] font-medium text-slate-500">FY{h.year}</div>
-      <span
-        title={`${detail} | ${fmtSigned(h.cagr, 1)}`}
-        className={`px-2 py-0.5 rounded-md text-sm font-bold tabular-nums ${up ? "bg-emerald-400/10 text-emerald-400" : "bg-rose-400/10 text-rose-400"}`}
-      >
-        {fmtSigned(h.cagr, 1)}
-      </span>
-      <div className="text-[10px] text-slate-500 truncate max-w-full" title={detail}>
-        {detail}
+    <div className="overflow-hidden">
+      <div className="text-[10px] font-semibold text-slate-500">FY{h.year}</div>
+      {/* whitespace-nowrap text longer than the column's fixed width
+          bleeds into the neighboring cell instead of wrapping or
+          shrinking (table-layout: fixed doesn't grow the column to
+          fit) — different rows' growth/PE digit counts produce
+          different text lengths, so the bleed varied row to row,
+          which is what looked like inconsistent row/column widths.
+          truncate (overflow-hidden + text-ellipsis) caps it at the
+          real column width instead; title carries the full text. */}
+      <div className="text-xs truncate" title={`${detail} | ${fmtSigned(h.cagr, 1)}`}>
+        <span className="text-slate-500">{detail}</span> |{" "}
+        <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
       </div>
     </div>
-  );
-}
-
-// Built from the 4 real trailing price points we actually have on
-// `Stock` (33W EMA → 50D EMA → 20D EMA → CMP) — coarse, but every
-// point is real data, not a synthesized shape.
-function TrendSparkline({ stock }: { stock: Stock }) {
-  const series: [string, number | null][] = [
-    ["33W EMA", stock.ema33w ?? null],
-    ["50D EMA", stock.ema50d ?? null],
-    ["20D EMA", stock.ema20d ?? null],
-    ["CMP", stock.current_price],
-  ];
-  const pts = series.filter(([, v]) => v !== null) as [string, number][];
-  if (pts.length < 2) return <span className="text-slate-600 text-xs">—</span>;
-
-  const W = 72;
-  const H = 26;
-  const PAD = 3;
-  const vals = pts.map(([, v]) => v);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
-  const range = max - min || 1;
-  const step = (W - PAD * 2) / (pts.length - 1);
-  const coords = pts.map(([, v], i) => {
-    const x = PAD + i * step;
-    const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
-    return [x, y] as [number, number];
-  });
-  const up = vals[vals.length - 1] >= vals[0];
-  const color = up ? "#34d399" : "#fb7185";
-  const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const area = `${PAD},${H - PAD} ${line} ${W - PAD},${H - PAD}`;
-  const title = pts.map(([label, v]) => `${label}: ${fmt(v, 1)}`).join(" → ");
-
-  return (
-    // 2026-09-18 — TS build failure: React's SVGProps<SVGSVGElement>
-    // doesn't declare a `title` attribute on <svg> itself (unlike the
-    // HTML elements this codebase otherwise uses title on) — a plain
-    // wrapping <span title=...> gives the identical hover tooltip
-    // without changing anything visual (the svg is inline either way).
-    <span title={title}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-        <polygon points={area} fill={color} fillOpacity={0.12} stroke="none" />
-        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
-  );
-}
-
-// Local pill-style watch toggle, scoped to this page only — the
-// shared WatchlistStar (star icon) is used by every other screener
-// page and stays untouched; this reproduces the reference
-// screenshot's "+ Watch" / "Saved" pill using the same watchlist
-// state/toggle underneath.
-function WatchPill({ active, onToggle, symbol }: { active: boolean; onToggle: (symbol: string) => void; symbol: string }) {
-  return (
-    <button
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle(symbol);
-      }}
-      title={active ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
-      className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap border transition-colors ${
-        active ? "bg-indigo-500/20 text-indigo-300 border-indigo-500/40" : "bg-transparent text-slate-500 border-slate-600 hover:border-slate-400 hover:text-slate-300"
-      }`}
-    >
-      {active ? "★ Saved" : "+ Watch"}
-    </button>
   );
 }
 
@@ -214,7 +133,7 @@ function SortableHeader({
   const active = sortCol === col;
   return (
     <th className="text-center px-2 py-2 whitespace-nowrap" style={width ? { width } : undefined}>
-      <button onClick={() => onClick(col)} className={`hover:text-slate-200 ${active ? "text-slate-200" : ""}`}>
+      <button onClick={() => onClick(col)} className={`hover:text-slate-800 ${active ? "text-slate-800" : ""}`}>
         {label} {active ? (sortDir === "desc" ? "▼" : "▲") : ""}
       </button>
     </th>
@@ -300,84 +219,96 @@ function Section({
 
   return (
     <div className="mb-8">
-      <h2 className="text-sm font-medium text-slate-300 mb-2">
-        {emoji} {title} <span className="text-slate-500">({stocks.length})</span>
+      <h2 className="text-sm font-medium text-slate-700 mb-2">
+        {emoji} {title} ({stocks.length})
       </h2>
       {stocks.length === 0 ? (
-        <div className="text-slate-500 text-sm py-6 text-center border border-white/10 rounded-xl">{emptyMsg}</div>
+        <div className="text-slate-500 text-sm py-6 text-center border border-slate-200 rounded">{emptyMsg}</div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        // table-layout: fixed + an explicit width on every header cell —
+        // without this, "Stocks I Own" and "Tracking" (two independent
+        // tables) each auto-size their own columns off their own data,
+        // so corresponding columns don't line up in width between the
+        // two sections even though they're meant to read as one
+        // continuous grid. Same fix as the Detail page's Annual Results
+        // table.
+        <div className="overflow-x-auto rounded border border-slate-200">
           <table className="text-sm" style={{ tableLayout: "fixed", width: COL_WIDTHS.reduce((a, b) => a + b, 0) }}>
-            <thead className="bg-white/[0.03] text-slate-500 text-xs uppercase tracking-wide">
+            <thead className="bg-slate-50 text-slate-500 text-xs">
               <tr>
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[0] }}>
-                  #
-                </th>
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[1] }}></th>
-                <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
-                <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
-                <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[4]} />
-                <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[6] }} title="Current price vs. the Bull case's target price today (not annualized)">
-                  <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-200" : "hover:text-slate-200"}>
+                <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[0]} />
+                <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
+                <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
+                <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
+                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Current price vs. the Bull case's target price today (not annualized)">
+                  <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
                     Upside {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
                 </th>
-                <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[7]} />
+                <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
                 {EMA_COLS.map(([key, label], i) => (
-                  <SortableHeader key={key} label={label} col={`ema_${key}` as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[8 + i]} />
+                  <SortableHeader key={key} label={label} col={`ema_${key}` as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
                 ))}
                 {GRID_CASES.map((c, i) => (
-                  <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[11 + i] }}>
+                  <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[9 + i] }}>
                     <button onClick={() => clickHeader(c as SortCol)} className="hover:opacity-80">
                       {CASE_LABEL[c].replace(" Case", "")} {sortCol === c ? (sortDir === "desc" ? "▼" : "▲") : ""}
                     </button>
                   </th>
                 ))}
-                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[14] }}>
-                  Trend
-                </th>
-                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[15] }}>
-                  Own
-                </th>
-                <th className="px-2 py-2" style={{ width: COL_WIDTHS[16] }}></th>
+                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[12] }}>Own</th>
+                <th className="px-2 py-2" style={{ width: COL_WIDTHS[13] }}></th>
               </tr>
             </thead>
             <tbody>
-              {sortedRows.map((row, i) => (
-                <tr key={row.ticker} className={`border-t border-white/5 hover:bg-white/[0.04] ${row.stock.owned ? "bg-emerald-400/[0.03]" : ""}`}>
-                  <td className="px-2 py-2 text-center text-slate-600 text-xs tabular-nums">{i + 1}</td>
-                  <td className="px-1 py-2 text-center">
-                    <WatchPill active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
-                  </td>
+              {sortedRows.map((row) => (
+                <tr key={row.ticker} className="border-t border-slate-200 hover:bg-slate-50">
+                  {/* Company column is a fixed 200px (COL_WIDTHS[0]), so
+                      names wrap to however many lines they need — 1 for
+                      short ones, 3 for long ones — and since row height
+                      follows its tallest cell, that made row heights
+                      vary company to company (2026-08-23, "some show in
+                      2 lines, some in 3 lines"). min-h-[64px] reserves
+                      room for the worst case (3 lines) on every row so
+                      they're all the same static height, and line-
+                      clamp-3 caps any name longer than that instead of
+                      growing the row further. */}
                   <td className="px-3 py-2">
+                    {/* justify-center vertically centers the name/ticker
+                        block within the reserved 64px, instead of it
+                        sitting pinned to the top with dead space below
+                        for short 1-line names (2026-08-23, "indent
+                        company name to mid of cell"). */}
                     <div className="min-h-[64px] flex flex-col justify-center">
-                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium text-slate-100 hover:underline text-left line-clamp-3">
-                        {row.stock.name}
-                      </button>
-                      <div className="text-slate-500 text-[11px] font-mono">{row.ticker}</div>
-                      {row.stale && <div className="text-amber-500 text-[10px]">⚠️ {row.stale}</div>}
+                      <div>
+                        <WatchlistStar active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
+                        <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
+                          {row.stock.name}
+                        </button>
+                      </div>
+                      <div className="text-slate-500 text-xs">{row.ticker}</div>
+                      {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums text-slate-300">₹{fmt(row.mktcap)} Cr</td>
-                  <td className="px-2 py-2 text-center tabular-nums text-slate-300">₹{fmt(row.price)}</td>
-                  <td className="px-2 py-2 text-center tabular-nums text-slate-300">{fmt(row.pe, 1)}x</td>
+                  <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.mktcap)} Cr</td>
+                  <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
+                  <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
                   <td className="px-2 py-2 text-center">
-                    <PctBadge value={row.upside} />
+                    <PctCell value={row.upside} />
                   </td>
                   <td className="px-2 py-2 text-center">
                     {row.qtrSalesLabel && row.qtrSalesG !== null ? (
-                      <div className="flex flex-col items-center gap-0.5">
-                        <div className="text-[10px] font-medium text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</div>
-                        <PctBadge value={row.qtrSalesG} />
+                      <div>
+                        <div className="text-[10px] font-semibold text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</div>
+                        <PctCell value={row.qtrSalesG} />
                       </div>
                     ) : (
-                      <span className="text-slate-600">—</span>
+                      <span className="text-slate-400">—</span>
                     )}
                   </td>
                   {EMA_COLS.map(([key]) => (
                     <td key={key} className="px-2 py-2 text-center">
-                      <PctBadge value={row.ema[key]} />
+                      <PctCell value={row.ema[key]} />
                     </td>
                   ))}
                   {GRID_CASES.map((c) => (
@@ -386,23 +317,16 @@ function Section({
                     </td>
                   ))}
                   <td className="px-2 py-2 text-center">
-                    <div className="flex justify-center">
-                      <TrendSparkline stock={row.stock} />
-                    </div>
-                  </td>
-                  <td className="px-2 py-2 text-center">
                     <button
                       onClick={() => onOwnedToggle(row.ticker, !row.stock.owned)}
                       title="Click to mark as owned/not owned"
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-                        row.stock.owned ? "bg-emerald-400/10 text-emerald-400 border-emerald-500/30" : "bg-transparent text-slate-500 border-slate-600"
-                      }`}
+                      className="text-base"
                     >
-                      {row.stock.owned ? "Owned" : "Mark"}
+                      {row.stock.owned ? "✅" : "⬜"}
                     </button>
                   </td>
                   <td className="px-2 py-2 text-center">
-                    <button onClick={() => onRemove(row.ticker)} title={`Remove ${row.stock.name} from tracking`} className="text-slate-500 hover:text-rose-400">
+                    <button onClick={() => onRemove(row.ticker)} title={`Remove ${row.stock.name} from tracking`}>
                       🗑️
                     </button>
                   </td>
@@ -501,44 +425,42 @@ export default function Summary() {
   }
 
   return (
-    <div className="rounded-2xl bg-[#0d0f14] border border-white/10 p-5 text-slate-100">
+    <div>
+      <div className="text-2xl font-bold mb-1">
+        {totalCount} compan{totalCount === 1 ? "y" : "ies"} tracked
+      </div>
       <div className="flex flex-wrap items-start gap-3 mb-6">
-        <div>
-          <div className="text-2xl font-bold mb-1 text-white">
-            {totalCount} compan{totalCount === 1 ? "y" : "ies"} tracked
-          </div>
-          <input
-            placeholder="🔍 Filter by name/ticker"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-sm w-64 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-white/30"
-          />
-        </div>
+        <input
+          placeholder="🔍 Filter by name/ticker"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-sm w-64 focus:outline-none focus:border-slate-400"
+        />
         <div className="ml-auto w-full max-w-sm space-y-2">
           <form onSubmit={addCompany} className="flex gap-2">
             <input
               placeholder="e.g. TITAN, or MTAR, WINDLAS, MCX"
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
-              className="flex-1 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-white/30"
+              className="flex-1 bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-slate-400"
             />
             <button
               type="submit"
               disabled={addBusy}
-              className="px-3 py-1.5 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap"
+              className="px-3 py-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium disabled:opacity-50 whitespace-nowrap"
             >
               {addBusy ? "…" : "Retrieve"}
             </button>
           </form>
           {addStatus && (
-            <p className={`text-xs ${addStatus.kind === "error" ? "text-rose-400" : "text-emerald-400"}`}>{addStatus.text}</p>
+            <p className={`text-xs ${addStatus.kind === "error" ? "text-red-600" : "text-emerald-600"}`}>{addStatus.text}</p>
           )}
           <div className="flex gap-2">
             <button
               onClick={() => runRefresh("prices")}
               disabled={!!refreshing}
               title="Fast — price/PE/market cap/52W high only, no P&L/quarterly/EMA"
-              className="flex-1 text-xs px-3 py-1.5 rounded-full border border-white/15 text-slate-300 hover:border-white/30 disabled:opacity-50"
+              className="flex-1 text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
             >
               {refreshing === "prices" ? `Refreshing ${progress.done}/${progress.total}…` : "💹 Refresh prices only"}
             </button>
@@ -546,7 +468,7 @@ export default function Summary() {
               onClick={() => runRefresh("full")}
               disabled={!!refreshing}
               title="Full refresh — re-fetches P&L, Quarterly Results, and EMAs too (slower)"
-              className="flex-1 text-xs px-3 py-1.5 rounded-full border border-white/15 text-slate-300 hover:border-white/30 disabled:opacity-50"
+              className="flex-1 text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 disabled:opacity-50"
             >
               {refreshing === "full" ? `Refreshing ${progress.done}/${progress.total}…` : "🔄 Refresh all now"}
             </button>
@@ -555,7 +477,7 @@ export default function Summary() {
       </div>
 
       {totalCount === 0 ? (
-        <div className="text-slate-500 text-sm py-8 text-center border border-white/10 rounded-xl">
+        <div className="text-slate-500 text-sm py-8 text-center border border-slate-200 rounded">
           No companies yet — retrieve one from Screener.in above.
         </div>
       ) : (
