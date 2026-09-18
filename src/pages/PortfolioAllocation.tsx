@@ -316,6 +316,58 @@ export default function PortfolioAllocation() {
       { key: "name", label: "Name", align: "left", width: 13 },
       { key: "sector", label: "Sector", align: "left", width: 21 },
       {
+        // 2026-09-18 ("add a column for price with trading view link to
+        // it") — same TradingView-link-on-the-price convention already
+        // used elsewhere in this app (see ScreenerTable.tsx's PriceLink),
+        // except exchange-aware here rather than hardcoded to NSE: Kite's
+        // own `exchange` field per holding tells TradingView which
+        // listing to open (E2E/KSHINTL/CARTRADE/CONCORDBIO/TANFACIND are
+        // BSE-only in this portfolio).
+        key: "price",
+        label: "Price",
+        width: 11,
+        render: (r) => {
+          if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
+          const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
+          return (
+            <a
+              href={`https://www.tradingview.com/chart/?symbol=${prefix}:${encodeURIComponent(r.symbol)}&interval=W`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="tabular-nums hover:underline hover:text-indigo-600"
+              title={`Open ${r.symbol} chart on TradingView`}
+            >
+              ₹{fmtNum(r.price, 1)}
+            </a>
+          );
+        },
+      },
+      {
+        // 2026-09-18 ("along with price change column for weekly,
+        // monthly, quarterly") — pushed by the same skill fetch as the
+        // >33W EMA column, off the same Yahoo weekly-bars series
+        // (1/4/13 weekly bars back respectively — same bar-count
+        // convention nseScreener elsewhere in this app uses for its own
+        // weekly/monthly/quarterly % columns, not calendar-exact).
+        key: "pct_1w",
+        label: "1W %",
+        width: 8,
+        render: (r) => <Signed v={r.pct_1w} digits={1} />,
+      },
+      {
+        key: "pct_1m",
+        label: "1M %",
+        width: 8,
+        render: (r) => <Signed v={r.pct_1m} digits={1} />,
+      },
+      {
+        key: "pct_3m",
+        label: "3M %",
+        width: 8,
+        render: (r) => <Signed v={r.pct_3m} digits={1} />,
+      },
+      {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
         width: 13,
@@ -419,7 +471,12 @@ export default function PortfolioAllocation() {
         MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in has no sector data for at all and are mapped directly to a real sector instead.{" "}
         <b>Gold/Silver/Liquid</b> funds get their own pseudo-sector label the same way — for Gold/Silver, the <b>Qtr Sales Growth %</b>{" "}
         column instead shows that commodity's own 1-year COMEX return, converted to its INR-equivalent using USDINR's own 1-year move (MCX
-        itself has no fetchable price history — this is the closest honest proxy, not literal MCX pricing). Pushed by the{" "}
+        itself has no fetchable price history — this is the closest honest proxy, not literal MCX pricing). <b>Price</b> is Kite's own last
+        traded price and is itself the TradingView link (NSE or BSE depending on which exchange this lot was bought on).{" "}
+        <b>1W %</b>/<b>1M %</b>/<b>3M %</b> are price change vs. 1/4/13 weekly bars back on Yahoo's own weekly series (same series the{" "}
+        <b>&gt;33W EMA</b> column's OHLC4 33-EMA is computed from) — bar-count based, not calendar-exact. <b>&gt;33W EMA</b> shows{" "}
+        <b>Y</b>/<b>N</b> for whether price is above/below that EMA. All four show "—" when Yahoo has too little weekly history yet (e.g. a
+        very recent IPO). Pushed by the{" "}
         <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
       </MethodologyNote>
 
