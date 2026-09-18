@@ -39,13 +39,13 @@ const EMA_COLS: [string, string][] = [
   ["ema33w", "33W"],
 ];
 
-// Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Own, Remove
+// Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Trend, Own, Remove
 // Base/Bull/Bear widened 150->210 — at 150 the "+20.0% | 20.0x |
 // -73.4%" line was truncating with an ellipsis (2026-08-23
 // screenshot). Other columns bumped up too so the table fills more
 // of the page's max-w-[1800px] shell generously instead of leaving a
 // wide empty gutter, rather than widening only the 3 cutoff columns.
-const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 60, 50];
+const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 90, 60, 50];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
@@ -91,6 +91,53 @@ function sortValue(row: Row, col: SortCol): number | string | null {
 function PctCell({ value }: { value: number | null }) {
   if (value === null) return <span className="text-slate-400">—</span>;
   return <span className={value >= 0 ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{fmtSigned(value)}</span>;
+}
+
+// Built from the 4 real trailing price points already on `Stock` (33W
+// EMA → 50D EMA → 20D EMA → CMP) — coarse, but every point is real
+// data, not a synthesized shape. Re-added 2026-09-18 after a full
+// revert of the dark-theme redesign accidentally dropped it too — the
+// "not good" feedback was about the dark background, not this column.
+function TrendSparkline({ stock }: { stock: Stock }) {
+  const series: [string, number | null][] = [
+    ["33W EMA", stock.ema33w ?? null],
+    ["50D EMA", stock.ema50d ?? null],
+    ["20D EMA", stock.ema20d ?? null],
+    ["CMP", stock.current_price],
+  ];
+  const pts = series.filter(([, v]) => v !== null) as [string, number][];
+  if (pts.length < 2) return <span className="text-slate-400 text-xs">—</span>;
+
+  const W = 72;
+  const H = 26;
+  const PAD = 3;
+  const vals = pts.map(([, v]) => v);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const step = (W - PAD * 2) / (pts.length - 1);
+  const coords = pts.map(([, v], i) => {
+    const x = PAD + i * step;
+    const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
+    return [x, y] as [number, number];
+  });
+  const up = vals[vals.length - 1] >= vals[0];
+  const color = up ? "#16a34a" : "#dc2626";
+  const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const area = `${PAD},${H - PAD} ${line} ${W - PAD},${H - PAD}`;
+  const title = pts.map(([label, v]) => `${label}: ${fmt(v, 1)}`).join(" → ");
+
+  return (
+    // React's SVGProps<SVGSVGElement> has no `title` attribute (unlike
+    // HTML elements) — a wrapping <span title=...> gives the identical
+    // hover tooltip without changing anything visual.
+    <span title={title}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        <polygon points={area} fill={color} fillOpacity={0.12} stroke="none" />
+        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
 }
 
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
@@ -256,8 +303,9 @@ function Section({
                     </button>
                   </th>
                 ))}
-                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[12] }}>Own</th>
-                <th className="px-2 py-2" style={{ width: COL_WIDTHS[13] }}></th>
+                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[12] }}>Trend</th>
+                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[13] }}>Own</th>
+                <th className="px-2 py-2" style={{ width: COL_WIDTHS[14] }}></th>
               </tr>
             </thead>
             <tbody>
@@ -316,6 +364,11 @@ function Section({
                       <CaseCell h={row.caseHeadline[c]} />
                     </td>
                   ))}
+                  <td className="px-2 py-2 text-center">
+                    <div className="flex justify-center">
+                      <TrendSparkline stock={row.stock} />
+                    </div>
+                  </td>
                   <td className="px-2 py-2 text-center">
                     <button
                       onClick={() => onOwnedToggle(row.ticker, !row.stock.owned)}
