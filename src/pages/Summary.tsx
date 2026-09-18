@@ -160,10 +160,17 @@ function TrendSparkline({ stock }: { stock: Stock }) {
   const title = pts.map(([label, v]) => `${label}: ${fmt(v, 1)}`).join(" → ");
 
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} title={title}>
-      <polygon points={area} fill={color} fillOpacity={0.12} stroke="none" />
-      <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    // 2026-09-18 — TS build failure: React's SVGProps<SVGSVGElement>
+    // doesn't declare a `title` attribute on <svg> itself (unlike the
+    // HTML elements this codebase otherwise uses title on) — a plain
+    // wrapping <span title=...> gives the identical hover tooltip
+    // without changing anything visual (the svg is inline either way).
+    <span title={title}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        <polygon points={area} fill={color} fillOpacity={0.12} stroke="none" />
+        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
   );
 }
 
