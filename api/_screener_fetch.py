@@ -152,6 +152,16 @@ def fetch_price_emas(company_id, headers):
         "ema20d": ema(daily_closes, 20),
         "ema50d": ema(daily_closes, 50),
         "ema33w": ema(weekly_closes, 33),
+        # 2026-09-18 ("what is trend timeframe used on summary, make it
+        # 1Y weekly") — the Summary page's trend sparkline previously
+        # plotted 4 different EMA values as if they were a price line
+        # (a rough approximation, not an actual trend); weekly_closes
+        # above already carries far more than a year of real weekly
+        # closes (WEEKLY_DAYS_FOR_EMA=3000), just trimmed to the last
+        # value for the EMA — last 52 points (chronological, oldest
+        # first, matching ema()'s own "last = today" convention) is the
+        # real trailing 1-year weekly price series.
+        "price_history_52w": weekly_closes[-52:],
     }
 
 
@@ -752,7 +762,7 @@ def fetch_one(ticker, session_id=None):
     try:
         emas = fetch_price_emas(company_id, headers)
     except Exception:
-        emas = {"ema20d": None, "ema50d": None, "ema33w": None}
+        emas = {"ema20d": None, "ema50d": None, "ema33w": None, "price_history_52w": []}
 
     # Quarterly Results — moved ahead of PE History (which now needs its
     # cleaned quarterly EPS+dates) but otherwise unchanged: same best-
@@ -953,6 +963,7 @@ def fetch_one(ticker, session_id=None):
         "ema20d": emas["ema20d"],
         "ema50d": emas["ema50d"],
         "ema33w": emas["ema33w"],
+        "price_history_52w": emas.get("price_history_52w", []),
         "pe_history": pe_history,
         "years": pl_years,
         "revenue": revenue,

@@ -98,34 +98,39 @@ function PctCell({ value }: { value: number | null }) {
 // data, not a synthesized shape. Re-added 2026-09-18 after a full
 // revert of the dark-theme redesign accidentally dropped it too — the
 // "not good" feedback was about the dark background, not this column.
+// 2026-09-18 ("what is trend timeframe used on summary, make it 1Y
+// weekly") — previously plotted 4 different EMA values (33W/50D/20D/
+// CMP) as a rough stand-in for a trend line, since no real price
+// history was fetched anywhere. Now uses stock.price_history_52w —
+// the last ~52 real weekly closes (same Screener.in fetch ema33w
+// already made, just no longer discarded after computing the EMA —
+// see api/_screener_fetch.py's fetch_price_emas). Only populated by a
+// FULL refresh ("🔄 Refresh all now" or a fresh company add), same
+// lifecycle as the EMA fields themselves — a company only ever
+// "💹 Refresh prices only"'d, or added before this shipped, falls back
+// to "—" until its next full refresh, rather than silently reverting
+// to the old coarse EMA approximation.
 function TrendSparkline({ stock }: { stock: Stock }) {
-  const series: [string, number | null][] = [
-    ["33W EMA", stock.ema33w ?? null],
-    ["50D EMA", stock.ema50d ?? null],
-    ["20D EMA", stock.ema20d ?? null],
-    ["CMP", stock.current_price],
-  ];
-  const pts = series.filter(([, v]) => v !== null) as [string, number][];
-  if (pts.length < 2) return <span className="text-slate-400 text-xs">—</span>;
+  const closes = stock.price_history_52w;
+  if (!closes || closes.length < 2) return <span className="text-slate-400 text-xs">—</span>;
 
   const W = 72;
   const H = 26;
   const PAD = 3;
-  const vals = pts.map(([, v]) => v);
-  const min = Math.min(...vals);
-  const max = Math.max(...vals);
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
   const range = max - min || 1;
-  const step = (W - PAD * 2) / (pts.length - 1);
-  const coords = pts.map(([, v], i) => {
+  const step = (W - PAD * 2) / (closes.length - 1);
+  const coords = closes.map((v, i) => {
     const x = PAD + i * step;
     const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
     return [x, y] as [number, number];
   });
-  const up = vals[vals.length - 1] >= vals[0];
+  const up = closes[closes.length - 1] >= closes[0];
   const color = up ? "#16a34a" : "#dc2626";
   const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const area = `${PAD},${H - PAD} ${line} ${W - PAD},${H - PAD}`;
-  const title = pts.map(([label, v]) => `${label}: ${fmt(v, 1)}`).join(" → ");
+  const title = `1Y weekly: ${fmt(closes[0], 1)} → ${fmt(closes[closes.length - 1], 1)} (${fmtSigned((closes[closes.length - 1] / closes[0] - 1) * 100, 1)})`;
 
   return (
     // React's SVGProps<SVGSVGElement> has no `title` attribute (unlike
