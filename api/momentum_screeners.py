@@ -3397,6 +3397,42 @@ def _run_db_size(symbols, name_map, sector_map):
     return {"label": "DB Size Diagnostic", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+# 2026-09-18 — dbSize's own live run found ~27MB (of 56.85MB total) in
+# the `meta` table that pg_column_size (the CURRENT live value of every
+# key) couldn't account for — classic Postgres MVCC bloat: `meta` gets
+# an UPDATE-in-place write from every one of the 20+ screener crons
+# every single day (each do_GET does a full read-modify-write of
+# whatever key it owns), and dead row versions pile up between
+# autovacuum passes. VACUUM FULL rewrites the table and returns that
+# reclaimed space to the OS (plain VACUUM only marks it reusable
+# in-place, doesn't shrink the reported size) — needs autocommit (a
+# transaction block can't run VACUUM), and takes a brief exclusive lock
+# on `meta`, acceptable for a table this size (expect well under a
+# second). One-off, not scheduled — bloat re-accumulates daily from
+# normal writes, worth re-running occasionally, not worth a cron.
+def _run_db_vacuum(symbols, name_map, sector_map):
+    conn = get_conn()
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_total_relation_size('meta')")
+            before = cur.fetchone()[0]
+            cur.execute("VACUUM FULL meta")
+            cur.execute("SELECT pg_total_relation_size('meta')")
+            after = cur.fetchone()[0]
+            cur.execute("SELECT pg_database_size(current_database())")
+            db_after = cur.fetchone()[0]
+    finally:
+        conn.close()
+    rows = [
+        {"item": "meta table before VACUUM FULL", "mb": round(before / 1024 / 1024, 2)},
+        {"item": "meta table after VACUUM FULL", "mb": round(after / 1024 / 1024, 2)},
+        {"item": "reclaimed", "mb": round((before - after) / 1024 / 1024, 2)},
+        {"item": "TOTAL DATABASE after", "mb": round(db_after / 1024 / 1024, 2)},
+    ]
+    return {"label": "DB Vacuum", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_country_yields(symbols, name_map, sector_map):
     """Ignores symbols/name_map/sector_map (the NSE-750 universe) — its
     own small fixed country list, same pattern as strategicAlpha's own
@@ -4541,6 +4577,7 @@ SCREENER_RUNNERS = {
     "top100UsStocks": _run_top100_us_stocks,
     "countryYields": _run_country_yields,
     "dbSize": _run_db_size,
+    "dbVacuum": _run_db_vacuum,
 }
 
 
