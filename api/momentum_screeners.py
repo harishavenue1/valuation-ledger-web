@@ -4374,16 +4374,26 @@ def _run_nse750_price_cache(symbols, name_map, sector_map):
     }, None
 
 
-def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_volume=False):
-    """Drop-in replacement for _ms_fetch_daily(symbols, start_iso, ...) —
-    same signature, same returned shape (a DataFrame with a "date"
-    column, the requested price columns, and a "symbol" column) — so
-    every migrated consumer's downstream logic (groupby("symbol"),
-    column access, etc.) needed zero changes, only this one line's
-    function name swapped. Reads the WHOLE shared cache once per call
-    (same "read once per batch, not per-symbol" discipline as
-    _fund_cache_read_all) then slices to just the requested symbols/
-    window/columns in memory."""
+_PRICE_CACHE_RAW = None  # module-level, memoized for the lifetime of ONE process/invocation only — see _price_cache_raw_data()
+
+
+def _price_cache_raw_data():
+    """The raw {symbol: rows} dict behind nse750PriceCache's shards,
+    loaded from Postgres and merged ONCE per process. Split out of
+    _price_cache_read() 2026-09-18 ('do the technical cron
+    consolidation first') — that function used to redo this same ~21MB,
+    5-shard Postgres read on EVERY call, regardless of symbols/start/
+    columns requested, so ~14 technical screeners each running as their
+    own separate cron invocation meant 14x this identical read. Now
+    memoized here: a fresh Vercel invocation is a fresh Python process
+    (this global starts back at None every time), so there is no
+    staleness risk across invocations — this only helps the NEW
+    consolidated technicalBatch* runners, which call multiple screener
+    functions (each internally calling _price_cache_read) within the
+    SAME invocation and should only pay for the Postgres read once."""
+    global _PRICE_CACHE_RAW
+    if _PRICE_CACHE_RAW is not None:
+        return _PRICE_CACHE_RAW
     # 2026-09-15 — reads the sharded cache (see its own module comment
     # for why it's sharded, not one value): the index key first to
     # learn how many shards exist, then every shard's own data dict,
@@ -4403,6 +4413,20 @@ def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_v
         finally:
             conn.close()
         data.update(shard.get("data", {}))
+    _PRICE_CACHE_RAW = data
+    return data
+
+
+def _price_cache_read(symbols, start_iso, need_hl=False, need_ohlc=False, need_volume=False):
+    """Drop-in replacement for _ms_fetch_daily(symbols, start_iso, ...) —
+    same signature, same returned shape (a DataFrame with a "date"
+    column, the requested price columns, and a "symbol" column) — so
+    every migrated consumer's downstream logic (groupby("symbol"),
+    column access, etc.) needed zero changes, only this one line's
+    function name swapped. Reads the WHOLE shared cache (memoized, see
+    _price_cache_raw_data() above) then slices to just the requested
+    symbols/window/columns in memory."""
+    data = _price_cache_raw_data()
     if not data:
         return None
 
@@ -4546,6 +4570,43 @@ def _run_top100_us_stocks(symbols, name_map, sector_map):
     return {"label": "Top 100 US Stocks", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── technical cron consolidation ─────────────────────────────────────────
+#
+# Added 2026-09-18 ("do the technical cron consolidation first") — the
+# Vercel usage-limit email ("approaching your limits... Fluid Active
+# CPU") plus the "All Technicals" page design work surfaced that ~14
+# separate technical-screener crons each independently re-read and
+# re-parsed the WHOLE ~21MB nse750PriceCache from Postgres on every
+# invocation (see _price_cache_raw_data()'s own comment) — genuine
+# redundant work, not just redundant cron ENTRIES. Two batches, not
+# one, because the underlying screeners aren't all on the same cadence
+# for real reasons: myLongTermInvestingStrategy/weeklySignals/
+# quantBollinger are WEEKLY-CANDLE screens by construction (their own
+# signal only changes once a week), so merging them with the daily
+# ones would either water down the weekly ones to daily noise or slow
+# the daily ones to weekly — this keeps each screener's existing
+# cadence exactly as it was, just consolidating same-cadence crons
+# into one invocation apiece. sectorAlpha/momentumPersonal don't
+# actually touch the price cache (sectorAlpha fetches a handful of
+# sector ETFs directly, momentumPersonal only ~30-40 Chartink-matched
+# tickers) but are folded into the daily batch anyway for the
+# invocation-count reduction — their own fetch is cheap enough not to
+# add meaningful runtime.
+TECHNICAL_BATCH_DAILY = [
+    "Nifty500RelativeStrength", "nseScreener", "sectorAlpha", "sectorStockAlpha",
+    "maBreakout", "grandfatherFatherSon", "52wHigh", "52wLow", "volumeRockers",
+    "momentumPersonal",
+]
+TECHNICAL_BATCH_WEEKLY = [
+    "technicalSummary", "myLongTermInvestingStrategy", "weeklySignals", "smartMoney",
+    "weekendInvesting", "quantBollinger", "valueRsiTurnaround", "allTimeHigh",
+]
+TECHNICAL_BATCHES = {
+    "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
+    "technicalBatchWeekly": TECHNICAL_BATCH_WEEKLY,
+}
+
+
 SCREENER_RUNNERS = {
     "Nifty500RelativeStrength": _run_rs,
     "myLongTermInvestingStrategy": _run_ltis,
@@ -4613,9 +4674,10 @@ class handler(BaseHTTPRequestHandler):
 
         query = parse_qs(urlparse(self.path).query)
         screener = (query.get("screener") or [None])[0]
-        runner = SCREENER_RUNNERS.get(screener)
-        if not runner:
-            send_json(self, 400, {"error": f"?screener= must be one of {sorted(SCREENER_RUNNERS)}"})
+        batch_names = TECHNICAL_BATCHES.get(screener)
+        runner = None if batch_names is not None else SCREENER_RUNNERS.get(screener)
+        if batch_names is None and runner is None:
+            send_json(self, 400, {"error": f"?screener= must be one of {sorted(SCREENER_RUNNERS)} or {sorted(TECHNICAL_BATCHES)}"})
             return
 
         limit = None
@@ -4652,6 +4714,56 @@ class handler(BaseHTTPRequestHandler):
             symbols = symbols[offset:]
         if limit:
             symbols = symbols[:limit]
+
+        if batch_names is not None:
+            # 2026-09-18 ("do the technical cron consolidation first") —
+            # runs every screener in this batch within ONE invocation,
+            # sharing the memoized price-cache read (_price_cache_raw_data)
+            # across all of them instead of each running as its own
+            # separate cron and independently re-reading it. Each
+            # screener still writes to its OWN existing meta key below —
+            # zero frontend changes, every page reads exactly as before.
+            # A single screener's own failure doesn't abort the rest of
+            # the batch (per_screener records its own error instead).
+            per_screener = {}
+            conn = get_conn()
+            try:
+                all_screeners = get_meta(conn, "momentum_screeners", {})
+            finally:
+                conn.close()
+            for name in batch_names:
+                t0 = time.monotonic()
+                sub_runner = SCREENER_RUNNERS[name]
+                try:
+                    result, err = sub_runner(symbols, name_map, sector_map)
+                except Exception as e:
+                    result, err = None, str(e)
+                if err or result is None:
+                    per_screener[name] = {"ok": False, "error": err or "unknown error", "elapsed_s": round(time.monotonic() - t0, 1)}
+                    continue
+                all_screeners[name] = {
+                    "label": result["label"],
+                    "as_of": date.today().isoformat(),
+                    "rows": result["push_rows"],
+                }
+                per_screener[name] = {
+                    "ok": True, "scanned": result["scanned"], "skipped": result["skipped"],
+                    "pushed": len(result["push_rows"]), "elapsed_s": round(time.monotonic() - t0, 1),
+                }
+            conn = get_conn()
+            try:
+                set_meta(conn, "momentum_screeners", all_screeners)
+            finally:
+                conn.close()
+
+            send_json(self, 200, {
+                "ok": True,
+                "batch": screener,
+                "universe": len(symbols),
+                "elapsed_s": round(time.monotonic() - start_t, 1),
+                "screeners": per_screener,
+            })
+            return
 
         try:
             result, err = runner(symbols, name_map, sector_map)
