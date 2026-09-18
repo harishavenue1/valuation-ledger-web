@@ -3367,6 +3367,36 @@ def _fred_yield_row(country, series_id, note):
     }
 
 
+# ── dbSize (one-off diagnostic) ──────────────────────────────────────────
+#
+# Added 2026-09-18 ("our app has grown a lot in size" -> "we need to
+# optimize") — read-only, no schedule, not registered as a page
+# anywhere: exists purely to answer "where are the actual bytes"
+# before optimizing the wrong thing. Queries Postgres directly
+# (pg_column_size per meta key, pg_total_relation_size per table)
+# rather than guessing from row counts, since JSONB storage/TOAST
+# compression makes byte-size non-obvious from row counts alone.
+def _run_db_size(symbols, name_map, sector_map):
+    conn = get_conn()
+    try:
+        rows = []
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, pg_column_size(data) FROM meta ORDER BY pg_column_size(data) DESC")
+            for key, nbytes in cur.fetchall():
+                rows.append({"item": f"meta:{key}", "bytes": nbytes, "mb": round(nbytes / 1024 / 1024, 2)})
+            for table in ("stocks", "scenarios", "guidance", "meta"):
+                cur.execute(f"SELECT pg_total_relation_size('{table}')")
+                nbytes = cur.fetchone()[0]
+                rows.append({"item": f"table:{table} (incl. index)", "bytes": nbytes, "mb": round(nbytes / 1024 / 1024, 2)})
+            cur.execute("SELECT pg_database_size(current_database())")
+            db_bytes = cur.fetchone()[0]
+            rows.append({"item": "TOTAL DATABASE", "bytes": db_bytes, "mb": round(db_bytes / 1024 / 1024, 2)})
+    finally:
+        conn.close()
+    rows.sort(key=lambda r: -r["bytes"])
+    return {"label": "DB Size Diagnostic", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_country_yields(symbols, name_map, sector_map):
     """Ignores symbols/name_map/sector_map (the NSE-750 universe) — its
     own small fixed country list, same pattern as strategicAlpha's own
@@ -4510,6 +4540,7 @@ SCREENER_RUNNERS = {
     "nse750PriceCache": _run_nse750_price_cache,
     "top100UsStocks": _run_top100_us_stocks,
     "countryYields": _run_country_yields,
+    "dbSize": _run_db_size,
 }
 
 
