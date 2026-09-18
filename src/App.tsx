@@ -9,6 +9,7 @@ import GuidanceTracker from "./pages/GuidanceTracker";
 import VirajScreen from "./pages/VirajScreen";
 import MomentumScreeners from "./pages/MomentumScreeners";
 import TechnicalSummary from "./pages/TechnicalSummary";
+import AllTechnicals from "./pages/AllTechnicals";
 import PortfolioAllocation from "./pages/PortfolioAllocation";
 import PortfolioPerformance from "./pages/PortfolioPerformance";
 import GlobalMacro from "./pages/GlobalMacro";
@@ -132,6 +133,9 @@ export default function App() {
               <NavLink to="/technical-summary" className={({ isActive }) => navClass(isActive)}>
                 🏆 Technical
               </NavLink>
+              <NavLink to="/all-technicals" className={({ isActive }) => navClass(isActive)}>
+                🔬 All Technicals
+              </NavLink>
               {/* External link, not a route — 2026-09-06, "instead of
                   building page contents from chartink we can have link
                   to it saying marketBreath" (a market-breadth dashboard
@@ -199,6 +203,7 @@ export default function App() {
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
+            <Route path="/all-technicals" element={<AllTechnicals />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
