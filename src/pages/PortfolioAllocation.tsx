@@ -133,14 +133,14 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
           );
         })}
         <g onClick={() => onSelect(null)} style={{ cursor: selected ? "pointer" : "default" }}>
-          <text x={cx} y={cy - 6} textAnchor="middle" className="fill-slate-700 text-sm font-semibold">
+          <text x={cx} y={cy - 6} textAnchor="middle" className="fill-slate-200 text-sm font-semibold">
             {active ? `${fmtNum(active.pct, 1)}%` : "Sectors"}
           </text>
-          <text x={cx} y={cy + 12} textAnchor="middle" className="fill-slate-400 text-[10px]">
+          <text x={cx} y={cy + 12} textAnchor="middle" className="fill-slate-500 text-[10px]">
             {active ? active.sector : `${slices.length} sectors`}
           </text>
           {selected && (
-            <text x={cx} y={cy + 26} textAnchor="middle" className="fill-indigo-500 text-[9px] underline">
+            <text x={cx} y={cy + 26} textAnchor="middle" className="fill-indigo-400 text-[9px] underline">
               clear
             </text>
           )}
@@ -160,14 +160,14 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
           return (
             <div
               key={sl.sector}
-              className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer ${isSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : hover === i ? "bg-slate-100" : ""}`}
+              className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer ${isSelected ? "bg-indigo-500/15 ring-1 ring-indigo-500/40" : hover === i ? "bg-white/5" : ""}`}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onClick={() => toggle(sl.sector)}
             >
               <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sl.color }} />
-              <span className={isSelected ? "text-indigo-700 font-medium" : "text-slate-600"}>{sl.sector}</span>
-              <span className="ml-auto font-semibold tabular-nums text-slate-700">{fmtNum(sl.pct, 1)}%</span>
+              <span className={isSelected ? "text-indigo-300 font-medium" : "text-slate-400"}>{sl.sector}</span>
+              <span className="ml-auto font-semibold tabular-nums text-slate-200">{fmtNum(sl.pct, 1)}%</span>
             </div>
           );
         })}
@@ -236,8 +236,8 @@ function SegmentSummary({ rows }: { rows: any[] }) {
   };
 
   return (
-    <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
-      <h2 className="text-sm font-medium text-slate-700 mb-3">Segment Summary</h2>
+    <div className="p-4 border border-white/10 rounded-xl overflow-x-auto bg-white/[0.02]">
+      <h2 className="text-sm font-medium text-slate-300 mb-3">Segment Summary</h2>
       <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
         <thead className="text-slate-500 text-xs">
           <tr>
@@ -251,9 +251,9 @@ function SegmentSummary({ rows }: { rows: any[] }) {
         </thead>
         <tbody>
           {[stocks, funds].map((s) => (
-            <tr key={s.label} className="border-t border-slate-100">
-              <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
+            <tr key={s.label} className="border-t border-white/5">
+              <td className="px-2 py-1.5 font-medium text-slate-300">{s.label}</td>
+              <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-200">{fmtNum(s.allocationPct, 1)}%</td>
               <td className="px-2 py-1.5 text-right tabular-nums">
                 <Signed v={s.weightedPnlPct} digits={1} />
               </td>
@@ -262,13 +262,13 @@ function SegmentSummary({ rows }: { rows: any[] }) {
               </td>
             </tr>
           ))}
-          <tr className="border-t border-slate-300 font-semibold">
-            <td className="px-2 py-1.5 text-slate-800">{total.label}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(total.allocationPct, 1)}%</td>
+          <tr className="border-t border-white/15 font-semibold">
+            <td className="px-2 py-1.5 text-slate-100">{total.label}</td>
+            <td className="px-2 py-1.5 text-right tabular-nums text-slate-100">{fmtNum(total.allocationPct, 1)}%</td>
             <td className="px-2 py-1.5 text-right tabular-nums">
               <Signed v={total.weightedPnlPct} digits={1} />
             </td>
-            <td className="px-2 py-1.5 text-right text-slate-300">—</td>
+            <td className="px-2 py-1.5 text-right text-slate-600">—</td>
           </tr>
         </tbody>
       </table>
@@ -367,14 +367,43 @@ export default function PortfolioAllocation() {
           return <Signed v={r.qtr_eps_growth_pct} digits={1} />;
         },
       },
+      {
+        // 2026-09-18 ("add one more column... if the price > Weekly EMA
+        // 33 or NOT with Y/N") — pushed by the PortfolioAllocation skill
+        // itself (same OHLC4-based weekly 33-EMA convention as MA
+        // Breakout/Strategic Alpha elsewhere in this app). "—" means the
+        // skill's fetch failed or the ticker doesn't have enough weekly
+        // history yet (e.g. a very recent IPO), not a real N.
+        key: "above_ema33w",
+        label: "> 33W EMA",
+        width: 10,
+        render: (r) => {
+          if (r.above_ema33w === null || r.above_ema33w === undefined) return <span className="text-slate-300">—</span>;
+          return (
+            <span
+              className={`font-bold ${r.above_ema33w ? "text-emerald-600" : "text-red-600"}`}
+              title={r.above_ema33w ? "Price is above its weekly OHLC4 33-EMA" : "Price is below its weekly OHLC4 33-EMA"}
+            >
+              {r.above_ema33w ? "Y" : "N"}
+            </span>
+          );
+        },
+      },
     ],
     []
   );
 
   return (
-    <div>
+    // 2026-09-18 — "also update portfolio" (same dark-panel makeover
+    // as Summary). Scoped to this page's OWN elements (header,
+    // SegmentSummary, SectorDonut, filter chip, section headings) —
+    // GenericTable and MethodologyNote below are shared by ~10 other
+    // screener pages, so they're deliberately left in their existing
+    // light style rather than reskinning a component every other
+    // screener tab also renders; ask if you want those restyled too.
+    <div className="rounded-2xl bg-[#0d0f14] border border-white/10 p-5 text-slate-100">
       <div className="flex items-center gap-2 mb-1">
-        <h1 className="text-xl font-semibold">💼 Portfolio Allocation</h1>
+        <h1 className="text-xl font-semibold text-white">💼 Portfolio Allocation</h1>
         <span className="text-slate-500 text-sm">Kite holdings, by % — not raw quantities/value</span>
         <div className="ml-auto">
           <RunButton screener="portfolioAllocation" />
@@ -410,8 +439,8 @@ export default function PortfolioAllocation() {
       {rows.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <SegmentSummary rows={rows} />
-          <div className="p-4 border border-slate-200 rounded-lg">
-            <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
+          <div className="p-4 border border-white/10 rounded-xl bg-white/[0.02]">
+            <h2 className="text-sm font-medium text-slate-300 mb-3">Sector Allocation</h2>
             <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
           </div>
         </div>
@@ -429,15 +458,15 @@ export default function PortfolioAllocation() {
       {selectedSector && (
         <div className="flex items-center gap-2 mb-3 text-xs">
           <span className="text-slate-500">Filtered to:</span>
-          <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-full font-medium">
+          <span className="inline-flex items-center gap-1.5 bg-indigo-500/15 text-indigo-300 px-2 py-1 rounded-full font-medium">
             {selectedSector}
-            <button onClick={() => setSelectedSector(null)} className="hover:text-indigo-900" title="Clear filter">
+            <button onClick={() => setSelectedSector(null)} className="hover:text-indigo-100" title="Clear filter">
               ✕
             </button>
           </span>
         </div>
       )}
-      <h2 className="text-sm font-medium text-slate-700 mb-2">📈 Stocks ({stockRows.length})</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-2">📈 Stocks ({stockRows.length})</h2>
       <div className="mb-6">
         <GenericTable
           rows={stockRows}
@@ -448,7 +477,7 @@ export default function PortfolioAllocation() {
         />
       </div>
 
-      <h2 className="text-sm font-medium text-slate-700 mb-2">🧺 Funds &amp; ETFs ({fundRows.length})</h2>
+      <h2 className="text-sm font-medium text-slate-300 mb-2">🧺 Funds &amp; ETFs ({fundRows.length})</h2>
       <GenericTable
         rows={fundRows}
         cols={COLS}
