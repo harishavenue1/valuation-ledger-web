@@ -30,6 +30,55 @@ function boolCell(v: any, positiveColor = "text-emerald-600") {
   return v ? <span className={`${positiveColor} font-semibold`}>Y</span> : DASH;
 }
 
+// 2026-09-19 ("under fundamental main requirement is to have last 6
+// qtrs sales growth, opm%, epsGrowth") — a small inline sparkline over
+// the last 6 quarters of one metric (Sales Growth%/OPM%/EPS Growth%),
+// same visual language as Summary.tsx's own TrendSparkline. `values`
+// can carry the string "T" (EPS turned profitable from a loss —
+// same convention used elsewhere in this app) alongside numbers/null;
+// "T" points are skipped from the LINE (nothing to plot a slope
+// against) but still show up in the hover tooltip.
+function QuarterlySparkline({ labels, values }: { labels: string[]; values: (number | string | null)[] }) {
+  const numeric = values
+    .map((v, i) => ({ v, i }))
+    .filter((x): x is { v: number; i: number } => typeof x.v === "number");
+  if (numeric.length < 2) return DASH;
+
+  const W = 60;
+  const H = 22;
+  const PAD = 3;
+  const vals = numeric.map((x) => x.v);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const step = (W - PAD * 2) / (Math.max(values.length, 2) - 1);
+  const coords = numeric.map(({ v, i }) => {
+    const x = PAD + i * step;
+    const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
+    return [x, y] as [number, number];
+  });
+  const up = vals[vals.length - 1] >= vals[0];
+  const color = up ? "#16a34a" : "#dc2626";
+  const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const title = labels.map((lb, i) => `${lb}: ${values[i] === null || values[i] === undefined ? "—" : values[i] === "T" ? "Turned profitable" : `${values[i]}%`}`).join(" → ");
+
+  return (
+    <span title={title}>
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
+        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    </span>
+  );
+}
+
+function latestNonNull(values: (number | string | null | undefined)[] | undefined): number | string | null {
+  if (!values) return null;
+  for (let i = values.length - 1; i >= 0; i--) {
+    if (values[i] !== null && values[i] !== undefined) return values[i] as number | string;
+  }
+  return null;
+}
+
 interface ColumnGroup {
   id: string;
   label: string;
@@ -55,6 +104,39 @@ const VERDICT_COLOR: Record<string, string> = {
 };
 
 const COLUMN_GROUPS: ColumnGroup[] = [
+  {
+    id: "quarterly",
+    label: "Quarterly Trend (6Q)",
+    cols: [
+      {
+        key: "q_sales_growth_latest",
+        label: "Sales Gr % (Latest Qtr)",
+        render: (r) => (typeof r.q_sales_growth_latest === "number" ? <Signed v={r.q_sales_growth_latest} digits={1} /> : DASH),
+      },
+      { key: "q_sales_growth_trend", label: "Sales Gr Trend (6Q)", render: (r) => <QuarterlySparkline labels={r.q_labels ?? []} values={r.q_sales_growth ?? []} /> },
+      {
+        key: "q_opm_latest",
+        label: "OPM % (Latest Qtr)",
+        render: (r) => (typeof r.q_opm_latest === "number" ? <Signed v={r.q_opm_latest} digits={1} /> : DASH),
+      },
+      { key: "q_opm_trend", label: "OPM % Trend (6Q)", render: (r) => <QuarterlySparkline labels={r.q_labels ?? []} values={r.q_opm ?? []} /> },
+      {
+        key: "q_eps_growth_latest",
+        label: "EPS Gr % (Latest Qtr)",
+        render: (r) =>
+          r.q_eps_growth_latest === "T" ? (
+            <span className="text-xs font-medium text-emerald-700" title="Year-ago quarter was a loss — turned profitable">
+              Turned profitable
+            </span>
+          ) : typeof r.q_eps_growth_latest === "number" ? (
+            <Signed v={r.q_eps_growth_latest} digits={1} />
+          ) : (
+            DASH
+          ),
+      },
+      { key: "q_eps_growth_trend", label: "EPS Gr Trend (6Q)", render: (r) => <QuarterlySparkline labels={r.q_labels ?? []} values={r.q_eps_growth ?? []} /> },
+    ],
+  },
   {
     id: "rdcf",
     label: "Reverse DCF",
@@ -86,7 +168,7 @@ const COLUMN_GROUPS: ColumnGroup[] = [
 ];
 
 const STORAGE_KEY = "allFundamentalsColumnGroups";
-const DEFAULT_ENABLED = ["rdcf"];
+const DEFAULT_ENABLED = ["quarterly"]; // "under fundamental main requirement is to have last 6 qtrs sales growth, opm%, epsGrowth" — the flagship group, on by default
 
 function loadEnabledGroups(): Set<string> {
   try {
@@ -155,6 +237,14 @@ export default function AllFundamentals() {
         opm_pct: fund?.opm_pct ?? null,
         tax_pct: fund?.tax_pct ?? null,
 
+        q_labels: fund?.q_labels ?? [],
+        q_sales_growth: fund?.q_sales_growth ?? [],
+        q_sales_growth_latest: latestNonNull(fund?.q_sales_growth),
+        q_opm: fund?.q_opm ?? [],
+        q_opm_latest: latestNonNull(fund?.q_opm),
+        q_eps_growth: fund?.q_eps_growth ?? [],
+        q_eps_growth_latest: latestNonNull(fund?.q_eps_growth),
+
         rdcf_implied_price: rdcf?.implied_price_per_share ?? null,
         rdcf_gap_pct: rdcf?.valuation_gap_pct ?? null,
         rdcf_verdict: rdcf?.verdict ?? null,
@@ -168,6 +258,7 @@ export default function AllFundamentals() {
         tw_all_three: tw?.all_three ?? false,
         tw_alpha_52w: tw?.alpha_52w ?? null,
 
+        _has_quarterly: !!(fund?.q_labels && fund.q_labels.length > 0),
         _has_rdcf: !!rdcf,
         _has_turtle: !!tw,
       };
@@ -205,13 +296,17 @@ export default function AllFundamentals() {
         One row per NSE750 stock, sourced from <b>nseScreener</b> (name/sector/price) joined against <b>nse750Fundamentals</b> (Market
         Cap/Revenue/OPM%/Tax%). Unlike the technical screeners, a blank fundamentals cell here usually means Screener.in doesn't have
         clean numbers for that stock yet (a very recent IPO, an unparseable page) — <b>nse750Fundamentals</b> isn't 100% of NSE750 the way{" "}
-        <b>nseScreener</b> is. Both toggle groups below read from that SAME cache, so a stock missing core fundamentals is missing both
-        groups too. <b>Reverse DCF</b> solves for the growth rate the market's current price already implies, then stages it down
-        (see that tab's own methodology for the WACC/terminal-growth assumptions) to flag under/over/fairly valued.{" "}
-        <b>Turtle Wealth</b> flags whether price/sales/profit are each at their own all-time high (per Screener's own multi-year table) —
-        "All Three" is the closest this app gets to Turtle Wealth's own "Super Performer" bucket (their real framework also weighs
-        Outperformance vs sector, not modeled here yet). Use the column picker to show only what you care about — picks are remembered on
-        this device.
+        <b>nseScreener</b> is. All three toggle groups below read from that SAME cache, so a stock missing core fundamentals is missing all
+        of them too. <b>Quarterly Trend</b> shows the last 6 reported quarters' Sales Growth% and EPS Growth% (both YoY, vs. the same
+        quarter a year back) and OPM% (raw, not YoY) — a hover on the trend line shows all 6 quarters' labels and values; "Turned
+        profitable" means the year-ago quarter's EPS was a loss, so no % would be honest against a negative base. Banks/NBFCs/HFCs show{" "}
+        <b>—</b> for OPM% specifically — Screener.in labels their margin "Financing Margin %" instead, a different line item this page
+        doesn't attempt to reconcile with OPM% (Sales/EPS growth still show normally for these). <b>Reverse DCF</b> solves for the growth
+        rate the market's current price already implies, then stages it down (see that tab's own methodology for the WACC/terminal-growth
+        assumptions) to flag under/over/fairly valued. <b>Turtle Wealth</b> flags whether price/sales/profit are each at their own
+        all-time high (per Screener's own multi-year table) — "All Three" is the closest this app gets to Turtle Wealth's own "Super
+        Performer" bucket (their real framework also weighs Outperformance vs sector, not modeled here yet). Use the column picker to
+        show only what you care about — picks are remembered on this device.
       </MethodologyNote>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
