@@ -3847,6 +3847,32 @@ def _rdcf_fetch_fundamentals(ticker):
                         borrowings = next((v for v in reversed(vals) if v is not None), None)
                         break
 
+        # 2026-09-19 ("add a column under all fundamentals for working
+        # capital") — same "Ratios" section/row Detail's own
+        # api/_screener_fetch.py's parse_ratios_section() already
+        # reads for the Guide page (ported, not cross-imported, per
+        # this function's own docstring) — Working Capital Days is a
+        # DIRECT Screener.in row (annual, in days), not derived from
+        # Debtor/Inventory/Payable Days here. Confirmed live: financial
+        # companies (banks/NBFCs) have no such row at all (their
+        # Ratios section only carries ROE%, no working-capital cycle
+        # to speak of) — expected None, not a bug, same as opm_pct.
+        working_capital_days = None
+        ratios_section = next((s for s in soup.find_all("section")
+                                if s.find("h2") and "Ratio" in s.find("h2").get_text(strip=True)), None)
+        if ratios_section:
+            ratios_table = ratios_section.find("table")
+            if ratios_table:
+                for tr in ratios_table.find("tbody").find_all("tr"):
+                    cells = tr.find_all("td")
+                    if len(cells) < 2:
+                        continue
+                    label = cells[0].get_text(strip=True).rstrip("+").strip()
+                    if "working capital days" in label.lower():
+                        vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                        working_capital_days = next((v for v in reversed(vals) if v is not None), None)
+                        break
+
         revenue_hist = [v for v in sales_row if v is not None]
         if not revenue_hist:
             continue
@@ -3862,6 +3888,7 @@ def _rdcf_fetch_fundamentals(ticker):
             "opm_pct": opm_latest,
             "tax_pct": tax_latest,
             "borrowings": borrowings,
+            "working_capital_days": working_capital_days,  # latest annual value, in days — None for financial companies (no working-capital cycle)
             "is_financial_style_revenue": is_financial_style_revenue,
             # Last 6 quarters — see _rdcf_parse_quarterly's own comment.
             # Ascending chronological (oldest of the 6 first); empty

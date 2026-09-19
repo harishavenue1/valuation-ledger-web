@@ -95,6 +95,11 @@ const ALWAYS_COLS: Col[] = [
   { key: "revenue_cr", label: "Revenue ₹Cr", render: (r) => fmtNum(r.revenue_cr, 0) },
   { key: "opm_pct", label: "OPM %", render: (r) => <Signed v={r.opm_pct} digits={1} /> },
   { key: "tax_pct", label: "Tax %", render: (r) => <Signed v={r.tax_pct} digits={1} /> },
+  {
+    key: "working_capital_days",
+    label: "Working Capital Days",
+    render: (r) => (typeof r.working_capital_days === "number" ? fmtNum(r.working_capital_days, 0) : DASH),
+  },
 ];
 
 const VERDICT_COLOR: Record<string, string> = {
@@ -236,6 +241,7 @@ export default function AllFundamentals() {
         revenue_cr: revenue0,
         opm_pct: fund?.opm_pct ?? null,
         tax_pct: fund?.tax_pct ?? null,
+        working_capital_days: fund?.working_capital_days ?? null,
 
         q_labels: fund?.q_labels ?? [],
         q_sales_growth: fund?.q_sales_growth ?? [],
@@ -294,14 +300,19 @@ export default function AllFundamentals() {
 
       <MethodologyNote>
         One row per NSE750 stock, sourced from <b>nseScreener</b> (name/sector/price) joined against <b>nse750Fundamentals</b> (Market
-        Cap/Revenue/OPM%/Tax%). Unlike the technical screeners, a blank fundamentals cell here usually means Screener.in doesn't have
-        clean numbers for that stock yet (a very recent IPO, an unparseable page) — <b>nse750Fundamentals</b> isn't 100% of NSE750 the way{" "}
-        <b>nseScreener</b> is. All three toggle groups below read from that SAME cache, so a stock missing core fundamentals is missing all
-        of them too. <b>Quarterly Trend</b> shows the last 6 reported quarters' Sales Growth% and EPS Growth% (both YoY, vs. the same
-        quarter a year back) and OPM% (raw, not YoY) — a hover on the trend line shows all 6 quarters' labels and values; "Turned
-        profitable" means the year-ago quarter's EPS was a loss, so no % would be honest against a negative base. Banks/NBFCs/HFCs show{" "}
-        <b>—</b> for OPM% specifically — Screener.in labels their margin "Financing Margin %" instead, a different line item this page
-        doesn't attempt to reconcile with OPM% (Sales/EPS growth still show normally for these). <b>Reverse DCF</b> solves for the growth
+        Cap/Revenue/OPM%/Tax%/Working Capital Days). Unlike the technical screeners, a blank fundamentals cell here usually means
+        Screener.in doesn't have clean numbers for that stock yet (a very recent IPO, an unparseable page) — <b>nse750Fundamentals</b> isn't
+        100% of NSE750 the way <b>nseScreener</b> is. All three toggle groups below read from that SAME cache, so a stock missing core
+        fundamentals is missing all of them too. <b>Working Capital Days</b> is Screener's own annual "Working Capital Days" row (latest
+        year) — not derived from Debtor/Inventory/Payable Days here, that's Screener's own single figure. There is no{" "}
+        <b>Gross Margin</b> column: Indian P&amp;L filings don't report a separate Cost-of-Goods-Sold line the way US filings do, so
+        Screener.in has nothing to source a true gross margin from for any Indian company — <b>OPM%</b> (Operating Profit Margin, already
+        above) is the closest real metric it publishes. <b>Quarterly Trend</b> shows the last 6 reported quarters' Sales Growth% and EPS
+        Growth% (both YoY, vs. the same quarter a year back) and OPM% (raw, not YoY) — a hover on the trend line shows all 6 quarters'
+        labels and values; "Turned profitable" means the year-ago quarter's EPS was a loss, so no % would be honest against a negative
+        base. Banks/NBFCs/HFCs show <b>—</b> for OPM% and Working Capital Days specifically — Screener.in labels their margin "Financing
+        Margin %" instead (a different line item this page doesn't attempt to reconcile with OPM%) and their Ratios section has no
+        working-capital cycle at all (Sales/EPS growth still show normally for these). <b>Reverse DCF</b> solves for the growth
         rate the market's current price already implies, then stages it down (see that tab's own methodology for the WACC/terminal-growth
         assumptions) to flag under/over/fairly valued. <b>Turtle Wealth</b> flags whether price/sales/profit are each at their own
         all-time high (per Screener's own multi-year table) — "All Three" is the closest this app gets to Turtle Wealth's own "Super
