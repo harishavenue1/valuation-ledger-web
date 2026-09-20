@@ -162,6 +162,16 @@ const ALL_COLUMNS: ColumnDef[] = [
 
   { key: "sm_pct_sma40", label: "% vs 40D SMA", group: "Smart Money", source: "smartmoney", render: (r) => <Signed v={r.sm_pct_sma40} digits={1} /> },
   { key: "sm_signal", label: "Signal", align: "left", group: "Smart Money", source: "smartmoney", render: (r) => (r.sm_signal ? r.sm_signal : DASH) },
+
+  // 2026-09-20 — see the roce_1y_chg field comment above for the research
+  // behind this group. Sourced from nse750Fundamentals, which refreshes
+  // WEEKLY (not daily like every other column here — fundamentals don't
+  // move day to day) per "I only need technical part on daily basis" /
+  // "ROCE stays weekly" — as_of shown separately below, same pattern the
+  // rest of the app already uses for weekly-sourced data on a mostly-daily
+  // page.
+  { key: "roce_1y_chg", label: "ROCE 1Y Δ", group: "Quality (ROCE)", source: "quality", render: (r) => (r.roce_1y_chg == null ? DASH : <Signed v={r.roce_1y_chg} digits={1} />) },
+  { key: "roce_pct", label: "ROCE %", group: "Quality (ROCE)", source: "quality", render: (r) => fmtNum(r.roce_pct, 1) },
 ];
 
 const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
@@ -173,7 +183,7 @@ const STORAGE_KEY = "allTechnicalsColumns";
 // number from each of the two full-coverage screeners (RS Score,
 // Alpha Score), not whole groups. "too many columns but lesser page
 // width" was the whole point of this redesign.
-const DEFAULT_ENABLED = ["sector", "change_pct", "weekly_pct", "monthly_pct", "rsi_w", "rs_score", "alpha_score"];
+const DEFAULT_ENABLED = ["sector", "change_pct", "weekly_pct", "monthly_pct", "rsi_w", "rs_score", "alpha_score", "roce_1y_chg"];
 
 function loadEnabledColumns(): Set<string> {
   try {
@@ -217,6 +227,7 @@ export default function AllTechnicals() {
     "weekendInvesting",
     "quantBollinger",
     "smartMoney",
+    "nse750Fundamentals",
   ]);
   const ms = bundle.momentum_screeners;
 
@@ -262,6 +273,7 @@ export default function AllTechnicals() {
     const wiMap = keyBy(ms?.weekendInvesting?.rows);
     const qbMap = keyBy(ms?.quantBollinger?.rows);
     const smMap = keyBy(ms?.smartMoney?.rows);
+    const fundMap = keyBy(ms?.nse750Fundamentals?.rows);
 
     return base.map((b: any) => {
       const sym = b.symbol;
@@ -279,6 +291,7 @@ export default function AllTechnicals() {
       const wi = wiMap.get(sym);
       const qb = qbMap.get(sym);
       const sm = smMap.get(sym);
+      const fund = fundMap.get(sym);
 
       return {
         symbol: sym,
@@ -368,6 +381,18 @@ export default function AllTechnicals() {
         sm_pct_sma40: sm?.pct_vs_sma40 ?? null,
         sm_signal: sm?.signal ?? null,
 
+        // 2026-09-20 ("what is the one point or param which makes a
+        // strong run") — of everything tested against a year of NSE750
+        // returns (working capital days/trend, ROE level/trend, ROCE
+        // level, operating margin), ROCE's own 1-year point change was
+        // the standout: Spearman rho=0.23 vs 0.02-0.06 for working
+        // capital, and a clean monotonic quintile spread (-11pp to
+        // +14pp median sector-relative excess return, worst-to-best
+        // ROCE improvers). roce_pct (the level) kept for context only —
+        // it was NOT the strong factor on its own.
+        roce_pct: fund?.roce_pct ?? null,
+        roce_1y_chg: fund?.roce_1y_chg ?? null,
+
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per
         // originating screener, used ONLY to drive the "only matches"
@@ -393,6 +418,7 @@ export default function AllTechnicals() {
         _has_weekend: !!wi,
         _has_bollinger: !!qb,
         _has_smartmoney: !!sm,
+        _has_quality: fund?.roce_1y_chg != null,
       };
     });
   }, [ms]);
@@ -415,6 +441,7 @@ export default function AllTechnicals() {
   }, [rows, activeSources, onlyMatches]);
 
   const asOf = ms?.nseScreener?.as_of;
+  const fundAsOf = ms?.nse750Fundamentals?.as_of;
 
   if (!ready) return <ScreenerLoading label="All Technicals" />;
 
@@ -427,6 +454,12 @@ export default function AllTechnicals() {
       <p className="text-xs text-slate-500 mb-3">
         Refreshed by the existing per-screener crons (Momentum Screeners tabs) — this page just joins what's already fetched, client-side.
         {asOf && <> Base data as of {asOf}.</>}
+        {fundAsOf && (
+          <>
+            {" "}
+            <b>Quality (ROCE)</b> columns refresh weekly, not daily (fundamentals don't move day to day) — as of {fundAsOf}.
+          </>
+        )}
       </p>
 
       <MethodologyNote>
@@ -437,6 +470,14 @@ export default function AllTechnicals() {
         triggered", not missing data. Every column (except #/Symbol/Name/Price) can be individually shown/hidden with the column picker —
         picks are remembered on this device. No new data is fetched for this page — every column reads the exact same screener data its
         own tab already shows; refresh any of those tabs (or wait for their cron) to update this one.
+        <br />
+        <br />
+        <b>Quality (ROCE)</b> — added 2026-09-20 after testing which fundamental factor actually predicts NSE750 stock performance
+        (working capital days/trend, ROE level/trend, ROCE level, operating margin, all checked against a year of returns). <b>ROCE 1Y Δ</b>{" "}
+        (this year's ROCE minus last year's, in percentage points — NOT the level, NOT ROE) was the clear winner: Spearman ρ=0.23 vs
+        0.02-0.06 for working capital, with a clean, roughly linear spread from -11pp (worst ROCE-decliners) to +14pp (best ROCE-improvers)
+        median sector-relative return by quintile. <b>ROCE %</b> (the raw level) is shown alongside for context only — it was NOT itself a
+        strong factor. Sourced from <b>nse750Fundamentals</b>, which refreshes weekly rather than daily.
       </MethodologyNote>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
