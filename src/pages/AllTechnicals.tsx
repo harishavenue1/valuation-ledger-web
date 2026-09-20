@@ -18,9 +18,16 @@ import { useWatchlist } from "../lib/useWatchlist";
 // optional columns are blank for most rows most of the time — that's
 // the screener saying "not currently triggered", not missing data.
 //
-// Column-picker: always-visible core columns plus togglable GROUPS (by
-// originating screener, not one flat 60-checkbox list) — persisted to
-// localStorage so picks stick between visits.
+// 2026-09-20 ("too many columns but lesser page width so provide
+// option to select the columns to view") — switched from a per-GROUP
+// picker to a per-COLUMN one: every column (including what used to be
+// permanently "always visible" — Sector, Day/Week/Month/3M/Year %,
+// every RSI) is now individually togglable, so the table can be
+// trimmed much narrower than "on/off per group" allowed. Only Rank/
+// Symbol/Name/Price stay mandatory. Each column still carries a
+// `source` tag for the existing "only show rows with data" filter —
+// unchanged logic, it just now activates for whichever SOURCES have
+// at least one of their own columns currently checked.
 
 const Y = <span className="text-emerald-600 font-semibold">Y</span>;
 const DASH = <span className="text-slate-300">—</span>;
@@ -28,185 +35,147 @@ function boolCell(v: any) {
   return v ? Y : DASH;
 }
 
-interface ColumnGroup {
-  id: string;
-  label: string;
-  cols: Col[];
+interface ColumnDef extends Col {
+  group: string; // for organizing the picker UI
+  source?: string; // maps to the row's _has_${source} flag for "only show rows with data"; omitted = mandatory/always-relevant, never filtered
+  mandatory?: boolean; // always shown, not in the picker at all
 }
 
-const ALWAYS_COLS: Col[] = [
-  { key: "rank", label: "#" },
-  { key: "symbol", label: "Symbol", align: "left" },
-  { key: "name", label: "Name", align: "left" },
-  { key: "sector", label: "Sector", align: "left" },
-  { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
-  { key: "change_pct", label: "Day %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
-  { key: "weekly_pct", label: "Week %", render: (r) => <Signed v={r.weekly_pct} digits={1} /> },
-  { key: "monthly_pct", label: "Month %", render: (r) => <Signed v={r.monthly_pct} digits={1} /> },
-  { key: "three_month_pct", label: "3M %", render: (r) => <Signed v={r.three_month_pct} digits={1} /> },
-  { key: "yearly_pct", label: "Year %", render: (r) => <Signed v={r.yearly_pct} digits={1} /> },
-  { key: "rsi_d", label: "RSI(D)", render: (r) => fmtNum(r.rsi_d, 1) },
-  { key: "rsi_w", label: "RSI(W)", render: (r) => fmtNum(r.rsi_w, 1) },
-  { key: "rsi_m", label: "RSI(M)", render: (r) => fmtNum(r.rsi_m, 1) },
-  { key: "three_week_green", label: "3W Green", render: (r) => boolCell(r.three_week_green) },
+const ALL_COLUMNS: ColumnDef[] = [
+  { key: "rank", label: "#", group: "Core", mandatory: true },
+  { key: "symbol", label: "Symbol", align: "left", group: "Core", mandatory: true },
+  { key: "name", label: "Name", align: "left", group: "Core", mandatory: true },
+  { key: "price", label: "Price", group: "Core", mandatory: true, render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+  { key: "sector", label: "Sector", align: "left", group: "Core", source: "core" },
+  { key: "change_pct", label: "Day %", group: "Core", source: "core", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+  { key: "weekly_pct", label: "Week %", group: "Core", source: "core", render: (r) => <Signed v={r.weekly_pct} digits={1} /> },
+  { key: "monthly_pct", label: "Month %", group: "Core", source: "core", render: (r) => <Signed v={r.monthly_pct} digits={1} /> },
+  { key: "three_month_pct", label: "3M %", group: "Core", source: "core", render: (r) => <Signed v={r.three_month_pct} digits={1} /> },
+  { key: "yearly_pct", label: "Year %", group: "Core", source: "core", render: (r) => <Signed v={r.yearly_pct} digits={1} /> },
+  { key: "rsi_d", label: "RSI(D)", group: "Core", source: "core", render: (r) => fmtNum(r.rsi_d, 1) },
+  { key: "rsi_w", label: "RSI(W)", group: "Core", source: "core", render: (r) => fmtNum(r.rsi_w, 1) },
+  { key: "rsi_m", label: "RSI(M)", group: "Core", source: "core", render: (r) => fmtNum(r.rsi_m, 1) },
+  { key: "three_week_green", label: "3W Green", group: "Core", source: "core", render: (r) => boolCell(r.three_week_green) },
+
+  { key: "rs_1w", label: "RS 1W", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
+  { key: "rs_1m", label: "RS 1M", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_1m} digits={1} /> },
+  { key: "rs_3m", label: "RS 3M", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_3m} digits={1} /> },
+  { key: "rs_6m", label: "RS 6M", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_6m} digits={1} /> },
+  { key: "rs_score", label: "RS Score", group: "Relative Strength", source: "rs", render: (r) => fmtNum(r.rs_score, 1) },
+  { key: "rs_new_high", label: "RS New High", group: "Relative Strength", source: "rs", render: (r) => boolCell(r.rs_new_high) },
+
+  { key: "alpha_1w", label: "Alpha 1W", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_1w} digits={1} /> },
+  { key: "alpha_1m", label: "Alpha 1M", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_1m} digits={1} /> },
+  { key: "alpha_3m", label: "Alpha 3M", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_3m} digits={1} /> },
+  { key: "alpha_6m", label: "Alpha 6M", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_6m} digits={1} /> },
+  { key: "alpha_1y", label: "Alpha 1Y", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_1y} digits={1} /> },
+  { key: "alpha_score", label: "Alpha Score", group: "Sector Alpha", source: "alpha", render: (r) => <Signed v={r.alpha_score} digits={1} /> },
+
+  { key: "high52w_pct_off", label: "% off 52W High", group: "52W High", source: "high52w", render: (r) => <Signed v={r.high52w_pct_off} digits={1} /> },
+  { key: "high52w_new", label: "New 52W High", group: "52W High", source: "high52w", render: (r) => boolCell(r.high52w_new) },
+
+  { key: "low52w_pct_off", label: "% off 52W Low", group: "52W Low", source: "low52w", render: (r) => <Signed v={r.low52w_pct_off} digits={1} /> },
+  {
+    key: "low52w_new",
+    label: "New 52W Low",
+    group: "52W Low",
+    source: "low52w",
+    render: (r) => (r.low52w_new ? <span className="text-red-600 font-semibold">Y</span> : DASH),
+  },
+
+  { key: "ath_price", label: "ATH Price", group: "All-Time High", source: "ath", render: (r) => fmtNum(r.ath_price, 1) },
+  { key: "ath_pct_off", label: "% off ATH", group: "All-Time High", source: "ath", render: (r) => <Signed v={r.ath_pct_off} digits={1} /> },
+  { key: "ath_new", label: "New ATH", group: "All-Time High", source: "ath", render: (r) => boolCell(r.ath_new) },
+
+  { key: "mab_via", label: "Via", align: "left", group: "MA Breakout", source: "mab" },
+  { key: "mab_pct_200d", label: "% vs 200D EMA", group: "MA Breakout", source: "mab", render: (r) => <Signed v={r.mab_pct_200d} digits={1} /> },
+  { key: "mab_days_200d", label: "Days Since Cross (200D)", group: "MA Breakout", source: "mab", render: (r) => fmtNum(r.mab_days_200d, 0) },
+  { key: "mab_pct_33w", label: "% vs 33W EMA", group: "MA Breakout", source: "mab", render: (r) => <Signed v={r.mab_pct_33w} digits={1} /> },
+  { key: "mab_weeks_33w", label: "Weeks Since Cross (33W)", group: "MA Breakout", source: "mab", render: (r) => fmtNum(r.mab_weeks_33w, 0) },
+  { key: "mab_fresh", label: "Fresh This Week", group: "MA Breakout", source: "mab", render: (r) => boolCell(r.mab_fresh) },
+
+  { key: "ribbon_rsi14", label: "Weekly RSI14", group: "RSI+EMA Ribbon (LTIS / Weekly Signals)", source: "ribbon", render: (r) => fmtNum(r.ribbon_rsi14, 1) },
+  {
+    key: "ribbon_pct_33w",
+    label: "% vs 33W EMA (wk)",
+    group: "RSI+EMA Ribbon (LTIS / Weekly Signals)",
+    source: "ribbon",
+    render: (r) => <Signed v={r.ribbon_pct_33w} digits={1} />,
+  },
+  { key: "ribbon_buy", label: "LTIS Buy Signal", group: "RSI+EMA Ribbon (LTIS / Weekly Signals)", source: "ribbon", render: (r) => boolCell(r.ribbon_buy) },
+  { key: "ws_rsi_cross", label: "Fresh RSI>66 Cross", group: "RSI+EMA Ribbon (LTIS / Weekly Signals)", source: "ribbon", render: (r) => boolCell(r.ws_rsi_cross) },
+  {
+    key: "ws_ema_breakdown",
+    label: "Fresh 33W EMA Breakdown",
+    group: "RSI+EMA Ribbon (LTIS / Weekly Signals)",
+    source: "ribbon",
+    render: (r) => (r.ws_ema_breakdown ? <span className="text-red-600 font-semibold">Y</span> : DASH),
+  },
+
+  { key: "vrt_rsi", label: "Monthly RSI", group: "Value RSI Turnaround", source: "vrt", render: (r) => fmtNum(r.vrt_rsi, 1) },
+  { key: "vrt_rsi_at_cross", label: "RSI at Cross", group: "Value RSI Turnaround", source: "vrt", render: (r) => fmtNum(r.vrt_rsi_at_cross, 1) },
+  { key: "vrt_months", label: "Months Since Cross", group: "Value RSI Turnaround", source: "vrt", render: (r) => fmtNum(r.vrt_months, 0) },
+  {
+    key: "vrt_gain",
+    label: "RSI Gain Since Cross",
+    group: "Value RSI Turnaround",
+    source: "vrt",
+    render: (r) => {
+      if (r.vrt_gain === null || r.vrt_gain === undefined) return DASH;
+      const n = Number(r.vrt_gain);
+      return (
+        <span className={n >= 0 ? "text-emerald-600" : "text-red-600"}>
+          {n >= 0 ? "+" : ""}
+          {n.toFixed(1)}
+        </span>
+      );
+    },
+  },
+
+  { key: "gfs_monthly_rsi", label: "Monthly RSI", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_monthly_rsi, 1) },
+  { key: "gfs_weekly_rsi", label: "Weekly RSI", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_weekly_rsi, 1) },
+  { key: "gfs_daily_rsi", label: "Daily RSI", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_daily_rsi, 1) },
+  { key: "gfs_support_rsi", label: "Daily RSI at Support", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_support_rsi, 1) },
+  { key: "gfs_days_since", label: "Days Since Support", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_days_since, 0) },
+  { key: "gfs_stop", label: "Stop Loss", group: "Grandfather-Father-Son", source: "gfs", render: (r) => fmtNum(r.gfs_stop, 1) },
+
+  { key: "mp_high52w", label: "52W High", group: "Momentum Personal", source: "momentum", render: (r) => fmtNum(r.mp_high52w, 1) },
+  { key: "mp_ma20w", label: "20W MA", group: "Momentum Personal", source: "momentum", render: (r) => fmtNum(r.mp_ma20w, 1) },
+  { key: "mp_pct_ma20w", label: "% above 20W MA", group: "Momentum Personal", source: "momentum", render: (r) => <Signed v={r.mp_pct_ma20w} digits={1} /> },
+  { key: "mp_sales_g", label: "Sales Growth", group: "Momentum Personal", source: "momentum", render: (r) => (r.mp_sales_g === null || r.mp_sales_g === undefined ? DASH : r.mp_sales_g) },
+  { key: "mp_ebit_g", label: "EBIT Growth", group: "Momentum Personal", source: "momentum", render: (r) => (r.mp_ebit_g === null || r.mp_ebit_g === undefined ? DASH : r.mp_ebit_g) },
+  { key: "mp_eps_g", label: "EPS Growth", group: "Momentum Personal", source: "momentum", render: (r) => (r.mp_eps_g === null || r.mp_eps_g === undefined ? DASH : r.mp_eps_g) },
+  { key: "mp_score", label: "Score", group: "Momentum Personal", source: "momentum", render: (r) => (r.mp_score === null || r.mp_score === undefined ? DASH : r.mp_score) },
+
+  { key: "vr_day_vol", label: "Day Volume", group: "Volume Rockers", source: "volume", render: (r) => fmtNum(r.vr_day_vol, 0) },
+  { key: "vr_turnover", label: "Turnover ₹Cr", group: "Volume Rockers", source: "volume", render: (r) => fmtNum(r.vr_turnover, 1) },
+  { key: "vr_vol_change", label: "Vol Change ×", group: "Volume Rockers", source: "volume", render: (r) => fmtNum(r.vr_vol_change, 1) },
+  { key: "vr_day_chg", label: "Day %", group: "Volume Rockers", source: "volume", render: (r) => <Signed v={r.vr_day_chg} digits={1} /> },
+
+  { key: "wi_roc_1y", label: "1Y ROC %", group: "Weekend Investing", source: "weekend", render: (r) => <Signed v={r.wi_roc_1y} digits={1} /> },
+
+  { key: "qb_signal", label: "Breakout Signal", group: "Quant Bollinger", source: "bollinger", render: (r) => boolCell(r.qb_signal) },
+  { key: "qb_rs55", label: "RS55 %", group: "Quant Bollinger", source: "bollinger", render: (r) => <Signed v={r.qb_rs55} digits={1} /> },
+  { key: "qb_pct_band", label: "% above Upper Band", group: "Quant Bollinger", source: "bollinger", render: (r) => <Signed v={r.qb_pct_band} digits={1} /> },
+  { key: "qb_pct_sma34", label: "% vs 34W SMA", group: "Quant Bollinger", source: "bollinger", render: (r) => <Signed v={r.qb_pct_sma34} digits={1} /> },
+  { key: "qb_atr_stop", label: "Chandelier Stop", group: "Quant Bollinger", source: "bollinger", render: (r) => fmtNum(r.qb_atr_stop, 1) },
+
+  { key: "sm_pct_sma40", label: "% vs 40D SMA", group: "Smart Money", source: "smartmoney", render: (r) => <Signed v={r.sm_pct_sma40} digits={1} /> },
+  { key: "sm_signal", label: "Signal", align: "left", group: "Smart Money", source: "smartmoney", render: (r) => (r.sm_signal ? r.sm_signal : DASH) },
 ];
 
-const COLUMN_GROUPS: ColumnGroup[] = [
-  {
-    id: "rs",
-    label: "Relative Strength",
-    cols: [
-      { key: "rs_1w", label: "RS 1W", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
-      { key: "rs_1m", label: "RS 1M", render: (r) => <Signed v={r.rs_1m} digits={1} /> },
-      { key: "rs_3m", label: "RS 3M", render: (r) => <Signed v={r.rs_3m} digits={1} /> },
-      { key: "rs_6m", label: "RS 6M", render: (r) => <Signed v={r.rs_6m} digits={1} /> },
-      { key: "rs_score", label: "RS Score", render: (r) => fmtNum(r.rs_score, 1) },
-      { key: "rs_new_high", label: "RS New High", render: (r) => boolCell(r.rs_new_high) },
-    ],
-  },
-  {
-    id: "alpha",
-    label: "Sector Alpha",
-    cols: [
-      { key: "alpha_1w", label: "Alpha 1W", render: (r) => <Signed v={r.alpha_1w} digits={1} /> },
-      { key: "alpha_1m", label: "Alpha 1M", render: (r) => <Signed v={r.alpha_1m} digits={1} /> },
-      { key: "alpha_3m", label: "Alpha 3M", render: (r) => <Signed v={r.alpha_3m} digits={1} /> },
-      { key: "alpha_6m", label: "Alpha 6M", render: (r) => <Signed v={r.alpha_6m} digits={1} /> },
-      { key: "alpha_1y", label: "Alpha 1Y", render: (r) => <Signed v={r.alpha_1y} digits={1} /> },
-      { key: "alpha_score", label: "Alpha Score", render: (r) => <Signed v={r.alpha_score} digits={1} /> },
-    ],
-  },
-  {
-    id: "high52w",
-    label: "52W High",
-    cols: [
-      { key: "high52w_pct_off", label: "% off 52W High", render: (r) => <Signed v={r.high52w_pct_off} digits={1} /> },
-      { key: "high52w_new", label: "New 52W High", render: (r) => boolCell(r.high52w_new) },
-    ],
-  },
-  {
-    id: "low52w",
-    label: "52W Low",
-    cols: [
-      { key: "low52w_pct_off", label: "% off 52W Low", render: (r) => <Signed v={r.low52w_pct_off} digits={1} /> },
-      { key: "low52w_new", label: "New 52W Low", render: (r) => (r.low52w_new ? <span className="text-red-600 font-semibold">Y</span> : DASH) },
-    ],
-  },
-  {
-    id: "ath",
-    label: "All-Time High",
-    cols: [
-      { key: "ath_price", label: "ATH Price", render: (r) => fmtNum(r.ath_price, 1) },
-      { key: "ath_pct_off", label: "% off ATH", render: (r) => <Signed v={r.ath_pct_off} digits={1} /> },
-      { key: "ath_new", label: "New ATH", render: (r) => boolCell(r.ath_new) },
-    ],
-  },
-  {
-    id: "mab",
-    label: "MA Breakout",
-    cols: [
-      { key: "mab_via", label: "Via", align: "left" },
-      { key: "mab_pct_200d", label: "% vs 200D EMA", render: (r) => <Signed v={r.mab_pct_200d} digits={1} /> },
-      { key: "mab_days_200d", label: "Days Since Cross (200D)", render: (r) => fmtNum(r.mab_days_200d, 0) },
-      { key: "mab_pct_33w", label: "% vs 33W EMA", render: (r) => <Signed v={r.mab_pct_33w} digits={1} /> },
-      { key: "mab_weeks_33w", label: "Weeks Since Cross (33W)", render: (r) => fmtNum(r.mab_weeks_33w, 0) },
-      { key: "mab_fresh", label: "Fresh This Week", render: (r) => boolCell(r.mab_fresh) },
-    ],
-  },
-  {
-    id: "ribbon",
-    label: "RSI+EMA Ribbon (LTIS / Weekly Signals)",
-    cols: [
-      { key: "ribbon_rsi14", label: "Weekly RSI14", render: (r) => fmtNum(r.ribbon_rsi14, 1) },
-      { key: "ribbon_pct_33w", label: "% vs 33W EMA (wk)", render: (r) => <Signed v={r.ribbon_pct_33w} digits={1} /> },
-      { key: "ribbon_buy", label: "LTIS Buy Signal", render: (r) => boolCell(r.ribbon_buy) },
-      { key: "ws_rsi_cross", label: "Fresh RSI>66 Cross", render: (r) => boolCell(r.ws_rsi_cross) },
-      { key: "ws_ema_breakdown", label: "Fresh 33W EMA Breakdown", render: (r) => (r.ws_ema_breakdown ? <span className="text-red-600 font-semibold">Y</span> : DASH) },
-    ],
-  },
-  {
-    id: "vrt",
-    label: "Value RSI Turnaround",
-    cols: [
-      { key: "vrt_rsi", label: "Monthly RSI", render: (r) => fmtNum(r.vrt_rsi, 1) },
-      { key: "vrt_rsi_at_cross", label: "RSI at Cross", render: (r) => fmtNum(r.vrt_rsi_at_cross, 1) },
-      { key: "vrt_months", label: "Months Since Cross", render: (r) => fmtNum(r.vrt_months, 0) },
-      {
-        key: "vrt_gain",
-        label: "RSI Gain Since Cross",
-        render: (r) => {
-          if (r.vrt_gain === null || r.vrt_gain === undefined) return DASH;
-          const n = Number(r.vrt_gain);
-          return <span className={n >= 0 ? "text-emerald-600" : "text-red-600"}>{n >= 0 ? "+" : ""}{n.toFixed(1)}</span>;
-        },
-      },
-    ],
-  },
-  {
-    id: "gfs",
-    label: "Grandfather-Father-Son",
-    cols: [
-      { key: "gfs_monthly_rsi", label: "Monthly RSI", render: (r) => fmtNum(r.gfs_monthly_rsi, 1) },
-      { key: "gfs_weekly_rsi", label: "Weekly RSI", render: (r) => fmtNum(r.gfs_weekly_rsi, 1) },
-      { key: "gfs_daily_rsi", label: "Daily RSI", render: (r) => fmtNum(r.gfs_daily_rsi, 1) },
-      { key: "gfs_support_rsi", label: "Daily RSI at Support", render: (r) => fmtNum(r.gfs_support_rsi, 1) },
-      { key: "gfs_days_since", label: "Days Since Support", render: (r) => fmtNum(r.gfs_days_since, 0) },
-      { key: "gfs_stop", label: "Stop Loss", render: (r) => fmtNum(r.gfs_stop, 1) },
-    ],
-  },
-  {
-    id: "momentum",
-    label: "Momentum Personal",
-    cols: [
-      { key: "mp_high52w", label: "52W High", render: (r) => fmtNum(r.mp_high52w, 1) },
-      { key: "mp_ma20w", label: "20W MA", render: (r) => fmtNum(r.mp_ma20w, 1) },
-      { key: "mp_pct_ma20w", label: "% above 20W MA", render: (r) => <Signed v={r.mp_pct_ma20w} digits={1} /> },
-      { key: "mp_sales_g", label: "Sales Growth", render: (r) => (r.mp_sales_g === null || r.mp_sales_g === undefined ? DASH : r.mp_sales_g) },
-      { key: "mp_ebit_g", label: "EBIT Growth", render: (r) => (r.mp_ebit_g === null || r.mp_ebit_g === undefined ? DASH : r.mp_ebit_g) },
-      { key: "mp_eps_g", label: "EPS Growth", render: (r) => (r.mp_eps_g === null || r.mp_eps_g === undefined ? DASH : r.mp_eps_g) },
-      { key: "mp_score", label: "Score", render: (r) => (r.mp_score === null || r.mp_score === undefined ? DASH : r.mp_score) },
-    ],
-  },
-  {
-    id: "volume",
-    label: "Volume Rockers",
-    cols: [
-      { key: "vr_day_vol", label: "Day Volume", render: (r) => fmtNum(r.vr_day_vol, 0) },
-      { key: "vr_turnover", label: "Turnover ₹Cr", render: (r) => fmtNum(r.vr_turnover, 1) },
-      { key: "vr_vol_change", label: "Vol Change ×", render: (r) => fmtNum(r.vr_vol_change, 1) },
-      { key: "vr_day_chg", label: "Day %", render: (r) => <Signed v={r.vr_day_chg} digits={1} /> },
-    ],
-  },
-  {
-    id: "weekend",
-    label: "Weekend Investing",
-    cols: [{ key: "wi_roc_1y", label: "1Y ROC %", render: (r) => <Signed v={r.wi_roc_1y} digits={1} /> }],
-  },
-  {
-    id: "bollinger",
-    label: "Quant Bollinger",
-    cols: [
-      { key: "qb_signal", label: "Breakout Signal", render: (r) => boolCell(r.qb_signal) },
-      { key: "qb_rs55", label: "RS55 %", render: (r) => <Signed v={r.qb_rs55} digits={1} /> },
-      { key: "qb_pct_band", label: "% above Upper Band", render: (r) => <Signed v={r.qb_pct_band} digits={1} /> },
-      { key: "qb_pct_sma34", label: "% vs 34W SMA", render: (r) => <Signed v={r.qb_pct_sma34} digits={1} /> },
-      { key: "qb_atr_stop", label: "Chandelier Stop", render: (r) => fmtNum(r.qb_atr_stop, 1) },
-    ],
-  },
-  {
-    id: "smartmoney",
-    label: "Smart Money",
-    cols: [
-      { key: "sm_pct_sma40", label: "% vs 40D SMA", render: (r) => <Signed v={r.sm_pct_sma40} digits={1} /> },
-      { key: "sm_signal", label: "Signal", align: "left", render: (r) => (r.sm_signal ? r.sm_signal : DASH) },
-    ],
-  },
-];
+const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
+const OPTIONAL_COLUMNS = ALL_COLUMNS.filter((c) => !c.mandatory);
+const MANDATORY_COLUMNS = ALL_COLUMNS.filter((c) => c.mandatory);
 
-const STORAGE_KEY = "allTechnicalsColumnGroups";
-const DEFAULT_ENABLED = ["rs", "alpha", "high52w"]; // a reasonable, not-overwhelming default — everything else is one click away
+const STORAGE_KEY = "allTechnicalsColumns";
+// A lean default — a handful of Core columns plus the single headline
+// number from each of the two full-coverage screeners (RS Score,
+// Alpha Score), not whole groups. "too many columns but lesser page
+// width" was the whole point of this redesign.
+const DEFAULT_ENABLED = ["sector", "change_pct", "weekly_pct", "monthly_pct", "rsi_w", "rs_score", "alpha_score"];
 
-function loadEnabledGroups(): Set<string> {
+function loadEnabledColumns(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return new Set(JSON.parse(raw));
@@ -233,22 +202,22 @@ export default function AllTechnicals() {
   const watchlist = useWatchlist();
   const ms = bundle.momentum_screeners;
 
-  const [enabledGroups, setEnabledGroups] = useState<Set<string>>(() => loadEnabledGroups());
+  const [enabledCols, setEnabledCols] = useState<Set<string>>(() => loadEnabledColumns());
   const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(enabledGroups)));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(enabledCols)));
     } catch {
       // best-effort persistence only
     }
-  }, [enabledGroups]);
+  }, [enabledCols]);
 
-  function toggleGroup(id: string) {
-    setEnabledGroups((prev) => {
+  function toggleCol(key: string) {
+    setEnabledCols((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }
@@ -383,7 +352,7 @@ export default function AllTechnicals() {
 
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per
-        // toggleable group, used ONLY to drive the "only matches"
+        // originating screener, used ONLY to drive the "only matches"
         // filter below (never rendered as a column themselves).
         // Tracked as real map-lookup presence rather than inferred
         // from field nullness, since a group's own fields can
@@ -391,6 +360,7 @@ export default function AllTechnicals() {
         // (e.g. quantBollinger only ever pushes true signals, so
         // presence in its map already means "matched" without needing
         // to null-check qb_signal itself).
+        _has_core: true, // nseScreener already covers the full universe — never filtered out
         _has_rs: !!rs,
         _has_alpha: !!alpha,
         _has_high52w: !!high52w,
@@ -410,21 +380,21 @@ export default function AllTechnicals() {
   }, [ms]);
 
   const cols: Col[] = useMemo(() => {
-    const active = COLUMN_GROUPS.filter((g) => enabledGroups.has(g.id)).flatMap((g) => g.cols);
-    return [...ALWAYS_COLS, ...active];
-  }, [enabledGroups]);
+    const optional = OPTIONAL_COLUMNS.filter((c) => enabledCols.has(c.key));
+    return [...MANDATORY_COLUMNS, ...optional];
+  }, [enabledCols]);
+
+  const activeSources = useMemo(() => new Set(OPTIONAL_COLUMNS.filter((c) => enabledCols.has(c.key) && c.source).map((c) => c.source!)), [enabledCols]);
 
   const [onlyMatches, setOnlyMatches] = useState(true);
   const displayedRows = useMemo(() => {
     const base =
-      !onlyMatches || enabledGroups.size === 0
-        ? rows
-        : rows.filter((r: any) => Array.from(enabledGroups).some((id) => r[`_has_${id}`]));
+      !onlyMatches || activeSources.size === 0 ? rows : rows.filter((r: any) => Array.from(activeSources).some((src) => r[`_has_${src}`]));
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, enabledGroups, onlyMatches]);
+  }, [rows, activeSources, onlyMatches]);
 
   const asOf = ms?.nseScreener?.as_of;
 
@@ -444,9 +414,9 @@ export default function AllTechnicals() {
         other column here comes from a DIFFERENT screener that only ever covers a filtered SUBSET of the universe by design — e.g.{" "}
         <b>MA Breakout</b> only shows stocks with a fresh EMA cross this week, <b>Quant Bollinger</b> only current breakout signals,{" "}
         <b>52W High/Low</b> only stocks within a % band of their high/low. A blank cell in any of those columns means "not currently
-        triggered", not missing data. Use the column picker below to show only what you care about — your picks are remembered on this
-        device. No new data is fetched for this page — every column reads the exact same screener data its own tab already shows; refresh
-        any of those tabs (or wait for their cron) to update this one.
+        triggered", not missing data. Every column (except #/Symbol/Name/Price) can be individually shown/hidden with the column picker —
+        picks are remembered on this device. No new data is fetched for this page — every column reads the exact same screener data its
+        own tab already shows; refresh any of those tabs (or wait for their cron) to update this one.
       </MethodologyNote>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -454,23 +424,37 @@ export default function AllTechnicals() {
           onClick={() => setPickerOpen((v) => !v)}
           className="text-sm px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 font-medium"
         >
-          🎛️ Columns ({enabledGroups.size} of {COLUMN_GROUPS.length} groups shown) {pickerOpen ? "▲" : "▼"}
+          🎛️ Columns ({enabledCols.size} of {OPTIONAL_COLUMNS.length} shown) {pickerOpen ? "▲" : "▼"}
         </button>
-        {enabledGroups.size > 0 && (
-          <label className="flex items-center gap-2 text-sm cursor-pointer text-slate-600" title="With this on, only rows that actually have data in at least one checked group are shown — otherwise a sparse screener like Quant Bollinger shows all 750 rows blank">
+        {activeSources.size > 0 && (
+          <label
+            className="flex items-center gap-2 text-sm cursor-pointer text-slate-600"
+            title="With this on, only rows that actually have data in a currently-checked column are shown — otherwise a sparse screener like Quant Bollinger shows all 750 rows blank"
+          >
             <input type="checkbox" checked={onlyMatches} onChange={(e) => setOnlyMatches(e.target.checked)} />
             Only show rows with data in the checked columns
           </label>
         )}
       </div>
       {pickerOpen && (
-        <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-          {COLUMN_GROUPS.map((g) => (
-            <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
-              <input type="checkbox" checked={enabledGroups.has(g.id)} onChange={() => toggleGroup(g.id)} />
-              {g.label}
-            </label>
-          ))}
+        <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 space-y-3">
+          {COLUMN_GROUP_ORDER.map((group) => {
+            const groupCols = OPTIONAL_COLUMNS.filter((c) => c.group === group);
+            if (groupCols.length === 0) return null;
+            return (
+              <div key={group}>
+                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">{group}</div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                  {groupCols.map((c) => (
+                    <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input type="checkbox" checked={enabledCols.has(c.key)} onChange={() => toggleCol(c.key)} />
+                      {c.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -481,7 +465,7 @@ export default function AllTechnicals() {
         watchlist={watchlist}
         emptyMessage={
           rows.length > 0
-            ? "No stocks currently match the checked columns (e.g. Quant Bollinger can legitimately have zero current breakout signals) — try unchecking \"Only show rows with data\" or a different column group."
+            ? "No stocks currently match the checked columns (e.g. Quant Bollinger can legitimately have zero current breakout signals) — try unchecking \"Only show rows with data\" or a different column."
             : "No technical data yet — the nseScreener cron hasn't run."
         }
       />

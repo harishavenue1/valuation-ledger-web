@@ -3740,25 +3740,27 @@ def _rdcf_trailing_contiguous_start(period_labels):
 
 
 def _rdcf_parse_quarterly(soup):
-    """Last 6 quarters of Sales Growth% (YoY), OPM% (raw, direct
-    Screener row — confirmed live it's a real row, not derived), and
-    EPS Growth% (YoY) — added 2026-09-19 ("under fundamental main
-    requirement is to have last 6 qtrs sales growth, opm%, epsGrowth").
-    Reads the SAME page _rdcf_fetch_fundamentals already fetched for
-    the annual P&L (no extra Screener.in request) — same Quarterly
-    Results table/row-matching technique _mp_fetch_fundamentals
-    (momentumPersonal) already uses elsewhere in this file for a
-    single quarter's YoY growth, extended to keep the last 6 points
-    instead of just the latest. "Year ago" for YoY is 4 columns back
-    (quarterly cadence), same convention as _mp_fetch_fundamentals's
-    own _mp_find_year_ago_index — just index math here since consecutive
+    """Last 6 quarters of Sales Growth% (YoY), Operating Profit Growth%
+    (YoY — 2026-09-20, "instead of OPM details, replace with Operating
+    profit growth and trend"; was raw OPM% before), and EPS Growth%
+    (YoY) — added 2026-09-19 ("under fundamental main requirement is
+    to have last 6 qtrs sales growth, opm%, epsGrowth"). Reads the SAME
+    page _rdcf_fetch_fundamentals already fetched for the annual P&L
+    (no extra Screener.in request) — same Quarterly Results table/
+    row-matching technique _mp_fetch_fundamentals (momentumPersonal)
+    already uses elsewhere in this file for a single quarter's YoY
+    growth, extended to keep the last 6 points instead of just the
+    latest. "Year ago" for YoY is 4 columns back (quarterly cadence),
+    same convention as _mp_fetch_fundamentals's own
+    _mp_find_year_ago_index — just index math here since consecutive
     quarterly columns don't have the label-parsing edge cases annual
     columns can (a demerger year gap, etc.).
-    Returns {"labels", "sales_growth", "opm", "eps_growth"} — each list
-    ascending chronological (oldest of the 6 first), shorter than 6 (or
-    individual entries None) wherever there isn't enough history yet
-    (e.g. a recent IPO with under ~10 reported quarters). None entirely
-    if the page has no Quarterly Results section/table at all."""
+    Returns {"labels", "sales_growth", "op_growth", "eps_growth"} —
+    each list ascending chronological (oldest of the 6 first), shorter
+    than 6 (or individual entries None) wherever there isn't enough
+    history yet (e.g. a recent IPO with under ~10 reported quarters).
+    None entirely if the page has no Quarterly Results section/table
+    at all."""
     qr = next((s for s in soup.find_all("section")
                if s.find("h2") and ("Quarterly" in s.find("h2").text or "Half" in s.find("h2").text)), None)
     if not qr:
@@ -3774,29 +3776,39 @@ def _rdcf_parse_quarterly(soup):
             continue
         rows[cells[0].get_text(strip=True).rstrip("+").strip()] = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
     sales_row = next((v for k, v in rows.items() if any(x in k.lower() for x in ["sales", "revenue"])), None)
-    opm_row = next((v for k, v in rows.items() if "opm" in k.lower()), None)
+    op_row = next((v for k, v in rows.items() if "operating profit" in k.lower()), None)
     eps_row = next((v for k, v in rows.items() if "eps" in k.lower()), None)
     if not sales_row:
         return None
 
+    def _yoy_with_turned(curr, prev):
+        """Same 'T' (turned-profitable, no honest % against a negative
+        base) convention _mp_fetch_fundamentals/momentumPersonal
+        already uses for EPS — applies just as well to Operating
+        Profit, which can also flip negative-to-positive a quarter."""
+        if curr is None or prev is None:
+            return None
+        if prev < 0 and curr > 0:
+            return "T"
+        if prev > 0 and curr > 0:
+            return _mp_yoy(curr, prev)
+        return None
+
     n = len(q_labels_all)
-    labels, sales_growth, opm_vals, eps_growth = [], [], [], []
+    labels, sales_growth, op_growth, eps_growth = [], [], [], []
     for ci in range(max(0, n - 6), n):
         labels.append(q_labels_all[ci])
         pi = ci - 4
         s_curr = sales_row[ci] if ci < len(sales_row) else None
         s_prev = sales_row[pi] if 0 <= pi < len(sales_row) else None
         sales_growth.append(_mp_yoy(s_curr, s_prev))
-        opm_vals.append(opm_row[ci] if opm_row and ci < len(opm_row) else None)
+        o_curr = op_row[ci] if op_row and ci < len(op_row) else None
+        o_prev = op_row[pi] if op_row and 0 <= pi < len(op_row) else None
+        op_growth.append(_yoy_with_turned(o_curr, o_prev))
         e_curr = eps_row[ci] if eps_row and ci < len(eps_row) else None
         e_prev = eps_row[pi] if eps_row and 0 <= pi < len(eps_row) else None
-        if e_curr is not None and e_prev is not None and e_prev < 0 and e_curr > 0:
-            eps_growth.append("T")  # turned profitable — no % is honest against a negative base, same convention as elsewhere in this file
-        elif e_curr is not None and e_prev is not None and e_prev > 0 and e_curr > 0:
-            eps_growth.append(_mp_yoy(e_curr, e_prev))
-        else:
-            eps_growth.append(None)
-    return {"labels": labels, "sales_growth": sales_growth, "opm": opm_vals, "eps_growth": eps_growth}
+        eps_growth.append(_yoy_with_turned(e_curr, e_prev))
+    return {"labels": labels, "sales_growth": sales_growth, "op_growth": op_growth, "eps_growth": eps_growth}
 
 
 def _rdcf_fetch_fundamentals(ticker):
@@ -3951,7 +3963,7 @@ def _rdcf_fetch_fundamentals(ticker):
             # lists if the page had no parseable Quarterly section.
             "q_labels": quarterly["labels"] if quarterly else [],
             "q_sales_growth": quarterly["sales_growth"] if quarterly else [],
-            "q_opm": quarterly["opm"] if quarterly else [],
+            "q_op_growth": quarterly["op_growth"] if quarterly else [],
             "q_eps_growth": quarterly["eps_growth"] if quarterly else [],
         }
     return None
