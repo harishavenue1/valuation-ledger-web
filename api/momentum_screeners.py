@@ -1929,25 +1929,81 @@ def _ms_fetch_weekly_max(symbols):
     return combined.reset_index()
 
 
-def _run_all_time_high(symbols, name_map, sector_map):
+# ── nse750WeeklyMaxSummary (shared cache) ────────────────────────────────
+#
+# Added 2026-09-20 ("check for more optimized or better ui
+# enhancements") — allTimeHigh and turtleWealth both independently ran
+# this exact same LIVE, full-750-symbol yfinance weekly-max fetch
+# (allTimeHigh weekly, turtleWealth daily — confirmed live, ~103s each
+# time). Unlike nse750PriceCache (whose consumers slice the raw daily
+# series many different ways — different lookback windows, OHLC vs
+# Close-only, etc.), both consumers here only ever derive 3 numbers
+# per stock from the full weekly series: the latest close, the
+# all-time-high close, and the close ~52 weeks back (turtleWealth's
+# own alpha_52w). So this caches just that tiny derived summary
+# instead of the raw series — small enough it doesn't need sharding,
+# and it means neither consumer needs to touch yfinance directly
+# anymore, just a fast in-memory dict lookup. Runs once daily (needed
+# for turtleWealth's own daily cadence — allTimeHigh, still weekly,
+# just reads whatever the most recent day's cache has).
+def _run_nse750_weekly_max_summary_cache(symbols, name_map, sector_map):
     weekly = _ms_fetch_weekly_max(symbols)
     if weekly is None:
         return None, "no data fetched from yfinance"
 
-    rows, skipped = [], []
+    rows = []
     for sym, g in weekly.groupby("symbol"):
         cw = g.set_index("date")["Close"].sort_index()
-        if len(cw) < ATH_MIN_BARS or (date.today() - cw.index[-1].date()).days > NSE_STALE_DAYS + 5:
+        if len(cw) < 2:
+            continue
+        past = cw.asof(cw.index[-1] - timedelta(days=364))
+        close_52w_ago = round(float(past), 2) if past is not None and not (isinstance(past, float) and pd.isna(past)) else None
+        rows.append({
+            "symbol": sym,
+            "last_close": round(float(cw.iloc[-1]), 2),
+            "ath": round(float(cw.max()), 2),
+            "close_52w_ago": close_52w_ago,
+            "weeks_of_history": len(cw),
+            "as_of": cw.index[-1].date().isoformat(),
+        })
+    return {"label": "NSE 750 Weekly-Max Summary Cache", "push_rows": rows, "scanned": len(rows), "skipped": len(symbols) - len(rows)}, None
+
+
+def _weekly_max_summary_read_all():
+    """Reads the WHOLE shared cache once per batch invocation (same
+    "read once per batch, not per-symbol" discipline as
+    _fund_cache_read_all/_price_cache_raw_data), returns a plain
+    {symbol: row} dict."""
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    return {r["symbol"]: r for r in all_screeners.get("nse750WeeklyMaxSummary", {}).get("rows", [])}
+
+
+def _run_all_time_high(symbols, name_map, sector_map):
+    # 2026-09-20 — reads the shared nse750WeeklyMaxSummary cache instead
+    # of an independent yfinance fetch; see that cache's own module
+    # comment. No live network call anymore, just a dict lookup.
+    summary = _weekly_max_summary_read_all()
+    if not summary:
+        return None, "no data in shared cache yet (nse750WeeklyMaxSummary hasn't run)"
+
+    rows, skipped = [], []
+    for sym in symbols:
+        s = summary.get(sym)
+        if not s or s["weeks_of_history"] < ATH_MIN_BARS or (date.today() - date.fromisoformat(s["as_of"])).days > NSE_STALE_DAYS + 5:
             skipped.append(sym)  # +5 days' slack vs the daily screeners' staleness guard — weekly bars land less precisely on "today"
             continue
-        price = float(cw.iloc[-1])
-        ath = float(cw.max())
+        price = s["last_close"]
+        ath = s["ath"]
         pct_off_ath = round((price / ath - 1) * 100, 2)
         if pct_off_ath < -ATH_BAND_PCT:
             continue
         rows.append({
             "symbol": sym, "name": name_map.get(sym, sym), "sector": sector_map.get(sym, ""),
-            "price": round(price, 2), "ath": round(ath, 2),
+            "price": price, "ath": ath,
             "pct_off_ath": pct_off_ath,
             "new_high": bool(price >= ath),
         })
@@ -4164,23 +4220,30 @@ def _run_turtle_wealth_nse750(symbols, name_map, sector_map):
     # the same window.
     bench_r_1y = _tw_fetch_benchmark_r_1y()
 
-    weekly = _ms_fetch_weekly_max(symbols)
+    # 2026-09-20 — reads the shared nse750WeeklyMaxSummary cache instead
+    # of an independent yfinance fetch (this was the same fetch
+    # allTimeHigh ran independently, both hitting yfinance live for the
+    # ~90% identical data — see that cache's own module comment). r_1y
+    # is now simple arithmetic on the cache's precomputed close_52w_ago
+    # (same .asof()-364-days math _tw_r_1y itself uses, just computed
+    # once at cache-build time instead of redundantly here).
+    weekly_summary = _weekly_max_summary_read_all()
     ath_price_by_symbol = {}
-    if weekly is not None:
-        for sym, g in weekly.groupby("symbol"):
-            cw = g.set_index("date")["Close"].sort_index()
-            if len(cw) < ATH_MIN_BARS or (date.today() - cw.index[-1].date()).days > NSE_STALE_DAYS + 5:
-                continue
-            price = float(cw.iloc[-1])
-            ath = float(cw.max())
-            r_1y = _tw_r_1y(cw)
-            ath_price_by_symbol[sym] = {
-                "price": round(price, 2),
-                "pct_off_ath": round((price / ath - 1) * 100, 2),
-                "price_ath": bool(price >= ath * (1 - ATH_BAND_PCT / 100)),
-                "r_1y": r_1y,
-                "alpha_52w": None if r_1y is None or bench_r_1y is None else round(r_1y - bench_r_1y, 2),
-            }
+    for sym in symbols:
+        s = weekly_summary.get(sym)
+        if not s or s["weeks_of_history"] < ATH_MIN_BARS or (date.today() - date.fromisoformat(s["as_of"])).days > NSE_STALE_DAYS + 5:
+            continue
+        price = s["last_close"]
+        ath = s["ath"]
+        close_52w_ago = s["close_52w_ago"]
+        r_1y = round((price / close_52w_ago - 1) * 100, 2) if close_52w_ago and close_52w_ago > 0 else None
+        ath_price_by_symbol[sym] = {
+            "price": price,
+            "pct_off_ath": round((price / ath - 1) * 100, 2),
+            "price_ath": bool(price >= ath * (1 - ATH_BAND_PCT / 100)),
+            "r_1y": r_1y,
+            "alpha_52w": None if r_1y is None or bench_r_1y is None else round(r_1y - bench_r_1y, 2),
+        }
 
     # 2026-09-14 ("start with higher time savings") — reads the shared
     # nse750Fundamentals cache instead of an independent per-symbol
@@ -4718,6 +4781,7 @@ SCREENER_RUNNERS = {
     "52wHigh": _run_52w_high,
     "52wLow": _run_52w_low,
     "allTimeHigh": _run_all_time_high,
+    "nse750WeeklyMaxSummary": _run_nse750_weekly_max_summary_cache,
     "momentumPersonal": _run_momentum_personal,
     "smeMomentum": _run_sme_momentum,
     "volumeRockers": _run_volume_rockers,
