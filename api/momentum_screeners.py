@@ -3899,7 +3899,17 @@ def _rdcf_fetch_fundamentals(ticker):
         # cross-imported — see this function's own docstring).
         net_profit_row = next((v for k, v in pl_rows.items() if "net profit" in k.lower()), None)
 
+        # 2026-09-20 ("PMS fund managers look more into ROE ROCE") — same
+        # Balance Sheet table already read for borrowings, extended to also
+        # capture Equity Capital + Reserves (full annual rows, not just
+        # latest) so ROE can be computed the same way _screener_fetch.py's
+        # fetch_one() already does for the Guide page's single-stock check
+        # (Net Profit / (Equity Capital + Reserves) — Screener doesn't
+        # reliably publish a multi-year ROE row for non-financials). Ported
+        # here rather than imported, per this function's own "duplicate,
+        # don't cross-import" convention.
         borrowings = None
+        equity_capital_row = reserves_row = None
         bs = next((s for s in soup.find_all("section")
                    if s.find("h2") and s.find("h2").get_text(strip=True) == "Balance Sheet"), None)
         if bs:
@@ -3910,10 +3920,14 @@ def _rdcf_fetch_fundamentals(ticker):
                     if len(cells) < 2:
                         continue
                     label = cells[0].get_text(strip=True).rstrip("+").strip()
-                    if "borrowings" in label.lower():
-                        vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                    low = label.lower()
+                    vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                    if "borrowings" in low:
                         borrowings = next((v for v in reversed(vals) if v is not None), None)
-                        break
+                    elif low == "equity capital":
+                        equity_capital_row = vals
+                    elif "reserves" in low:
+                        reserves_row = vals
 
         # 2026-09-19 ("add a column under all fundamentals for working
         # capital") — same "Ratios" section/row Detail's own
@@ -3925,7 +3939,12 @@ def _rdcf_fetch_fundamentals(ticker):
         # companies (banks/NBFCs) have no such row at all (their
         # Ratios section only carries ROE%, no working-capital cycle
         # to speak of) — expected None, not a bug, same as opm_pct.
+        # 2026-09-20 — same loop now also captures the "ROCE %" row (full
+        # annual series, Screener's own published figure) alongside
+        # Working Capital Days — no longer breaks on the first match since
+        # both rows are wanted.
         working_capital_days = None
+        roce_row = None
         ratios_section = next((s for s in soup.find_all("section")
                                 if s.find("h2") and "Ratio" in s.find("h2").get_text(strip=True)), None)
         if ratios_section:
@@ -3936,10 +3955,12 @@ def _rdcf_fetch_fundamentals(ticker):
                     if len(cells) < 2:
                         continue
                     label = cells[0].get_text(strip=True).rstrip("+").strip()
-                    if "working capital days" in label.lower():
-                        vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                    low = label.lower()
+                    vals = [_mp_parse_number(td.get_text(strip=True)) for td in cells[1:]]
+                    if "working capital days" in low:
                         working_capital_days = next((v for v in reversed(vals) if v is not None), None)
-                        break
+                    elif low.startswith("roce"):
+                        roce_row = vals
 
         revenue_hist = [v for v in sales_row if v is not None]
         if not revenue_hist:
@@ -3947,6 +3968,40 @@ def _rdcf_fetch_fundamentals(ticker):
         opm_latest = next((v for v in reversed(opm_row) if v is not None), None) if opm_row else None
         tax_latest = next((v for v in reversed(tax_row) if v is not None), None) if tax_row else None
         net_profit_hist = [v for v in net_profit_row if v is not None] if net_profit_row else []
+
+        # 2026-09-20 ("pull the 1yr, 3yr, 5yr trends") — point-in-time
+        # change in percentage points, not CAGR (ROE/ROCE are already a
+        # ratio, so "growth %" of a ratio is a meaningless second-order
+        # thing; a PMS manager reads "ROCE went from 12% to 18%" as +6pp).
+        # Indexed from the END of each row (most-recent FY last, standard
+        # Screener.in column order) so a leading gap (early-listing/
+        # insolvency-resolution years with no data) doesn't shift which
+        # "years back" position -2/-4/-6 lands on.
+        def _pt_chg(row, years_back):
+            idx = -(years_back + 1)
+            if not row or len(row) < years_back + 1:
+                return None
+            latest, past = row[-1], row[idx]
+            return round(latest - past, 1) if latest is not None and past is not None else None
+
+        roce_pct = next((v for v in reversed(roce_row) if v is not None), None) if roce_row else None
+        roce_1y_chg = _pt_chg(roce_row, 1)
+        roce_3y_chg = _pt_chg(roce_row, 3)
+        roce_5y_chg = _pt_chg(roce_row, 5)
+
+        roe_pct = roe_1y_chg = roe_3y_chg = roe_5y_chg = None
+        if equity_capital_row and reserves_row and net_profit_row and len(equity_capital_row) == len(reserves_row):
+            n = min(len(net_profit_row), len(equity_capital_row))
+            roe_row = []
+            for i in range(-n, 0):
+                npv, e, r = net_profit_row[i], equity_capital_row[i], reserves_row[i]
+                roe_row.append(round(npv / (e + r) * 100, 1) if (npv is not None and e is not None and r is not None and (e + r) != 0) else None)
+            if roe_row:
+                roe_pct = next((v for v in reversed(roe_row) if v is not None), None)
+                roe_1y_chg = _pt_chg(roe_row, 1)
+                roe_3y_chg = _pt_chg(roe_row, 3)
+                roe_5y_chg = _pt_chg(roe_row, 5)
+
         quarterly = _rdcf_parse_quarterly(soup)
         return {
             "current_price": current_price,
@@ -3958,6 +4013,14 @@ def _rdcf_fetch_fundamentals(ticker):
             "borrowings": borrowings,
             "working_capital_days": working_capital_days,  # latest annual value, in days — None for financial companies (no working-capital cycle)
             "is_financial_style_revenue": is_financial_style_revenue,
+            "roce_pct": roce_pct,  # Screener's own published ROCE %, latest FY
+            "roce_1y_chg": roce_1y_chg,  # percentage-point change, not CAGR — see _pt_chg's own comment
+            "roce_3y_chg": roce_3y_chg,
+            "roce_5y_chg": roce_5y_chg,
+            "roe_pct": roe_pct,  # computed: Net Profit / (Equity Capital + Reserves) — Screener has no reliable multi-year ROE row for non-financials
+            "roe_1y_chg": roe_1y_chg,
+            "roe_3y_chg": roe_3y_chg,
+            "roe_5y_chg": roe_5y_chg,
             # Last 6 quarters — see _rdcf_parse_quarterly's own comment.
             # Ascending chronological (oldest of the 6 first); empty
             # lists if the page had no parseable Quarterly section.
