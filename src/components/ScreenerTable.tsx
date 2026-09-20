@@ -98,9 +98,12 @@ export interface Col {
   // Allocation's two tables need to match EACH OTHER's widths, not
   // just fill their own container, and percentages guarantee that at
   // any viewport size without hand-tuning pixel sums). Omit on every
-  // column (the default everywhere else) to keep the existing auto-fit
-  // behavior — this only switches on when ALL columns specify one, not
-  // applied partially.
+  // column (the default everywhere else) to get an EQUAL split across
+  // all columns instead (2026-09-20, "columns must be equidistant" —
+  // GenericTable's own content-based auto-fit was what made a Name
+  // column balloon while Price/Signal stayed narrow on plain screener
+  // tabs like Smart Money) — only switches to THIS explicit-percentage
+  // mode when ALL columns specify their own width, not applied partially.
   width?: number;
 }
 
@@ -209,7 +212,18 @@ export function GenericTable({
     return copy;
   }, [filtered, sortKey, sortDir]);
 
-  const fixedWidths = cols.every((c) => c.width !== undefined);
+  // 2026-09-20 ("also columns must be equidistant") — previously only
+  // switched to fixed/equal-width mode when EVERY column explicitly
+  // set its own `width` (opted in by a page like Portfolio Allocation,
+  // which needs its two tables' columns to line up — see that width
+  // comment on Col itself); every other GenericTable consumer (most
+  // screener tabs) fell back to the browser's natural content-based
+  // auto-fit, which is what made Smart Money's Name column balloon
+  // while Price/Signal stayed narrow. Now equal-width is the default
+  // whenever a page hasn't opted into its own explicit split, rather
+  // than an opt-in-only feature.
+  const widthPct = cols.every((c) => c.width !== undefined) ? null : 100 / cols.length;
+  const colWidth = (c: Col) => (widthPct !== null ? widthPct : c.width!);
 
   function clickHeader(key: string) {
     if (key === sortKey) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -253,14 +267,14 @@ export function GenericTable({
           overlaps the first row instead of sticking to the page
           (verified live 2026-08-23 before landing the original fix). */}
       <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
-        <table className="w-full text-sm border-collapse" style={fixedWidths ? { tableLayout: "fixed" } : undefined}>
+        <table className="w-full text-sm border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
               {cols.map((c) => (
                 <th
                   key={c.key}
                   className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}
-                  style={fixedWidths ? { width: `${c.width}%` } : undefined}
+                  style={{ width: `${colWidth(c)}%` }}
                 >
                   <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
                     {c.label} {sortKey === c.key ? (sortDir === "desc" ? "▼" : "▲") : ""}
@@ -331,11 +345,11 @@ export function GenericTable({
                   {cols.map((c) => (
                     <td
                       key={c.key}
-                      className={`px-2 py-2 ${c.align === "left" ? "text-left" : "text-center"} ${c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"} ${
-                        fixedWidths ? "whitespace-nowrap overflow-hidden text-ellipsis" : ""
+                      className={`px-2 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${c.align === "left" ? "text-left" : "text-center"} ${
+                        c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"
                       }`}
-                      style={fixedWidths ? { width: `${c.width}%` } : undefined}
-                      title={fixedWidths && c.key === "sector" ? String(r[c.key] ?? "") : undefined}
+                      style={{ width: `${colWidth(c)}%` }}
+                      title={c.key === "sector" ? String(r[c.key] ?? "") : undefined}
                     >
                       {c.key === "symbol" ? (
                         <>
