@@ -280,28 +280,17 @@ export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
-  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals"]);
+  const { ready } = useScreeners(["portfolioAllocation"]);
   const entry = bundle.momentum_screeners["portfolioAllocation"];
-  // ROCE/ROE 1Y change (see All Technicals' own note on why these two —
-  // ROCE 1Y change was the strongest factor found testing against a year
-  // of NSE750 returns, ROE 1Y change requested alongside it here for a
-  // fuller quality read on actual holdings) — joined client-side from the
-  // shared nse750Fundamentals cache rather than added to the
-  // PortfolioAllocation skill's own Kite+Screener.in fetch, since that
-  // data already exists here with zero new requests. A holding outside
-  // the NSE 750 (or a fund/ETF, which has no ROCE/ROE at all) just shows
-  // "—", same as every other off-universe fallback already in this app.
-  const fundBySymbol = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const r of bundle.momentum_screeners.nse750Fundamentals?.rows ?? []) if (r.symbol) m.set(r.symbol, r);
-    return m;
-  }, [bundle.momentum_screeners.nse750Fundamentals]);
-  const rows = useMemo(() => {
-    return (entry?.rows ?? []).map((r: any) => {
-      const fund = fundBySymbol.get(r.symbol);
-      return { ...r, roce_1y_chg: fund?.roce_1y_chg ?? null, roe_1y_chg: fund?.roe_1y_chg ?? null };
-    });
-  }, [entry, fundBySymbol]);
+  // ROCE/ROE 1Y change — 2026-09-20. First tried joining against the
+  // shared nse750Fundamentals cache (zero new requests), but that only
+  // covers the Nifty Total Market universe and left most of this
+  // portfolio's SME/small-cap holdings (SIGMAADV, WINDLAS, KRISHNADEF,
+  // etc.) blank. Now pushed directly by the PortfolioAllocation skill
+  // itself (same per-holding Screener.in fetch already used for Qtr
+  // Sales/EPS Growth — see compute_portfolio_allocation.py's
+  // fetch_sector_and_fundamentals), which has no such universe limit.
+  const rows = entry?.rows ?? [];
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
@@ -444,9 +433,11 @@ export default function PortfolioAllocation() {
         // actually predicts NSE750 stock performance: ROCE's own 1-year
         // point change (this year's ROCE minus last year's, in pp) was
         // the clear winner (see All Technicals' own methodology note for
-        // the numbers). Joined from the shared nse750Fundamentals cache,
-        // not the PortfolioAllocation skill's own fetch — "—" for a
-        // fund/ETF or a holding outside the NSE 750.
+        // the numbers). Pushed directly by the PortfolioAllocation skill's
+        // own per-holding Screener.in fetch (not joined against
+        // nse750Fundamentals — that cache only covers the Nifty Total
+        // Market universe and left most SME/small-cap holdings blank) —
+        // "—" for a fund/ETF or an unresolvable symbol.
         key: "roce_1y_chg",
         label: "ROCE 1Y Δ",
         width: 10,
@@ -521,10 +512,11 @@ export default function PortfolioAllocation() {
         <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
         <br />
         <br />
-        <b>ROCE 1Y Δ</b>/<b>ROE 1Y Δ</b> — this year's ROCE/ROE minus last year's, in percentage points, not the level. Joined from the
-        shared <b>nse750Fundamentals</b> cache (same data All Technicals' Quality group uses), which refreshes weekly, not on-demand with
-        the rest of this page — "—" for a fund/ETF or a holding outside the NSE 750. Of everything tested against a year of NSE750
-        returns (working capital, ROE, ROCE level, margin), ROCE 1Y change was the standout predictor.
+        <b>ROCE 1Y Δ</b>/<b>ROE 1Y Δ</b> — this year's ROCE/ROE minus last year's, in percentage points, not the level. Pushed by the
+        PortfolioAllocation skill's own per-holding Screener.in fetch (same request as Qtr Sales/EPS Growth above, no extra load) — not
+        limited to the NSE 750 universe, so it covers SME/small-cap holdings too. "—" for a fund/ETF, a financial company (no published
+        ROCE row), or an unresolvable symbol. Of everything tested against a year of NSE750 returns (working capital, ROE, ROCE level,
+        margin), ROCE 1Y change was the standout predictor.
       </MethodologyNote>
 
       {/* Side by side 2026-09-06 ("enough space wasted in summary and
