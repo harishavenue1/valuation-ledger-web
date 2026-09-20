@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
-import { Col, GenericTable, NSE_SCREENER_COLS } from "../components/ScreenerTable";
+import { Col, GenericTable, NSE_SCREENER_COLS, ScreenerLoading } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // 2026-09-13 ("can we add one more column to see where the stock lies
@@ -68,6 +68,7 @@ export default function Watchlist() {
   const navigate = useNavigate();
   const watchlist = useWatchlist();
   const [refreshing, setRefreshing] = useState(false);
+  const { ready } = useScreeners(["portfolioAllocation", "nseScreener", "52wHigh", "52wLow", "allTimeHigh"]);
 
   const tickers = bundle.watchlist.tickers;
   // 2026-09-11 ("split watchlist into 2 parts actual owned in
@@ -209,6 +210,8 @@ export default function Watchlist() {
       setRefreshing(false);
     }
   }
+
+  if (!ready) return <ScreenerLoading label="Watchlist" />;
 
   return (
     <div>

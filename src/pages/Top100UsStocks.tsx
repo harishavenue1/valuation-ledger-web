@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, GenericTable, MethodologyNote, Signed } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed } from "../components/ScreenerTable";
 
 // Added 2026-09-14 — "add a new page for top 100 US Stocks, replicate
 // and one more col with alpha over Nasdaq 100", from a screenshot of
@@ -70,8 +70,11 @@ const COLS: Col[] = [
 export default function Top100UsStocks() {
   const { bundle } = useData();
   const navigate = useNavigate();
+  const { ready } = useScreeners(["top100UsStocks"]);
   const entry = bundle.momentum_screeners["top100UsStocks"];
   const rows = entry?.rows ?? [];
+
+  if (!ready) return <ScreenerLoading label="Top 100 US Stocks" />;
 
   return (
     <div>

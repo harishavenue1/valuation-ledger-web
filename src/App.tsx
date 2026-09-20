@@ -51,6 +51,46 @@ export function useData() {
   return ctx;
 }
 
+// Lazily fetches the named momentum_screeners entries the first time a
+// page asks for them, and caches the result in the shared bundle so
+// switching tabs/pages doesn't refetch. Added 2026-09-20 — momentum_
+// screeners used to arrive as part of the one big /api/stocks payload
+// on every app load (88% of a 2.4MB bundle) regardless of which page,
+// if any, actually needed it; now each screener page declares exactly
+// which keys it uses and only those are fetched, on first visit.
+export function useScreeners(names: string[]): { ready: boolean; error: string | null } {
+  const { bundle, setBundle } = useData();
+  const [error, setError] = useState<string | null>(null);
+  const key = names.slice().sort().join(",");
+  const missing = names.filter((n) => !(n in bundle.momentum_screeners));
+
+  useEffect(() => {
+    if (missing.length === 0) return;
+    let cancelled = false;
+    api
+      .getScreeners(missing)
+      .then((res) => {
+        if (cancelled) return;
+        setBundle((prev) => {
+          const merged = { ...prev.momentum_screeners };
+          for (const n of missing) {
+            merged[n] = res.momentum_screeners[n] ?? merged[n] ?? { label: n, as_of: null, rows: [] };
+          }
+          return { ...prev, momentum_screeners: merged };
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return { ready: missing.length === 0, error };
+}
+
 const EMPTY: Bundle = {
   stocks: {},
   scenarios: {},

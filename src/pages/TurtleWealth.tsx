@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
-import { Col, GenericTable, MethodologyNote, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
+import { useData, useScreeners } from "../App";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-13 ("lets build one more page turtleWealth on main
@@ -74,10 +74,13 @@ export default function TurtleWealth() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners(["turtleWealth"]);
 
   const entry = bundle.momentum_screeners["turtleWealth"];
   const rows = entry?.rows ?? [];
   const allThreeCount = rows.filter((r: any) => r.all_three).length;
+
+  if (!ready) return <ScreenerLoading label="Turtle Wealth" />;
 
   return (
     <div>

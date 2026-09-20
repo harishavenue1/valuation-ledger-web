@@ -38,6 +38,13 @@ export function MethodologyNote({ children }: { children: React.ReactNode }) {
   );
 }
 
+// Shown while a page's useScreeners() call is still fetching its data
+// on demand (see App.tsx) — replaces what used to be an instant render
+// off the always-fully-loaded bundle.
+export function ScreenerLoading({ label }: { label?: string }) {
+  return <div className="text-sm text-slate-400 text-center py-16">Loading{label ? ` ${label}` : ""}…</div>;
+}
+
 // Price column -> TradingView weekly chart for that symbol, new tab.
 // stopPropagation keeps a click here from also triggering the row's
 // Symbol nav link.

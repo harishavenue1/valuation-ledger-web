@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, GenericTable, MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-06 — "current holding in terms of percentages of
@@ -280,6 +280,7 @@ export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners(["portfolioAllocation"]);
   const entry = bundle.momentum_screeners["portfolioAllocation"];
   const rows = entry?.rows ?? [];
 
@@ -444,6 +445,8 @@ export default function PortfolioAllocation() {
     ],
     []
   );
+
+  if (!ready) return <ScreenerLoading label="Portfolio Allocation" />;
 
   return (
     <div>

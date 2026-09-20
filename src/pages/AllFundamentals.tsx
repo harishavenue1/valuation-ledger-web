@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
-import { Col, GenericTable, MethodologyNote, PriceLink, Signed, fmtNum } from "../components/ScreenerTable";
+import { useData, useScreeners } from "../App";
+import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // 2026-09-19 — "let's start on all fundamentals page", the fundamentals
@@ -246,6 +246,7 @@ export default function AllFundamentals() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners(["nseScreener", "nse750Fundamentals", "reverseDcfScanNse750", "turtleWealth"]);
   const ms = bundle.momentum_screeners;
 
   const [enabledCols, setEnabledCols] = useState<Set<string>>(() => loadEnabledColumns());
@@ -336,6 +337,8 @@ export default function AllFundamentals() {
   }, [rows, activeSources, onlyMatches]);
 
   const asOf = ms?.nse750Fundamentals?.as_of;
+
+  if (!ready) return <ScreenerLoading label="All Fundamentals" />;
 
   return (
     <div>
