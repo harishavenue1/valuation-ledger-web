@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, GenericTable, MethodologyNote, Signed } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed } from "../components/ScreenerTable";
 
 // Added 2026-09-06 — "our currency and country level skill we have to
 // built on page... which currency and country etfs are outperforming,
@@ -81,8 +81,11 @@ const CURRENCY_COLS: Col[] = [
 export default function GlobalMacro() {
   const { bundle } = useData();
   const navigate = useNavigate();
+  const { ready } = useScreeners(["globalCountryEtfs", "globalCurrencies"]);
   const etfEntry = bundle.momentum_screeners["globalCountryEtfs"];
   const currencyEntry = bundle.momentum_screeners["globalCurrencies"];
+
+  if (!ready) return <ScreenerLoading label="Global Macro" />;
 
   return (
     <div>

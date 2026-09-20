@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, Signed } from "../components/ScreenerTable";
+import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, ScreenerLoading, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // F1-F3/C1-C3/score/verdict arrive pre-formatted as strings — same
@@ -71,6 +71,10 @@ export default function MomentumScreeners() {
   const [tab, setTab] = useState(TABS[0].key);
   const [refreshing, setRefreshing] = useState(false);
   const watchlist = useWatchlist();
+  // Only the active tab's screener is fetched — switching tabs fetches
+  // (and then caches) that tab's data on demand rather than loading all
+  // 18 screeners' worth up front.
+  const { ready } = useScreeners([tab]);
   const entry = bundle.momentum_screeners[tab];
   const rows = entry?.rows ?? [];
 
@@ -632,7 +636,11 @@ export default function MomentumScreeners() {
       {/* key={tab} — remounts fresh per tab so search/sector/sort
           state doesn't leak from one screener's filters into the
           next (e.g. a sector selection that doesn't exist there). */}
-      <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} />
+      {ready ? (
+        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} />
+      ) : (
+        <ScreenerLoading label={TABS.find((t) => t.key === tab)?.label ?? tab} />
+      )}
     </div>
   );
 }

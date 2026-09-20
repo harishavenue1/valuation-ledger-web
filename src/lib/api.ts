@@ -277,6 +277,12 @@ export const api = {
 
   getAll: (): Promise<Bundle> => req("/api/stocks"),
 
+  // Fetches only the named momentum_screeners entries — see App.tsx's
+  // useScreeners hook, which is what every screener page calls instead
+  // of assuming bundle.momentum_screeners is already fully populated.
+  getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
+    req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),
+
   fetchCompany: (ticker: string): Promise<{ stock: Stock }> =>
     req("/api/fetch_company", { method: "POST", body: JSON.stringify({ ticker }) }),
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
-import { Col, GenericTable, MethodologyNote, PriceLink, Signed, fmtNum } from "../components/ScreenerTable";
+import { useData, useScreeners } from "../App";
+import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // 2026-09-18 — "design for technical and fundamental in intention to
@@ -200,6 +200,24 @@ export default function AllTechnicals() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners([
+    "nseScreener",
+    "Nifty500RelativeStrength",
+    "sectorStockAlpha",
+    "52wHigh",
+    "52wLow",
+    "allTimeHigh",
+    "maBreakout",
+    "myLongTermInvestingStrategy",
+    "weeklySignals",
+    "valueRsiTurnaround",
+    "grandfatherFatherSon",
+    "momentumPersonal",
+    "volumeRockers",
+    "weekendInvesting",
+    "quantBollinger",
+    "smartMoney",
+  ]);
   const ms = bundle.momentum_screeners;
 
   const [enabledCols, setEnabledCols] = useState<Set<string>>(() => loadEnabledColumns());
@@ -397,6 +415,8 @@ export default function AllTechnicals() {
   }, [rows, activeSources, onlyMatches]);
 
   const asOf = ms?.nseScreener?.as_of;
+
+  if (!ready) return <ScreenerLoading label="All Technicals" />;
 
   return (
     <div>

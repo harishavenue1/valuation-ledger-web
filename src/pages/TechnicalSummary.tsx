@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, fmtNum, GenericTable, MethodologyNote, PriceLink, Signed } from "../components/ScreenerTable";
+import { Col, fmtNum, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-06 — "a technical summary page, similar to our
@@ -36,8 +36,11 @@ export default function TechnicalSummary() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners(["technicalSummary"]);
   const entry = bundle.momentum_screeners["technicalSummary"];
   const rows = entry?.rows ?? [];
+
+  if (!ready) return <ScreenerLoading label="Technical Summary" />;
 
   return (
     <div>

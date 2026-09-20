@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
-import { Col, GenericTable, MethodologyNote, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-13 ("can we build this portfolio breakdown page on
@@ -70,6 +70,7 @@ export default function PortfolioPerformance() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
+  const { ready } = useScreeners(["portfolioAllocation", "nseScreener", "strategicAlpha"]);
 
   const holdingRows = bundle.momentum_screeners.portfolioAllocation?.rows ?? [];
   const nseBySymbol = useMemo(() => {
@@ -134,6 +135,8 @@ export default function PortfolioPerformance() {
 
   const weightSum = allRows.reduce((s, r) => s + (r.alpha_1m !== null ? r.pct_of_portfolio : 0), 0);
   const overallAlpha = weightSum > 0 ? allRows.reduce((s, r) => s + (r.alpha_1m !== null ? r.pct_of_portfolio * r.alpha_1m : 0), 0) / weightSum : null;
+
+  if (!ready) return <ScreenerLoading label="Portfolio Performance" />;
 
   return (
     <div>

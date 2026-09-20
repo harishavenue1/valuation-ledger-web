@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Col, GenericTable, MethodologyNote, Signed } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed } from "../components/ScreenerTable";
 
 // Added 2026-09-06 — "one more page to be built as a strategic alpha
 // summary" (https://www.youtube.com/watch?v=r6BYKayOaIQ, channel
@@ -100,6 +100,7 @@ const COLS: Col[] = [
 export default function StrategicAlpha() {
   const { bundle } = useData();
   const navigate = useNavigate();
+  const { ready } = useScreeners(["strategicAlpha", "countryYields"]);
   const entry = bundle.momentum_screeners["strategicAlpha"];
   // 2026-09-14 ("want to [see actual rates for] other countries") —
   // separate small screener/table, not folded into the main GenericTable
@@ -138,6 +139,8 @@ export default function StrategicAlpha() {
   const ratesRows = allRows.filter((r: any) => r.region === "Rates");
   const rows =
     region === "india" ? indiaRows : region === "international" ? internationalRows : region === "ratios" ? ratiosRows : region === "rates" ? ratesRows : factorRows;
+
+  if (!ready) return <ScreenerLoading label="Strategic Alpha" />;
 
   return (
     <div>

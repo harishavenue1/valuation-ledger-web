@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import { lastActual } from "../lib/model";
 import { computeStagedDcf, solveReverseDcf } from "../lib/reverseDcf";
 import { getGrowthOverride } from "../lib/reverseDcfOverrides";
-import { Col, GenericTable, MethodologyNote, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
+import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtNum, PriceLink } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // Added 2026-09-12 — "found another way to calculate reverse dcf
@@ -324,6 +324,9 @@ export default function ReverseDCFScan() {
   const navigate = useNavigate();
   const watchlist = useWatchlist();
   const [source, setSource] = useState<"ledger" | "nse750">("ledger");
+  // Only fetches the NSE750 scan data once you actually switch to that
+  // tab — the "My Ledger" default needs nothing beyond bundle.stocks.
+  const { ready: nse750Ready } = useScreeners(source === "nse750" ? ["reverseDcfScanNse750"] : []);
 
   const ledgerRows = useMemo(() => {
     const computed = Object.entries(bundle.stocks)
@@ -439,13 +442,17 @@ export default function ReverseDCFScan() {
             its Valuation Gap so it doesn't read as "your growth applied" when it didn't), and catches up automatically once its next
             scheduled batch runs.
           </MethodologyNote>
-          <GenericTable
-            rows={nse750Rows}
-            cols={NSE750_COLS}
-            navigate={(t) => navigate(`/company/${t}`)}
-            watchlist={watchlist}
-            emptyMessage="No NSE 750 scan data yet — the daily batches haven't run for the first time yet."
-          />
+          {nse750Ready ? (
+            <GenericTable
+              rows={nse750Rows}
+              cols={NSE750_COLS}
+              navigate={(t) => navigate(`/company/${t}`)}
+              watchlist={watchlist}
+              emptyMessage="No NSE 750 scan data yet — the daily batches haven't run for the first time yet."
+            />
+          ) : (
+            <ScreenerLoading label="NSE 750 scan data" />
+          )}
         </>
       )}
     </div>
