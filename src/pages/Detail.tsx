@@ -159,8 +159,9 @@ export default function Detail() {
   const selectedModel = computeModel(stock, caseStates[selectedCase]);
 
   return (
-    // App.tsx's <main> is max-w-[1800px] (sized for the Summary/
-    // Companies card grids) — this page is all narrow, stacked
+    // App.tsx's <main> is max-w-[2000px] as of 2026-09-21 (sized for
+    // Portfolio Allocation's 18-column table; originally 1800px for
+    // the Summary/Companies card grids) — this page is all narrow, stacked
     // tables, so left at full shell width it just leaves a wall of
     // dead space to the right of every table (2026-08-23 screenshot
     // of /company/VENUSREM, "still page empty"). Cap it to roughly
