@@ -320,10 +320,10 @@ export default function PortfolioAllocation() {
 
   const COLS: Col[] = useMemo(
     () => [
-      { key: "rank", label: "Rank", width: 6 },
-      { key: "symbol", label: "Symbol", align: "left", width: 13 },
-      { key: "name", label: "Name", align: "left", width: 13 },
-      { key: "sector", label: "Sector", align: "left", width: 21 },
+      { key: "rank", label: "Rank", width: 3 },
+      { key: "symbol", label: "Symbol", align: "left", width: 6 },
+      { key: "name", label: "Name", align: "left", width: 6 },
+      { key: "sector", label: "Sector", align: "left", width: 7 },
       {
         // 2026-09-18 ("add a column for price with trading view link to
         // it") — same TradingView-link-on-the-price convention already
@@ -334,7 +334,7 @@ export default function PortfolioAllocation() {
         // BSE-only in this portfolio).
         key: "price",
         label: "Price",
-        width: 11,
+        width: 6,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -361,28 +361,28 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 8,
+        width: 3,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 8,
+        width: 4,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
         key: "pct_3m",
         label: "3M %",
-        width: 8,
+        width: 4,
         render: (r) => <Signed v={r.pct_3m} digits={1} />,
       },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
-        width: 13,
+        width: 6,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", width: 9, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      { key: "pnl_pct", label: "P&L %", width: 4.5, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
         // company's latest qtr sales growth and eps growth") — replaces
@@ -392,7 +392,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them.
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
-        width: 13,
+        width: 8,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -416,7 +416,7 @@ export default function PortfolioAllocation() {
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
         label: "Qtr EPS Growth %",
-        width: 12,
+        width: 7,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
           if (r.qtr_eps_growth_pct === "T")
@@ -440,13 +440,13 @@ export default function PortfolioAllocation() {
         // "—" for a fund/ETF or an unresolvable symbol.
         key: "roce_1y_chg",
         label: "ROCE 1Y Δ",
-        width: 10,
+        width: 5.5,
         render: (r) => (r.roce_1y_chg === null || r.roce_1y_chg === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.roce_1y_chg} digits={1} />),
       },
       {
         key: "roe_1y_chg",
         label: "ROE 1Y Δ",
-        width: 10,
+        width: 5.5,
         render: (r) => (r.roe_1y_chg === null || r.roe_1y_chg === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.roe_1y_chg} digits={1} />),
       },
       {
@@ -458,7 +458,7 @@ export default function PortfolioAllocation() {
         // history yet (e.g. a very recent IPO), not a real N.
         key: "above_ema33w",
         label: "> 33W EMA",
-        width: 10,
+        width: 5,
         render: (r) => {
           if (r.above_ema33w === null || r.above_ema33w === undefined) return <span className="text-slate-300">—</span>;
           return (
@@ -479,19 +479,19 @@ export default function PortfolioAllocation() {
         // real 0%.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 10,
+        width: 6.5,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_50d_ema",
         label: "% vs 50D EMA",
-        width: 10,
+        width: 6.5,
         render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 10,
+        width: 6.5,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
     ],
