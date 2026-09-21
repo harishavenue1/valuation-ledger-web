@@ -471,6 +471,29 @@ export default function PortfolioAllocation() {
           );
         },
       },
+      {
+        // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
+        // 33WEMA") — % distance, same OHLC4 EMA convention as above_ema33w
+        // and api/momentum_screeners.py's MA Breakout screener. "—" means
+        // Yahoo had too few bars yet (e.g. a very recent IPO), not a
+        // real 0%.
+        key: "pct_200d_ema",
+        label: "% vs 200D EMA",
+        width: 10,
+        render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
+      },
+      {
+        key: "pct_50d_ema",
+        label: "% vs 50D EMA",
+        width: 10,
+        render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
+      },
+      {
+        key: "pct_33w_ema",
+        label: "% vs 33W EMA",
+        width: 10,
+        render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
+      },
     ],
     []
   );
@@ -508,7 +531,9 @@ export default function PortfolioAllocation() {
         <b>1W %</b>/<b>1M %</b>/<b>3M %</b> are price change vs. 1/4/13 weekly bars back on Yahoo's own weekly series (same series the{" "}
         <b>&gt;33W EMA</b> column's OHLC4 33-EMA is computed from) — bar-count based, not calendar-exact. <b>&gt;33W EMA</b> shows{" "}
         <b>Y</b>/<b>N</b> for whether price is above/below that EMA. All four show "—" when Yahoo has too little weekly history yet (e.g. a
-        very recent IPO). Pushed by the{" "}
+        very recent IPO). <b>% vs 200D EMA</b>/<b>% vs 50D EMA</b>/<b>% vs 33W EMA</b> — added 2026-09-21 — are the same OHLC4 EMA
+        convention (200D/50D off Yahoo's daily series, 33W off the weekly series above) expressed as a % distance rather than just
+        above/below, matching this app's MA Breakout screener. Pushed by the{" "}
         <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
         <br />
         <br />
