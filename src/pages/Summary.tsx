@@ -43,8 +43,9 @@ const EMA_COLS: [string, string][] = [
 // Base/Bull/Bear widened 150->210 — at 150 the "+20.0% | 20.0x |
 // -73.4%" line was truncating with an ellipsis (2026-08-23
 // screenshot). Other columns bumped up too so the table fills more
-// of the page's max-w-[1800px] shell generously instead of leaving a
-// wide empty gutter, rather than widening only the 3 cutoff columns.
+// of the page's shell (App.tsx's <main>, max-w-[2000px] as of
+// 2026-09-21) generously instead of leaving a wide empty gutter,
+// rather than widening only the 3 cutoff columns.
 const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 90, 60, 50];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
@@ -483,7 +484,14 @@ export default function Summary() {
   }
 
   return (
-    <div>
+    // 2026-09-21 — self-capped, same pattern as Detail.tsx/Guide.tsx,
+    // now that App.tsx's shared shell grew to max-w-[2000px] (for
+    // Portfolio Allocation's 18-column table). This page's own table is
+    // a fixed-pixel COL_WIDTHS layout (~1655px, not percentage-based),
+    // so it doesn't stretch to fill a wider shell on its own — without
+    // this cap the 2026-08-23 "table fills the shell generously" work
+    // would regress back to a wide empty gutter.
+    <div className="max-w-[1750px] mx-auto">
       <div className="text-2xl font-bold mb-1">
         {totalCount} compan{totalCount === 1 ? "y" : "ies"} tracked
       </div>

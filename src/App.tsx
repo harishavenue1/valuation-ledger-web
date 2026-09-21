@@ -144,7 +144,15 @@ export default function App() {
     <Ctx.Provider value={{ bundle, setBundle, reload, cloudRuns, setCloudRun }}>
       <div className="min-h-screen flex flex-col">
         <header className="border-b border-slate-200 sticky top-0 bg-white/90 backdrop-blur z-20">
-          <div className="max-w-[1800px] mx-auto px-4 py-3 flex items-center gap-4">
+          {/* 2026-09-21 ("you could have increased width of table also",
+              re: Portfolio Allocation's 18-column table) — widened from
+              1800px to 2000px. Safe for every other page: Guide/Detail
+              already self-cap narrower (1600px/1680px) via their own
+              wrapper div — the established pattern here is "opt narrower
+              if you don't need the full shell", not "the shell is sized
+              exactly to fit every page". Summary's own card-grid
+              (COL_WIDTHS ~1655px) still has comfortable margin at 2000px. */}
+          <div className="max-w-[2000px] mx-auto px-4 py-3 flex items-center gap-4">
             <span className="font-semibold tracking-tight text-base text-indigo-600 flex-shrink-0">🧮 Valuation Ledger</span>
             {/* 2026-09-06 — "headers are distorted make it display with
                 no slider but fit in a single row": 13 nav items no
@@ -238,7 +246,7 @@ export default function App() {
             </button>
           </div>
         </header>
-        <main className="flex-1 max-w-[1800px] w-full mx-auto px-4 py-6">
+        <main className="flex-1 max-w-[2000px] w-full mx-auto px-4 py-6">
           <Routes>
             <Route path="/" element={<Summary />} />
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
