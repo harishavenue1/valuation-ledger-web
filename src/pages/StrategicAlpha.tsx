@@ -1,8 +1,149 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
 import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed } from "../components/ScreenerTable";
+
+// 2026-09-22 ("add a chart of gold against nifty50... also gold
+// against interest rates") — dataviz skill's validated reference
+// palette, same instance PortfolioAllocation's own donut chart already
+// uses (SECTOR_COLORS there) — kept consistent across the app rather
+// than picking new hex values per chart.
+const CHART_BLUE = "#2a78d6";
+const CHART_ORANGE = "#eb6834";
+
+interface ChartPoint {
+  date: string; // ISO, e.g. "2016-09-25"
+  value: number;
+}
+
+// Plain SVG line chart — same "no charting library in this app's
+// dependency tree" precedent as PortfolioAllocation's SectorDonut.
+// Handles 1-2 series on ONE shared y-axis (only ever called with
+// comparable-unit series — indexed-to-100 growth, or a single price/
+// yield series — never two different units on the same instance; see
+// the "one axis" rule in the dataviz skill). Hover shows a crosshair +
+// tooltip (nearest point by x), matching the skill's interaction spec
+// for line charts.
+function TimeSeriesChart({
+  series,
+  height = 220,
+  yFormat = (v: number) => v.toFixed(0),
+  yLabel,
+}: {
+  series: { label: string; color: string; points: ChartPoint[] }[];
+  height?: number;
+  yFormat?: (v: number) => string;
+  yLabel?: string;
+}) {
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const width = 900;
+  const padLeft = 52;
+  const padRight = 12;
+  // Extra top padding when yLabel is present — otherwise its text
+  // collides with the topmost gridline's own tick value, both sitting
+  // right at the plot's top edge.
+  const padTop = yLabel ? 30 : 12;
+  const padBottom = 28;
+  const plotW = width - padLeft - padRight;
+  const plotH = height - padTop - padBottom;
+
+  const allPoints = series[0]?.points ?? [];
+  const n = allPoints.length;
+  const allValues = series.flatMap((s) => s.points.map((p) => p.value));
+  const yMin = Math.min(...allValues);
+  const yMax = Math.max(...allValues);
+  const yPad = (yMax - yMin) * 0.08 || 1;
+  const yLo = yMin - yPad;
+  const yHi = yMax + yPad;
+
+  function xAt(i: number) {
+    return padLeft + (n <= 1 ? 0 : (i / (n - 1)) * plotW);
+  }
+  function yAt(v: number) {
+    return padTop + plotH - ((v - yLo) / (yHi - yLo)) * plotH;
+  }
+
+  function handleMove(e: React.MouseEvent<SVGRectElement>) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const frac = Math.min(1, Math.max(0, (px * (width / rect.width) - padLeft) / plotW));
+    const idx = Math.round(frac * (n - 1));
+    setHoverIdx(Math.min(n - 1, Math.max(0, idx)));
+  }
+
+  // 4 evenly-spaced y gridlines + labels — recessive per the dataviz
+  // skill's mark spec (hairline gray, not full chart borders).
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => yLo + f * (yHi - yLo));
+  // Sparse x-axis labels (start/mid/end) — 523 weekly points is too
+  // dense for a label per tick.
+  const xTickIdxs = n > 1 ? [0, Math.floor((n - 1) / 2), n - 1] : [0];
+
+  const hp = hoverIdx !== null ? allPoints[hoverIdx] : null;
+
+  return (
+    <div className="relative">
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" style={{ display: "block" }}>
+        {yTicks.map((t, i) => (
+          <g key={i}>
+            <line x1={padLeft} x2={width - padRight} y1={yAt(t)} y2={yAt(t)} stroke="#e1e0d9" strokeWidth={1} />
+            <text x={padLeft - 6} y={yAt(t) + 3} textAnchor="end" className="fill-slate-400" style={{ fontSize: 9 }}>
+              {yFormat(t)}
+            </text>
+          </g>
+        ))}
+        {xTickIdxs.map((i) => (
+          <text key={i} x={xAt(i)} y={height - 8} textAnchor={i === 0 ? "start" : i === n - 1 ? "end" : "middle"} className="fill-slate-400" style={{ fontSize: 9 }}>
+            {allPoints[i]?.date.slice(0, 7)}
+          </text>
+        ))}
+        {yLabel && (
+          <text x={2} y={10} className="fill-slate-400" style={{ fontSize: 9 }}>
+            {yLabel}
+          </text>
+        )}
+        {series.map((s) => {
+          const d = s.points.map((p, i) => `${i === 0 ? "M" : "L"} ${xAt(i)} ${yAt(p.value)}`).join(" ");
+          return <path key={s.label} d={d} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" />;
+        })}
+        {hoverIdx !== null && (
+          <line x1={xAt(hoverIdx)} x2={xAt(hoverIdx)} y1={padTop} y2={padTop + plotH} stroke="#898781" strokeWidth={1} strokeDasharray="3,3" />
+        )}
+        {hoverIdx !== null &&
+          series.map((s) => <circle key={s.label} cx={xAt(hoverIdx)} cy={yAt(s.points[hoverIdx].value)} r={3.5} fill={s.color} stroke="#fcfcfb" strokeWidth={1.5} />)}
+        <rect x={padLeft} y={padTop} width={plotW} height={plotH} fill="transparent" onMouseMove={handleMove} onMouseLeave={() => setHoverIdx(null)} style={{ cursor: "crosshair" }} />
+      </svg>
+      {hp && (
+        <div
+          className="absolute top-1 pointer-events-none bg-white border border-slate-200 rounded shadow-sm px-2 py-1 text-[10px] leading-tight"
+          style={{ left: `${Math.min(78, Math.max(12, (xAt(hoverIdx!) / width) * 100))}%` }}
+        >
+          <div className="text-slate-400">{hp.date}</div>
+          {series.map((s) => (
+            <div key={s.label} className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ background: s.color }} />
+              <span className="text-slate-600">{s.label}:</span>
+              <span className="font-medium tabular-nums">{yFormat(s.points[hoverIdx!].value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChartLegend({ items }: { items: { label: string; color: string }[] }) {
+  return (
+    <div className="flex gap-4 text-[11px] text-slate-600 mb-1">
+      {items.map((it) => (
+        <span key={it.label} className="flex items-center gap-1.5">
+          <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ background: it.color }} />
+          {it.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 // Added 2026-09-06 — "one more page to be built as a strategic alpha
 // summary" (https://www.youtube.com/watch?v=r6BYKayOaIQ, channel
@@ -100,8 +241,32 @@ const COLS: Col[] = [
 export default function StrategicAlpha() {
   const { bundle } = useData();
   const navigate = useNavigate();
-  const { ready } = useScreeners(["strategicAlpha", "countryYields"]);
+  const { ready } = useScreeners(["strategicAlpha", "countryYields", "goldVsBenchmarks"]);
   const entry = bundle.momentum_screeners["strategicAlpha"];
+  // 2026-09-22 — weekly Gold(USD)/Nifty50/US10Y-yield history for the
+  // two new charts below. Indexing Gold/Nifty to 100 at the first
+  // shared date happens here (not server-side) so it's always relative
+  // to whatever window actually rendered, not a fixed base date baked
+  // into the stored data.
+  const goldHistRows: any[] = bundle.momentum_screeners["goldVsBenchmarks"]?.rows ?? [];
+  const goldNiftyChart = useMemo(() => {
+    const valid = goldHistRows.filter((r) => r.gold_usd != null && r.nifty50 != null);
+    if (valid.length < 2) return null;
+    const goldBase = valid[0].gold_usd;
+    const niftyBase = valid[0].nifty50;
+    return {
+      gold: valid.map((r) => ({ date: r.date, value: (r.gold_usd / goldBase) * 100 })),
+      nifty: valid.map((r) => ({ date: r.date, value: (r.nifty50 / niftyBase) * 100 })),
+    };
+  }, [goldHistRows]);
+  const goldPriceChart = useMemo(() => {
+    const valid = goldHistRows.filter((r) => r.gold_usd != null);
+    return valid.length >= 2 ? valid.map((r) => ({ date: r.date, value: r.gold_usd })) : null;
+  }, [goldHistRows]);
+  const us10yChart = useMemo(() => {
+    const valid = goldHistRows.filter((r) => r.us10y_yield != null);
+    return valid.length >= 2 ? valid.map((r) => ({ date: r.date, value: r.us10y_yield })) : null;
+  }, [goldHistRows]);
   // 2026-09-14 ("want to [see actual rates for] other countries") —
   // separate small screener/table, not folded into the main GenericTable
   // above: countryYields is monthly-cadence FRED data (a "latest level +
@@ -251,6 +416,61 @@ export default function StrategicAlpha() {
         searched FRED directly and found no comparable 10-year series for it (only a short-term interbank rate, a different, non-comparable
         number), so it's left out rather than shown as something it isn't.
       </MethodologyNote>
+
+      {/* 2026-09-22 ("add a chart of gold against nifty50 over last
+          several years... also gold against interest rates") —
+          page-level, not gated to a region tab, since both charts span
+          what the tabs above split apart (Gold lives in International,
+          Nifty 50 in India, US 10Y Yield in Rates). Chart 1 puts Gold
+          and Nifty 50 on ONE shared axis (both indexed to 100 at the
+          first date) since that's a valid single-axis comparison — two
+          "growth of ₹100/$100 invested" curves. Chart 2 does NOT do the
+          same for Gold vs US 10Y Yield — a price (thousands of dollars)
+          and a yield (single-digit %) are different units entirely, so
+          per the dataviz skill's one-axis rule this is small multiples
+          instead: two stacked charts sharing the same time axis, not
+          one combined/dual-axis chart. */}
+      {goldNiftyChart && (
+        <div className="mb-4 border border-slate-200 rounded-lg p-3">
+          <div className="text-xs font-medium text-slate-600 mb-2">🥇 Gold vs Nifty 50 — indexed to 100 at {goldHistRows[0]?.date}</div>
+          <ChartLegend items={[{ label: "Gold (USD)", color: CHART_BLUE }, { label: "Nifty 50", color: CHART_ORANGE }]} />
+          <TimeSeriesChart
+            series={[
+              { label: "Gold (USD)", color: CHART_BLUE, points: goldNiftyChart.gold },
+              { label: "Nifty 50", color: CHART_ORANGE, points: goldNiftyChart.nifty },
+            ]}
+            yFormat={(v) => v.toFixed(0)}
+            yLabel="Index (100 = start)"
+          />
+          <p className="text-[10px] text-slate-400 mt-1">
+            Both series indexed to 100 at the earliest date in the fetched window — reads as "growth of 100 units invested", not absolute price levels
+            (Gold is USD, Nifty 50 is INR index points — not directly comparable otherwise).
+          </p>
+        </div>
+      )}
+      {(goldPriceChart || us10yChart) && (
+        <div className="mb-4 border border-slate-200 rounded-lg p-3">
+          <div className="text-xs font-medium text-slate-600 mb-2">🥇 Gold vs US 10Y Treasury Yield — separate axes (different units)</div>
+          {goldPriceChart && (
+            <div className="mb-3">
+              <ChartLegend items={[{ label: "Gold (USD/oz)", color: CHART_BLUE }]} />
+              <TimeSeriesChart series={[{ label: "Gold (USD/oz)", color: CHART_BLUE, points: goldPriceChart }]} height={160} yFormat={(v) => `$${v.toFixed(0)}`} yLabel="USD/oz" />
+            </div>
+          )}
+          {us10yChart && (
+            <div>
+              <ChartLegend items={[{ label: "US 10Y Yield", color: CHART_ORANGE }]} />
+              <TimeSeriesChart series={[{ label: "US 10Y Yield", color: CHART_ORANGE, points: us10yChart }]} height={160} yFormat={(v) => `${v.toFixed(1)}%`} yLabel="Yield %" />
+            </div>
+          )}
+          <p className="text-[10px] text-slate-400 mt-1">
+            Stacked as two separate charts sharing the same time range, not one combined axis — Gold's price and the 10Y yield's percentage are
+            different units, so a single shared y-axis (or a dual-axis chart) would misrepresent the relationship rather than show it honestly. The
+            classic read: gold tends to do better when real yields are falling, since it pays no interest itself.
+          </p>
+        </div>
+      )}
+
       {region === "rates" && (
         <div className="mb-4 border border-slate-200 rounded-lg overflow-hidden">
           <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs font-medium text-slate-600 flex items-center gap-2">

@@ -3324,6 +3324,54 @@ def _run_strategic_alpha(symbols, name_map, sector_map):
     return {"label": "Strategic Alpha Summary", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
+# ── goldVsBenchmarks ─────────────────────────────────────────────────────
+#
+# Added 2026-09-22 ("add a chart of gold against nifty50 over last
+# several years... also gold against interest rates") — Strategic
+# Alpha's own trend rows above are %-return snapshots (1W/1M/3M/6M/1Y),
+# not a chartable multi-year series; this is a separate, purpose-built
+# fetch for the two new charts, reusing the exact same tickers already
+# proven in SA_ASSET_UNIVERSE (Gold=GC=F, Nifty 50=^NSEI, US 10Y
+# Yield=^TNX — confirmed live ^TNX's own Close values are already
+# direct percent, e.g. 4.95 = 4.95%, no /10 needed) via the same
+# _gxc_fetch_history() helper, just a 10y window instead of that
+# function's own 2y default. Resampled to weekly (last close of each
+# week) since the three tickers trade on different calendars (a US
+# futures contract, an Indian equity index, a US bond-yield index) —
+# weekly closes give all three a shared date axis without daily-gap
+# noise. Frontend indexes Gold/Nifty to 100 at the first shared date
+# itself (not done here) so a currency-unit mismatch (Gold in USD,
+# Nifty in INS points) doesn't need reconciling — only the % growth
+# shape matters for that chart.
+GOLD_BENCHMARK_TICKERS = {"gold_usd": "GC=F", "nifty50": "^NSEI", "us10y_yield": "^TNX"}
+
+
+def _run_gold_vs_benchmarks(symbols, name_map, sector_map):
+    hist = {key: _gxc_fetch_history(ticker, period="10y") for key, ticker in GOLD_BENCHMARK_TICKERS.items()}
+    weekly = {}
+    for key, df in hist.items():
+        if df is None or df.empty:
+            weekly[key] = None
+            continue
+        s = df["Close"].resample("W").last().dropna()
+        weekly[key] = s
+
+    available = {k: v for k, v in weekly.items() if v is not None}
+    if not available:
+        return None, "no data fetched for any of Gold/Nifty50/US10Y"
+
+    all_dates = sorted(set().union(*(s.index for s in available.values())))
+    rows = []
+    for d in all_dates:
+        row = {"date": d.date().isoformat()}
+        for key, s in weekly.items():
+            row[key] = round(float(s.loc[d]), 4) if (s is not None and d in s.index) else None
+        rows.append(row)
+
+    return {"label": "Gold vs Nifty50 / US 10Y Yield", "push_rows": rows,
+            "scanned": len(rows), "skipped": len(GOLD_BENCHMARK_TICKERS) - len(available)}, None
+
+
 # ── countryYields ────────────────────────────────────────────────────────
 #
 # Added 2026-09-14 — "I asked for actual Rates of the bonds traded...
@@ -4864,6 +4912,7 @@ SCREENER_RUNNERS = {
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
     "strategicAlpha": _run_strategic_alpha,
+    "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
     "turtleWealth": _run_turtle_wealth_nse750,
     "benchmarkNse500": _run_benchmark_nse500_cache,
