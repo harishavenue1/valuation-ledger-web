@@ -320,10 +320,19 @@ export default function PortfolioAllocation() {
 
   const COLS: Col[] = useMemo(
     () => [
-      { key: "rank", label: "Rank", width: 3 },
-      { key: "symbol", label: "Symbol", align: "left", width: 6 },
-      { key: "name", label: "Name", align: "left", width: 6 },
-      { key: "sector", label: "Sector", align: "left", width: 7 },
+      { key: "rank", label: "Rank", width: 2.5 },
+      { key: "symbol", label: "Symbol", align: "left", width: 5.5 },
+      { key: "name", label: "Name", align: "left", width: 5.5 },
+      { key: "sector", label: "Sector", align: "left", width: 6.5 },
+      {
+        // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
+        // top-ratios list every other field on this row's fetch already
+        // reads from (see fetch_sector_and_fundamentals's own comment).
+        key: "market_cap_cr",
+        label: "Market Cap (Cr)",
+        width: 5.5,
+        render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
+      },
       {
         // 2026-09-18 ("add a column for price with trading view link to
         // it") — same TradingView-link-on-the-price convention already
@@ -334,7 +343,7 @@ export default function PortfolioAllocation() {
         // BSE-only in this portfolio).
         key: "price",
         label: "Price",
-        width: 6,
+        width: 5.5,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -361,28 +370,28 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 3,
+        width: 2.5,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 4,
+        width: 3.5,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
         key: "pct_3m",
         label: "3M %",
-        width: 4,
+        width: 3.5,
         render: (r) => <Signed v={r.pct_3m} digits={1} />,
       },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
-        width: 6,
+        width: 5.5,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", width: 4.5, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      { key: "pnl_pct", label: "P&L %", width: 4, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
         // company's latest qtr sales growth and eps growth") — replaces
@@ -392,7 +401,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them.
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
-        width: 8,
+        width: 7.5,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -542,6 +551,10 @@ export default function PortfolioAllocation() {
         limited to the NSE 750 universe, so it covers SME/small-cap holdings too. "—" for a fund/ETF, a financial company (no published
         ROCE row), or an unresolvable symbol. Of everything tested against a year of NSE750 returns (working capital, ROE, ROCE level,
         margin), ROCE 1Y change was the standout predictor.
+        <br />
+        <br />
+        <b>Market Cap (Cr)</b> — added 2026-09-22 — Screener.in's own published market cap, in ₹ Cr, read off the same top-ratios list
+        Current Price comes from (no extra request). "—" for a fund/ETF (no peer-comparison Market Cap row) or an unresolvable symbol.
       </MethodologyNote>
 
       {/* Side by side 2026-09-06 ("enough space wasted in summary and
