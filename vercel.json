@@ -37,6 +37,7 @@
     { "path": "/api/momentum_screeners?screener=turtleWealth", "schedule": "0 12 * * *" },
     { "path": "/api/momentum_screeners?screener=technicalBatchWeekly", "schedule": "40 23 * * 6" },
     { "path": "/api/viraj_screen", "schedule": "55 23 * * 6" },
-    { "path": "/api/momentum_screeners?screener=dbVacuum", "schedule": "0 1 * * 0" }
+    { "path": "/api/momentum_screeners?screener=dbVacuum", "schedule": "0 1 * * 0" },
+    { "path": "/api/momentum_screeners?screener=goldVsBenchmarks", "schedule": "10 1 * * 0" }
   ]
 }
