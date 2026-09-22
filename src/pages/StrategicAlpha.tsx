@@ -259,13 +259,24 @@ export default function StrategicAlpha() {
       nifty: valid.map((r) => ({ date: r.date, value: (r.nifty50 / niftyBase) * 100 })),
     };
   }, [goldHistRows]);
-  const goldPriceChart = useMemo(() => {
-    const valid = goldHistRows.filter((r) => r.gold_usd != null);
-    return valid.length >= 2 ? valid.map((r) => ({ date: r.date, value: r.gold_usd })) : null;
-  }, [goldHistRows]);
-  const us10yChart = useMemo(() => {
-    const valid = goldHistRows.filter((r) => r.us10y_yield != null);
-    return valid.length >= 2 ? valid.map((r) => ({ date: r.date, value: r.us10y_yield })) : null;
+  // 2026-09-22 ("overlap gold and us 10yield, similar to nifty and
+  // gold") — same indexed-to-100 treatment as goldNiftyChart above,
+  // overlaid on one shared axis instead of the small-multiples version
+  // this replaced. Indexing a YIELD this way is a slightly unusual
+  // framing (a rate doesn't "compound" the way a price does), but it's
+  // an honest one — both series start at the same point 100 by
+  // construction, so the chart can't be skewed by axis-range choices
+  // the way a dual-axis price+percentage chart could be; what it shows
+  // is each series' own relative move from the same starting line.
+  const goldRatesChart = useMemo(() => {
+    const valid = goldHistRows.filter((r) => r.gold_usd != null && r.us10y_yield != null);
+    if (valid.length < 2) return null;
+    const goldBase = valid[0].gold_usd;
+    const yieldBase = valid[0].us10y_yield;
+    return {
+      gold: valid.map((r) => ({ date: r.date, value: (r.gold_usd / goldBase) * 100 })),
+      yield: valid.map((r) => ({ date: r.date, value: (r.us10y_yield / yieldBase) * 100 })),
+    };
   }, [goldHistRows]);
   // 2026-09-14 ("want to [see actual rates for] other countries") —
   // separate small screener/table, not folded into the main GenericTable
@@ -424,12 +435,16 @@ export default function StrategicAlpha() {
           Nifty 50 in India, US 10Y Yield in Rates). Chart 1 puts Gold
           and Nifty 50 on ONE shared axis (both indexed to 100 at the
           first date) since that's a valid single-axis comparison — two
-          "growth of ₹100/$100 invested" curves. Chart 2 does NOT do the
-          same for Gold vs US 10Y Yield — a price (thousands of dollars)
-          and a yield (single-digit %) are different units entirely, so
-          per the dataviz skill's one-axis rule this is small multiples
-          instead: two stacked charts sharing the same time axis, not
-          one combined/dual-axis chart. */}
+          "growth of ₹100/$100 invested" curves. Chart 2 (Gold vs US 10Y
+          Yield) originally used small multiples instead, since a price
+          and a percentage are different units — changed 2026-09-22
+          ("overlap gold and us 10yield, similar to nifty and gold") to
+          the same indexed-to-100 overlay as Chart 1 on request. Indexing
+          a yield this way is a slightly unusual framing (a rate doesn't
+          "compound" the way a price does), but stays honest: both series
+          start at the same point 100 by construction, so — unlike a
+          dual-axis chart — it can't be skewed by choosing where each
+          axis starts/ends. */}
       {goldNiftyChart && (
         <div className="mb-4 border border-slate-200 rounded-lg p-3">
           <div className="text-xs font-medium text-slate-600 mb-2">🥇 Gold vs Nifty 50 — indexed to 100 at {goldHistRows[0]?.date}</div>
@@ -448,25 +463,22 @@ export default function StrategicAlpha() {
           </p>
         </div>
       )}
-      {(goldPriceChart || us10yChart) && (
+      {goldRatesChart && (
         <div className="mb-4 border border-slate-200 rounded-lg p-3">
-          <div className="text-xs font-medium text-slate-600 mb-2">🥇 Gold vs US 10Y Treasury Yield — separate axes (different units)</div>
-          {goldPriceChart && (
-            <div className="mb-3">
-              <ChartLegend items={[{ label: "Gold (USD/oz)", color: CHART_BLUE }]} />
-              <TimeSeriesChart series={[{ label: "Gold (USD/oz)", color: CHART_BLUE, points: goldPriceChart }]} height={160} yFormat={(v) => `$${v.toFixed(0)}`} yLabel="USD/oz" />
-            </div>
-          )}
-          {us10yChart && (
-            <div>
-              <ChartLegend items={[{ label: "US 10Y Yield", color: CHART_ORANGE }]} />
-              <TimeSeriesChart series={[{ label: "US 10Y Yield", color: CHART_ORANGE, points: us10yChart }]} height={160} yFormat={(v) => `${v.toFixed(1)}%`} yLabel="Yield %" />
-            </div>
-          )}
+          <div className="text-xs font-medium text-slate-600 mb-2">🥇 Gold vs US 10Y Treasury Yield — indexed to 100 at {goldHistRows[0]?.date}</div>
+          <ChartLegend items={[{ label: "Gold (USD)", color: CHART_BLUE }, { label: "US 10Y Yield", color: CHART_ORANGE }]} />
+          <TimeSeriesChart
+            series={[
+              { label: "Gold (USD)", color: CHART_BLUE, points: goldRatesChart.gold },
+              { label: "US 10Y Yield", color: CHART_ORANGE, points: goldRatesChart.yield },
+            ]}
+            yFormat={(v) => v.toFixed(0)}
+            yLabel="Index (100 = start)"
+          />
           <p className="text-[10px] text-slate-400 mt-1">
-            Stacked as two separate charts sharing the same time range, not one combined axis — Gold's price and the 10Y yield's percentage are
-            different units, so a single shared y-axis (or a dual-axis chart) would misrepresent the relationship rather than show it honestly. The
-            classic read: gold tends to do better when real yields are falling, since it pays no interest itself.
+            Both series indexed to 100 at the earliest date in the fetched window — Gold's price and the 10Y yield's percentage are different units,
+            so this reads as each series' own relative move from the same starting line, not a literal price-vs-yield-level comparison. The classic
+            read: gold tends to do better when yields are falling, since it pays no interest itself.
           </p>
         </div>
       )}
