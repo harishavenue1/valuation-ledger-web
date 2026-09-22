@@ -211,7 +211,9 @@ function statsForSegment(segRows: any[], label: string): SegmentStat {
   return { label, allocationPct, weightedPnlPct, contributionPct };
 }
 
-function SegmentSummary({ rows }: { rows: any[] }) {
+const CAP_BUCKET_ORDER = ["Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Unclassified"];
+
+function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (marketCapCr: number | null | undefined) => string | null }) {
   const stocks = statsForSegment(
     rows.filter((r) => !r.is_fund),
     "📈 Stocks"
@@ -234,6 +236,17 @@ function SegmentSummary({ rows }: { rows: any[] }) {
     weightedPnlPct: (stocks.contributionPct ?? 0) + (funds.contributionPct ?? 0),
     contributionPct: null, // not meaningful for the total row itself — it IS the sum of the two segments' contributions, shown as weightedPnlPct instead
   };
+
+  // 2026-09-22 ("under segment summary, enough space to have a
+  // distribution of large/mid/small/micro cap allocation") — same
+  // statsForSegment aggregation, grouped by cap bucket instead of
+  // stock/fund. A fund/ETF or a symbol Screener.in couldn't resolve a
+  // market cap for shows up as "Unclassified" rather than being
+  // silently dropped from the 100% total, same "show it, don't hide
+  // it" convention every other segment on this page already follows.
+  const capBuckets = CAP_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => (capBucketFor(r.market_cap_cr) ?? "Unclassified") === label), label)).filter(
+    (s) => s.allocationPct > 0
+  );
 
   return (
     <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
@@ -272,6 +285,44 @@ function SegmentSummary({ rows }: { rows: any[] }) {
           </tr>
         </tbody>
       </table>
+
+      {capBuckets.length > 0 && (
+        <>
+          <h2 className="text-sm font-medium text-slate-700 mb-3 mt-5">Market Cap Distribution</h2>
+          <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
+            <thead className="text-slate-500 text-xs">
+              <tr>
+                <th className="text-left px-2 py-1.5">Cap Bucket</th>
+                <th className="text-right px-2 py-1.5">Allocation %</th>
+                <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
+                <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
+                  Contribution (pp)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {capBuckets.map((s) => (
+                <tr key={s.label} className="border-t border-slate-100">
+                  <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <Signed v={s.weightedPnlPct} digits={1} />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <Signed v={s.contributionPct} digits={2} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-slate-400 mt-2 max-w-md">
+            <b>Large</b>/<b>Mid</b> cutoffs are the 100th/250th company's own market cap in the NSE750 universe — AMFI's own rank-based
+            definition, computed live (not a fixed ₹ number that goes stale as the market grows). <b>Micro Cap</b> (&lt;₹500 Cr) isn't an
+            official AMFI tier — Small Cap has no official floor — it's this app's own informal add-on. <b>Unclassified</b> is a fund/ETF
+            or a symbol Screener.in has no market cap for.
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -280,7 +331,13 @@ export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
-  const { ready } = useScreeners(["portfolioAllocation"]);
+  // 2026-09-22 ("distribution of large/mid/small/micro cap allocation")
+  // — nse750Fundamentals added here ONLY to derive the Large/Mid cutoff
+  // market caps (the 100th/250th company by size in that universe),
+  // matching AMFI's own rank-based Large/Mid/Small definition instead
+  // of a hardcoded ₹ Cr threshold that would go stale as the market
+  // grows. Not used for anything else on this page.
+  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals"]);
   const entry = bundle.momentum_screeners["portfolioAllocation"];
   // ROCE/ROE 1Y change — 2026-09-20. First tried joining against the
   // shared nse750Fundamentals cache (zero new requests), but that only
@@ -291,6 +348,32 @@ export default function PortfolioAllocation() {
   // Sales/EPS Growth — see compute_portfolio_allocation.py's
   // fetch_sector_and_fundamentals), which has no such universe limit.
   const rows = entry?.rows ?? [];
+
+  // 2026-09-22 ("distribution of large/mid/small/micro cap allocation")
+  // — Large/Mid cutoffs are the 100th/250th company's own market cap in
+  // the NSE750 (Nifty Total Market) universe, same rank thresholds
+  // AMFI's official Large/Mid/Small classification uses, computed live
+  // off whatever's currently cached rather than a hardcoded number that
+  // drifts stale as the market grows. "Micro Cap" isn't an AMFI tier at
+  // all (their Small Cap has no floor) — ₹500 Cr is this app's own
+  // informal add-on floor, the commonly-cited retail-platform cutoff,
+  // not a rank-derived number like the other two.
+  const capCutoffs = useMemo(() => {
+    const caps = (bundle.momentum_screeners.nse750Fundamentals?.rows ?? [])
+      .map((r: any) => r.marketcap)
+      .filter((v: any): v is number => typeof v === "number")
+      .sort((a: number, b: number) => b - a);
+    if (caps.length < 250) return null;
+    return { large: caps[99], mid: caps[249], micro: 500 };
+  }, [bundle.momentum_screeners.nse750Fundamentals]);
+
+  function capBucketFor(marketCapCr: number | null | undefined): string | null {
+    if (marketCapCr == null || !capCutoffs) return null;
+    if (marketCapCr >= capCutoffs.large) return "Large Cap";
+    if (marketCapCr >= capCutoffs.mid) return "Mid Cap";
+    if (marketCapCr >= capCutoffs.micro) return "Small Cap";
+    return "Micro Cap";
+  }
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
@@ -565,7 +648,7 @@ export default function PortfolioAllocation() {
           stacking back to one column on narrow viewports. */}
       {rows.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <SegmentSummary rows={rows} />
+          <SegmentSummary rows={rows} capBucketFor={capBucketFor} />
           <div className="p-4 border border-slate-200 rounded-lg">
             <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
             <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
