@@ -684,7 +684,6 @@ export default function PortfolioAllocation() {
           cols={COLS}
           navigate={(t) => navigate(`/company/${t}`)}
           watchlist={watchlist}
-          gridLines
           emptyMessage="No individual stock holdings."
         />
       </div>
@@ -695,7 +694,6 @@ export default function PortfolioAllocation() {
         cols={COLS}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
-        gridLines
         emptyMessage="No fund/ETF holdings."
       />
     </div>
