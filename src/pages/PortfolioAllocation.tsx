@@ -425,7 +425,7 @@ export default function PortfolioAllocation() {
       {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
         key: "pct_of_portfolio",
-        label: "% of Portfolio",
+        label: "Current %",
         width: 5.71,
         groupStart: true,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
@@ -438,7 +438,7 @@ export default function PortfolioAllocation() {
         // drives Segment Summary/Market Cap Distribution/the Sector donut
         // elsewhere on this page. "—" only if this row had no avg_price.
         key: "pct_of_portfolio_cost",
-        label: "% of Portfolio (at Cost)",
+        label: "Buy %",
         width: 5.71,
         render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
