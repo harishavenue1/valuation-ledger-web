@@ -403,9 +403,16 @@ export default function PortfolioAllocation() {
 
   const COLS: Col[] = useMemo(
     () => [
-      { key: "rank", label: "Rank", width: 6.67 },
-      { key: "symbol", label: "Symbol", align: "left", width: 6.67 },
-      { key: "sector", label: "Sector", align: "left", width: 6.67 },
+      // 2026-09-23 ("symbols are not visible due to column width issue")
+      // — a literal equal split (100/15) truncated the Symbol cell to
+      // nothing for longer tickers, since it also carries the watchlist
+      // star and Screener.in link icons alongside the text, not just a
+      // number like most other columns. Rank/Symbol/Sector keep their own
+      // sized widths; the remaining 12 (all plain numeric/short cells)
+      // stay equidistant among themselves.
+      { key: "rank", label: "Rank", width: 3 },
+      { key: "symbol", label: "Symbol", align: "left", width: 9 },
+      { key: "sector", label: "Sector", align: "left", width: 8 },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
@@ -585,20 +592,12 @@ export default function PortfolioAllocation() {
         column instead shows that commodity's own 1-year COMEX return, converted to its INR-equivalent using USDINR's own 1-year move (MCX
         itself has no fetchable price history — this is the closest honest proxy, not literal MCX pricing). <b>Price</b> is Kite's own last
         traded price and is itself the TradingView link (NSE or BSE depending on which exchange this lot was bought on).{" "}
-        <b>1W %</b>/<b>1M %</b>/<b>3M %</b> are price change vs. 1/4/13 weekly bars back on Yahoo's own weekly series (same series the{" "}
-        <b>&gt;33W EMA</b> column's OHLC4 33-EMA is computed from) — bar-count based, not calendar-exact. <b>&gt;33W EMA</b> shows{" "}
-        <b>Y</b>/<b>N</b> for whether price is above/below that EMA. All four show "—" when Yahoo has too little weekly history yet (e.g. a
-        very recent IPO). <b>% vs 200D EMA</b>/<b>% vs 50D EMA</b>/<b>% vs 33W EMA</b> — added 2026-09-21 — are the same OHLC4 EMA
-        convention (200D/50D off Yahoo's daily series, 33W off the weekly series above) expressed as a % distance rather than just
-        above/below, matching this app's MA Breakout screener. Pushed by the{" "}
+        <b>Day %</b> is Kite's own LTP vs. previous close. <b>1W %</b>/<b>1M %</b> are price change vs. 1/4 weekly bars back on Yahoo's
+        own weekly series (same series <b>% vs 33W EMA</b>'s OHLC4 33-EMA is computed from) — bar-count based, not calendar-exact. Show
+        "—" when Yahoo has too little weekly history yet (e.g. a very recent IPO). <b>% vs 200D EMA</b>/<b>% vs 50D EMA</b>/
+        <b>% vs 33W EMA</b> — added 2026-09-21 — are the same OHLC4 EMA convention (200D/50D off Yahoo's daily series, 33W off the weekly
+        series above) expressed as a % distance above/below, matching this app's MA Breakout screener. Pushed by the{" "}
         <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
-        <br />
-        <br />
-        <b>ROCE 1Y Δ</b>/<b>ROE 1Y Δ</b> — this year's ROCE/ROE minus last year's, in percentage points, not the level. Pushed by the
-        PortfolioAllocation skill's own per-holding Screener.in fetch (same request as Qtr Sales/EPS Growth above, no extra load) — not
-        limited to the NSE 750 universe, so it covers SME/small-cap holdings too. "—" for a fund/ETF, a financial company (no published
-        ROCE row), or an unresolvable symbol. Of everything tested against a year of NSE750 returns (working capital, ROE, ROCE level,
-        margin), ROCE 1Y change was the standout predictor.
         <br />
         <br />
         <b>Market Cap (Cr)</b> — added 2026-09-22 — Screener.in's own published market cap, in ₹ Cr, read off the same top-ratios list
