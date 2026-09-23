@@ -404,16 +404,15 @@ export default function PortfolioAllocation() {
   const COLS: Col[] = useMemo(
     () => [
       { key: "rank", label: "Rank", width: 2.5 },
-      { key: "symbol", label: "Symbol", align: "left", width: 5.5 },
-      { key: "name", label: "Name", align: "left", width: 7 },
-      { key: "sector", label: "Sector", align: "left", width: 8 },
+      { key: "symbol", label: "Symbol", align: "left", width: 6.5 },
+      { key: "sector", label: "Sector", align: "left", width: 9.5 },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 6.5,
+        width: 8,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -490,7 +489,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them.
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
-        width: 8.5,
+        width: 10,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -514,7 +513,7 @@ export default function PortfolioAllocation() {
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
         label: "Qtr EPS Growth %",
-        width: 8,
+        width: 9.5,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
           if (r.qtr_eps_growth_pct === "T")
