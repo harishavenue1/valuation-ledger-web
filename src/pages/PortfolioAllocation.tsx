@@ -423,24 +423,25 @@ export default function PortfolioAllocation() {
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
+        // 2026-09-23 ("make % of Portfolio as per buy price", then "move
+        // buy% to left of current%") — a separate cost-basis allocation
+        // weight (qty × avg buy price ÷ total cost basis), added
+        // alongside the existing current-value % of Portfolio rather
+        // than replacing it, since that field also drives Segment
+        // Summary/Market Cap Distribution/the Sector donut elsewhere on
+        // this page. "—" only if this row had no avg_price.
+        key: "pct_of_portfolio_cost",
+        label: "Buy %",
+        width: 5.71,
+        groupStart: true,
+        render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
+      },
+      {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
         key: "pct_of_portfolio",
         label: "Current %",
         width: 5.71,
-        groupStart: true,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
-      },
-      {
-        // 2026-09-23 ("make % of Portfolio as per buy price") — a
-        // separate cost-basis allocation weight (qty × avg buy price ÷
-        // total cost basis), added alongside the existing current-value
-        // % of Portfolio rather than replacing it, since that field also
-        // drives Segment Summary/Market Cap Distribution/the Sector donut
-        // elsewhere on this page. "—" only if this row had no avg_price.
-        key: "pct_of_portfolio_cost",
-        label: "Buy %",
-        width: 5.71,
-        render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
       {
         // 2026-09-23 ("add the avg buy price as a column", then "move
