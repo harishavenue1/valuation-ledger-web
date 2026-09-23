@@ -557,7 +557,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them. Moved to the end of the table
         // 2026-09-23 ("move this... to end of the table").
         key: "qtr_sales_growth_pct",
-        label: "Qtr Sales Growth %",
+        label: "QSalG%",
         width: 5.71,
         groupStart: true,
         render: (r) => {
@@ -582,7 +582,7 @@ export default function PortfolioAllocation() {
         // honest against a negative base, same convention
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
-        label: "Qtr EPS Growth %",
+        label: "QEpsG%",
         width: 5.71,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
