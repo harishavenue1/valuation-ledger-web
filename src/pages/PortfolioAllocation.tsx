@@ -315,12 +315,6 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
               ))}
             </tbody>
           </table>
-          <p className="text-[10px] text-slate-400 mt-2 max-w-md">
-            <b>Large</b>/<b>Mid</b> cutoffs are the 100th/250th company's own market cap in the NSE750 universe — AMFI's own rank-based
-            definition, computed live (not a fixed ₹ number that goes stale as the market grows). <b>Micro Cap</b> (&lt;₹500 Cr) isn't an
-            official AMFI tier — Small Cap has no official floor — it's this app's own informal add-on. <b>Unclassified</b> is a fund/ETF
-            or a symbol Screener.in has no market cap for.
-          </p>
         </>
       )}
     </div>
@@ -368,7 +362,13 @@ export default function PortfolioAllocation() {
   }, [bundle.momentum_screeners.nse750Fundamentals]);
 
   function capBucketFor(marketCapCr: number | null | undefined): string | null {
-    if (marketCapCr == null || !capCutoffs) return null;
+    if (!capCutoffs) return null;
+    // 2026-09-22 ("make unclassified as Micro cap") — a fund/ETF (no
+    // Screener.in market cap row at all, e.g. LIQUIDCASE/GOLDCASE/
+    // MODEFENCE/SILVERCASE) now folds into Micro Cap rather than its own
+    // "Unclassified" bucket, since those are consistently the only rows
+    // that ever land there.
+    if (marketCapCr == null) return "Micro Cap";
     if (marketCapCr >= capCutoffs.large) return "Large Cap";
     if (marketCapCr >= capCutoffs.mid) return "Mid Cap";
     if (marketCapCr >= capCutoffs.micro) return "Small Cap";

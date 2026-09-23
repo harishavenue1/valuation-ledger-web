@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData } from "../App";
 import type { VirajRow } from "../lib/api";
 import RunButton from "../components/RunButton";
-import { MethodologyNote, WatchlistStar } from "../components/ScreenerTable";
+import { MethodologyNote, ScreenerInLink, WatchlistStar } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // F1-F3/C1-C3/score/verdict/sales_g/ebit_g/eps_g/dol/dfl/dcl all
@@ -313,6 +313,7 @@ export default function VirajScreen() {
                       <button onClick={() => navigate(`/company/${r.symbol}`)} className="font-semibold text-indigo-600 hover:underline">
                         {r.symbol}
                       </button>
+                      <ScreenerInLink symbol={r.symbol} />
                     </td>
                     <td className="px-1.5 py-2 truncate" title={r.name}>
                       {r.name}
