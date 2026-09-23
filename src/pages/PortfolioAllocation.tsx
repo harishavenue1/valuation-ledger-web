@@ -462,6 +462,15 @@ export default function PortfolioAllocation() {
         render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       {
+        // 2026-09-23 ("move P&L % after Price Column") — completes the
+        // Price / Avg Price / P&L % trio so the buy-vs-current-vs-return
+        // read runs left to right without jumping further down the row.
+        key: "pnl_pct",
+        label: "P&L %",
+        width: 6.15,
+        render: (r) => <Signed v={r.pnl_pct} digits={1} />,
+      },
+      {
         // 2026-09-23 ("add 1 more column with current day% change") —
         // Kite's own LTP-vs-previous-close, pushed straight from
         // get_holdings' day_change_percentage (falling back to
@@ -497,7 +506,6 @@ export default function PortfolioAllocation() {
         width: 6.15,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", width: 6.15, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
         // company's latest qtr sales growth and eps growth") — replaces
