@@ -405,15 +405,15 @@ export default function PortfolioAllocation() {
     () => [
       { key: "rank", label: "Rank", width: 2.5 },
       { key: "symbol", label: "Symbol", align: "left", width: 5.5 },
-      { key: "name", label: "Name", align: "left", width: 5.5 },
-      { key: "sector", label: "Sector", align: "left", width: 6.5 },
+      { key: "name", label: "Name", align: "left", width: 7 },
+      { key: "sector", label: "Sector", align: "left", width: 8 },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 5.5,
+        width: 6.5,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -426,7 +426,7 @@ export default function PortfolioAllocation() {
         // BSE-only in this portfolio).
         key: "price",
         label: "Price",
-        width: 5.5,
+        width: 5,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -445,6 +445,18 @@ export default function PortfolioAllocation() {
         },
       },
       {
+        // 2026-09-23 ("add 1 more column with current day% change") —
+        // Kite's own LTP-vs-previous-close, pushed straight from
+        // get_holdings' day_change_percentage (falling back to
+        // last_price/close_price for a same-day position merged in via
+        // merge_day_positions, which has no day_change_percentage field
+        // of its own). "—" means the skill had neither figure for this row.
+        key: "day_change_pct",
+        label: "Day %",
+        width: 3.5,
+        render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
+      },
+      {
         // 2026-09-18 ("along with price change column for weekly,
         // monthly, quarterly") — pushed by the same skill fetch as the
         // >33W EMA column, off the same Yahoo weekly-bars series
@@ -453,25 +465,19 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 2.5,
+        width: 4,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 3.5,
+        width: 4,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
-      },
-      {
-        key: "pct_3m",
-        label: "3M %",
-        width: 3.5,
-        render: (r) => <Signed v={r.pct_3m} digits={1} />,
       },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
-        width: 5.5,
+        width: 7,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       { key: "pnl_pct", label: "P&L %", width: 4, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
@@ -484,7 +490,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them.
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
-        width: 7.5,
+        width: 8.5,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -508,7 +514,7 @@ export default function PortfolioAllocation() {
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
         label: "Qtr EPS Growth %",
-        width: 7,
+        width: 8,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
           if (r.qtr_eps_growth_pct === "T")
@@ -521,69 +527,29 @@ export default function PortfolioAllocation() {
         },
       },
       {
-        // 2026-09-20 — added after testing which fundamental factor
-        // actually predicts NSE750 stock performance: ROCE's own 1-year
-        // point change (this year's ROCE minus last year's, in pp) was
-        // the clear winner (see All Technicals' own methodology note for
-        // the numbers). Pushed directly by the PortfolioAllocation skill's
-        // own per-holding Screener.in fetch (not joined against
-        // nse750Fundamentals — that cache only covers the Nifty Total
-        // Market universe and left most SME/small-cap holdings blank) —
-        // "—" for a fund/ETF or an unresolvable symbol.
-        key: "roce_1y_chg",
-        label: "ROCE 1Y Δ",
-        width: 5.5,
-        render: (r) => (r.roce_1y_chg === null || r.roce_1y_chg === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.roce_1y_chg} digits={1} />),
-      },
-      {
-        key: "roe_1y_chg",
-        label: "ROE 1Y Δ",
-        width: 5.5,
-        render: (r) => (r.roe_1y_chg === null || r.roe_1y_chg === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.roe_1y_chg} digits={1} />),
-      },
-      {
-        // 2026-09-18 ("add one more column... if the price > Weekly EMA
-        // 33 or NOT with Y/N") — pushed by the PortfolioAllocation skill
-        // itself (same OHLC4-based weekly 33-EMA convention as MA
-        // Breakout/Strategic Alpha elsewhere in this app). "—" means the
-        // skill's fetch failed or the ticker doesn't have enough weekly
-        // history yet (e.g. a very recent IPO), not a real N.
-        key: "above_ema33w",
-        label: "> 33W EMA",
-        width: 5,
-        render: (r) => {
-          if (r.above_ema33w === null || r.above_ema33w === undefined) return <span className="text-slate-300">—</span>;
-          return (
-            <span
-              className={`font-bold ${r.above_ema33w ? "text-emerald-600" : "text-red-600"}`}
-              title={r.above_ema33w ? "Price is above its weekly OHLC4 33-EMA" : "Price is below its weekly OHLC4 33-EMA"}
-            >
-              {r.above_ema33w ? "Y" : "N"}
-            </span>
-          );
-        },
-      },
-      {
         // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
-        // 33WEMA") — % distance, same OHLC4 EMA convention as above_ema33w
-        // and api/momentum_screeners.py's MA Breakout screener. "—" means
+        // 33WEMA") — % distance, same OHLC4 EMA convention
+        // api/momentum_screeners.py's MA Breakout screener uses. "—" means
         // Yahoo had too few bars yet (e.g. a very recent IPO), not a
-        // real 0%.
+        // real 0%. The old separate "> 33W EMA" Y/N column (2026-09-18)
+        // was dropped 2026-09-23 ("this column can be removed since we
+        // have % vs 33W EMA") — the sign of this column already says the
+        // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 6.5,
+        width: 9.5,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_50d_ema",
         label: "% vs 50D EMA",
-        width: 6.5,
+        width: 9.5,
         render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 6.5,
+        width: 7.5,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
     ],
