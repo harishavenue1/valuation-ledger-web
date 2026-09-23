@@ -419,7 +419,7 @@ export default function PortfolioAllocation() {
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 6.67,
+        width: 6.15,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -432,7 +432,7 @@ export default function PortfolioAllocation() {
         // BSE-only in this portfolio).
         key: "price",
         label: "Price",
-        width: 6.67,
+        width: 6.15,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -459,7 +459,7 @@ export default function PortfolioAllocation() {
         // of its own). "—" means the skill had neither figure for this row.
         key: "day_change_pct",
         label: "Day %",
-        width: 6.67,
+        width: 6.15,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
       {
@@ -471,22 +471,31 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 6.67,
+        width: 6.15,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 6.67,
+        width: 6.15,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
-        width: 6.67,
+        width: 6.15,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", width: 6.67, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      {
+        // 2026-09-23 ("add the avg buy price as a column") — Kite's own
+        // blended buy price (same CNC+t1/MTF blend pnl_pct is computed
+        // against, see compute_portfolio_allocation.py's build_rows).
+        key: "avg_price",
+        label: "Avg Buy Price",
+        width: 6.15,
+        render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
+      },
+      { key: "pnl_pct", label: "P&L %", width: 6.15, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
         // company's latest qtr sales growth and eps growth") — replaces
@@ -496,7 +505,7 @@ export default function PortfolioAllocation() {
         // this cell blank for them.
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
-        width: 6.67,
+        width: 6.15,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -520,7 +529,7 @@ export default function PortfolioAllocation() {
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
         label: "Qtr EPS Growth %",
-        width: 6.67,
+        width: 6.15,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
           if (r.qtr_eps_growth_pct === "T")
@@ -543,19 +552,19 @@ export default function PortfolioAllocation() {
         // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 6.67,
+        width: 6.15,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_50d_ema",
         label: "% vs 50D EMA",
-        width: 6.67,
+        width: 6.15,
         render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 6.67,
+        width: 6.15,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
     ],
