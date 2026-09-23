@@ -423,6 +423,13 @@ export default function PortfolioAllocation() {
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
+        // 2026-09-23 ("% of Portfolio move this after Market Cap column")
+        key: "pct_of_portfolio",
+        label: "% of Portfolio",
+        width: 6.15,
+        render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
+      },
+      {
         // 2026-09-18 ("add a column for price with trading view link to
         // it") — same TradingView-link-on-the-price convention already
         // used elsewhere in this app (see ScreenerTable.tsx's PriceLink),
@@ -499,12 +506,6 @@ export default function PortfolioAllocation() {
         label: "1M %",
         width: 6.15,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
-      },
-      {
-        key: "pct_of_portfolio",
-        label: "% of Portfolio",
-        width: 6.15,
-        render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
