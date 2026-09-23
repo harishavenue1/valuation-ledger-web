@@ -451,6 +451,17 @@ export default function PortfolioAllocation() {
         },
       },
       {
+        // 2026-09-23 ("add the avg buy price as a column", then "move
+        // Avg Buy Price left to Price column so easy to match") — Kite's
+        // own blended buy price (same CNC+t1/MTF blend pnl_pct is
+        // computed against, see compute_portfolio_allocation.py's
+        // build_rows), placed right next to Price for an easy compare.
+        key: "avg_price",
+        label: "Avg Price",
+        width: 6.15,
+        render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
+      },
+      {
         // 2026-09-23 ("add 1 more column with current day% change") —
         // Kite's own LTP-vs-previous-close, pushed straight from
         // get_holdings' day_change_percentage (falling back to
@@ -485,15 +496,6 @@ export default function PortfolioAllocation() {
         label: "% of Portfolio",
         width: 6.15,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
-      },
-      {
-        // 2026-09-23 ("add the avg buy price as a column") — Kite's own
-        // blended buy price (same CNC+t1/MTF blend pnl_pct is computed
-        // against, see compute_portfolio_allocation.py's build_rows).
-        key: "avg_price",
-        label: "Avg Buy Price",
-        width: 6.15,
-        render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       { key: "pnl_pct", label: "P&L %", width: 6.15, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
       {
