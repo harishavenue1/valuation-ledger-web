@@ -112,6 +112,13 @@ export interface Col {
   // tabs like Smart Money) — only switches to THIS explicit-percentage
   // mode when ALL columns specify their own width, not applied partially.
   width?: number;
+  // 2026-09-23 ("add column line grid and segment whole table") — marks
+  // the first column of a logical group (e.g. Portfolio Allocation's
+  // Price/Avg Price/P&L% cluster); GenericTable draws a stronger
+  // divider before it than the plain `gridLines` borders between other
+  // columns. Only meaningful when `gridLines` is also passed — ignored
+  // (no visual change) on every other page's table, which doesn't opt in.
+  groupStart?: boolean;
 }
 
 export const NSE_SCREENER_COLS: Col[] = [
@@ -169,6 +176,16 @@ export function WatchlistStar({ active, onToggle, symbol }: { active: boolean; o
   );
 }
 
+// See GenericTable's `gridLines` prop and Col's `groupStart` field —
+// no line before the first column ever; a strong divider before a
+// `groupStart` column; a thin one before every other column, but only
+// when the table opted into `gridLines` at all.
+function gridLineClass(gridLines: boolean, c: Col, i: number): string {
+  if (i === 0) return "";
+  if (c.groupStart) return "border-l-2 border-slate-300";
+  return gridLines ? "border-l border-slate-200" : "";
+}
+
 export interface WatchlistControl {
   set: Set<string>;
   toggle: (symbol: string) => void;
@@ -180,12 +197,19 @@ export function GenericTable({
   navigate,
   watchlist,
   emptyMessage = "No data yet for this screener — run its script to push results.",
+  // 2026-09-23 ("add column line grid and segment whole table") — opt-in
+  // per page (Portfolio Allocation passes this; no other screener does),
+  // so this never changes any other table's look. Draws a thin divider
+  // between every column, and a stronger one before any column marked
+  // `groupStart` on its Col.
+  gridLines = false,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
   navigate: (t: string) => void;
   watchlist?: WatchlistControl;
   emptyMessage?: string;
+  gridLines?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState("All");
@@ -277,10 +301,10 @@ export function GenericTable({
         <table className="w-full text-sm border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
-              {cols.map((c) => (
+              {cols.map((c, i) => (
                 <th
                   key={c.key}
-                  className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"}`}
+                  className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"} ${gridLineClass(gridLines, c, i)}`}
                   style={{ width: `${colWidth(c)}%` }}
                 >
                   <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
@@ -349,12 +373,12 @@ export function GenericTable({
               const rowKey = seenCount === 0 ? baseKey : `${baseKey}-dup${seenCount}`;
               return (
                 <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
-                  {cols.map((c) => (
+                  {cols.map((c, i) => (
                     <td
                       key={c.key}
                       className={`px-2 py-2 whitespace-nowrap overflow-hidden text-ellipsis ${c.align === "left" ? "text-left" : "text-center"} ${
                         c.key === "symbol" ? "font-semibold text-indigo-600" : "tabular-nums"
-                      }`}
+                      } ${gridLineClass(gridLines, c, i)}`}
                       style={{ width: `${colWidth(c)}%` }}
                       title={c.key === "sector" ? String(r[c.key] ?? "") : undefined}
                     >

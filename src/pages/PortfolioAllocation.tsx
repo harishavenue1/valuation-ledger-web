@@ -427,6 +427,7 @@ export default function PortfolioAllocation() {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
         width: 5.71,
+        groupStart: true,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       {
@@ -499,6 +500,7 @@ export default function PortfolioAllocation() {
         key: "day_change_pct",
         label: "Day %",
         width: 5.71,
+        groupStart: true,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
       {
@@ -520,15 +522,44 @@ export default function PortfolioAllocation() {
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
+        // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
+        // 33WEMA") — % distance, same OHLC4 EMA convention
+        // api/momentum_screeners.py's MA Breakout screener uses. "—" means
+        // Yahoo had too few bars yet (e.g. a very recent IPO), not a
+        // real 0%. The old separate "> 33W EMA" Y/N column (2026-09-18)
+        // was dropped 2026-09-23 ("this column can be removed since we
+        // have % vs 33W EMA") — the sign of this column already says the
+        // same thing, its width folded in here.
+        key: "pct_200d_ema",
+        label: "% vs 200D EMA",
+        width: 5.71,
+        groupStart: true,
+        render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
+      },
+      {
+        key: "pct_50d_ema",
+        label: "% vs 50D EMA",
+        width: 5.71,
+        render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
+      },
+      {
+        key: "pct_33w_ema",
+        label: "% vs 33W EMA",
+        width: 5.71,
+        render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
+      },
+      {
         // 2026-09-11 ("instead of leader and outperf, can we add
         // company's latest qtr sales growth and eps growth") — replaces
         // the old Sector Leader column. Gold/Silver still show their
         // MCX-proxy 1Y context here (no stock "leads" a commodity, and
         // they have no quarterly results either) rather than leaving
-        // this cell blank for them.
+        // this cell blank for them. Moved to the end of the table
+        // 2026-09-23 ("move this... to end of the table").
         key: "qtr_sales_growth_pct",
         label: "Qtr Sales Growth %",
         width: 5.71,
+        groupStart: true,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
             return (
@@ -563,32 +594,6 @@ export default function PortfolioAllocation() {
             );
           return <Signed v={r.qtr_eps_growth_pct} digits={1} />;
         },
-      },
-      {
-        // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
-        // 33WEMA") — % distance, same OHLC4 EMA convention
-        // api/momentum_screeners.py's MA Breakout screener uses. "—" means
-        // Yahoo had too few bars yet (e.g. a very recent IPO), not a
-        // real 0%. The old separate "> 33W EMA" Y/N column (2026-09-18)
-        // was dropped 2026-09-23 ("this column can be removed since we
-        // have % vs 33W EMA") — the sign of this column already says the
-        // same thing, its width folded in here.
-        key: "pct_200d_ema",
-        label: "% vs 200D EMA",
-        width: 5.71,
-        render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
-      },
-      {
-        key: "pct_50d_ema",
-        label: "% vs 50D EMA",
-        width: 5.71,
-        render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
-      },
-      {
-        key: "pct_33w_ema",
-        label: "% vs 33W EMA",
-        width: 5.71,
-        render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
     ],
     []
@@ -679,6 +684,7 @@ export default function PortfolioAllocation() {
           cols={COLS}
           navigate={(t) => navigate(`/company/${t}`)}
           watchlist={watchlist}
+          gridLines
           emptyMessage="No individual stock holdings."
         />
       </div>
@@ -689,6 +695,7 @@ export default function PortfolioAllocation() {
         cols={COLS}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
+        gridLines
         emptyMessage="No fund/ETF holdings."
       />
     </div>
