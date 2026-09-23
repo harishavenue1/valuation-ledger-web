@@ -69,7 +69,7 @@ export function PriceLink({ symbol, value }: { symbol: string; value: any }) {
 // symbol") — a small separate icon rather than repointing the Symbol
 // button itself, so this app's own /company/:symbol page (fundamentals,
 // watchlist, Run buttons) stays one click away too, not replaced.
-function ScreenerInLink({ symbol }: { symbol: string }) {
+export function ScreenerInLink({ symbol }: { symbol: string }) {
   return (
     <a
       href={`https://www.screener.in/company/${encodeURIComponent(symbol)}/consolidated/`}
