@@ -419,7 +419,7 @@ export default function PortfolioAllocation() {
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 8,
+        width: 6.67,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -432,7 +432,7 @@ export default function PortfolioAllocation() {
         // BSE-only in this portfolio).
         key: "price",
         label: "Price",
-        width: 8,
+        width: 6.67,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -459,7 +459,7 @@ export default function PortfolioAllocation() {
         // of its own). "—" means the skill had neither figure for this row.
         key: "day_change_pct",
         label: "Day %",
-        width: 8,
+        width: 6.67,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
       {
@@ -471,22 +471,67 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 8,
+        width: 6.67,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 8,
+        width: 6.67,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
         key: "pct_of_portfolio",
         label: "% of Portfolio",
-        width: 8,
+        width: 6.67,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
-      { key: "pnl_pct", label: "P&L %", width: 8, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      { key: "pnl_pct", label: "P&L %", width: 6.67, render: (r) => <Signed v={r.pnl_pct} digits={1} /> },
+      {
+        // 2026-09-11 ("instead of leader and outperf, can we add
+        // company's latest qtr sales growth and eps growth") — replaces
+        // the old Sector Leader column. Gold/Silver still show their
+        // MCX-proxy 1Y context here (no stock "leads" a commodity, and
+        // they have no quarterly results either) rather than leaving
+        // this cell blank for them.
+        key: "qtr_sales_growth_pct",
+        label: "Qtr Sales Growth %",
+        width: 6.67,
+        render: (r) => {
+          if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
+            return (
+              <span
+                className="text-xs text-slate-500"
+                title="1-year COMEX gold/silver futures return (USD), converted to its INR-equivalent using USDINR's own 1Y move — MCX itself has no fetchable price history, this is the closest honest proxy"
+              >
+                MCX-proxy 1Y <Signed v={r.commodity_benchmark_1y} digits={1} />
+              </span>
+            );
+          }
+          if (r.qtr_sales_growth_pct === null || r.qtr_sales_growth_pct === undefined) return <span className="text-slate-300">—</span>;
+          return <Signed v={r.qtr_sales_growth_pct} digits={1} />;
+        },
+      },
+      {
+        // Same source/request as Qtr Sales Growth % above (one
+        // Screener.in fetch per holding, see the PortfolioAllocation
+        // skill). "T" means the year-ago quarter was a loss — no % is
+        // honest against a negative base, same convention
+        // momentumPersonal already uses for this.
+        key: "qtr_eps_growth_pct",
+        label: "Qtr EPS Growth %",
+        width: 6.67,
+        render: (r) => {
+          if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
+          if (r.qtr_eps_growth_pct === "T")
+            return (
+              <span className="text-xs font-medium text-emerald-700" title="Year-ago quarter was a loss — turned profitable">
+                Turned profitable
+              </span>
+            );
+          return <Signed v={r.qtr_eps_growth_pct} digits={1} />;
+        },
+      },
       {
         // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
         // 33WEMA") — % distance, same OHLC4 EMA convention
@@ -498,19 +543,19 @@ export default function PortfolioAllocation() {
         // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 8,
+        width: 6.67,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_50d_ema",
         label: "% vs 50D EMA",
-        width: 8,
+        width: 6.67,
         render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 8,
+        width: 6.67,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
     ],
@@ -536,10 +581,16 @@ export default function PortfolioAllocation() {
       <MethodologyNote>
         <b>% of Portfolio</b> = each holding's current value (quantity × last price) ÷ total portfolio value — the whole point of this page
         is the allocation weight, not the underlying rupee amounts. <b>P&amp;L %</b> = unrealized gain/loss vs. Kite's own average buy price.{" "}
-        Sector comes from the same Screener.in peer-comparison breadcrumb Technical Summary/Stocks vs Sector use,
+        <b>Qtr Sales Growth %</b>/<b>Qtr EPS Growth %</b> are the latest reported quarter's YoY growth, read straight off Screener.in's
+        Quarterly Results table (same technique momentumPersonal already uses) — pushed by the PortfolioAllocation skill itself, not a live
+        join against another tab. "Turned profitable" means the year-ago quarter was a loss, so no percentage would be honest against a
+        negative base. Shows "—" for a fund/ETF/commodity (no quarterly results to speak of) or a stock Screener.in has no numbers for yet
+        (e.g. a very recent IPO). Sector comes from the same Screener.in peer-comparison breadcrumb Technical Summary/Stocks vs Sector use,
         so it lines up with what those tabs mean by the same word — except known sector-tracking ETFs (BANKBEES, PHARMABEES, METALIETF,
         MOREALTY, MODEFENCE, MOCAPITAL...), which Screener.in has no sector data for at all and are mapped directly to a real sector instead.{" "}
-        <b>Gold/Silver/Liquid</b> funds get their own pseudo-sector label the same way. <b>Price</b> is Kite's own last
+        <b>Gold/Silver/Liquid</b> funds get their own pseudo-sector label the same way — for Gold/Silver, the <b>Qtr Sales Growth %</b>{" "}
+        column instead shows that commodity's own 1-year COMEX return, converted to its INR-equivalent using USDINR's own 1-year move (MCX
+        itself has no fetchable price history — this is the closest honest proxy, not literal MCX pricing). <b>Price</b> is Kite's own last
         traded price and is itself the TradingView link (NSE or BSE depending on which exchange this lot was bought on).{" "}
         <b>Day %</b> is Kite's own LTP vs. previous close. <b>1W %</b>/<b>1M %</b> are price change vs. 1/4 weekly bars back on Yahoo's
         own weekly series (same series <b>% vs 33W EMA</b>'s OHLC4 33-EMA is computed from) — bar-count based, not calendar-exact. Show
