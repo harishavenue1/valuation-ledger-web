@@ -213,6 +213,16 @@ const ALL_COLUMNS: ColumnDef[] = [
     render: (r) => boolCell(r.tw_all_three, "text-indigo-600"),
   },
   { key: "tw_alpha_52w", label: "Alpha vs NSE500 (52W)", group: "Turtle Wealth (ATH Framework)", source: "turtle", render: (r) => <Signed v={r.tw_alpha_52w} digits={1} /> },
+
+  // 2026-09-23 ("add a new column for fixed asset change... and CWIP
+  // change") — same nse750Fundamentals cache, no new fetch (see its
+  // own fixed_assets_*/cwip_* comment for the Screener.in source).
+  { key: "fixed_assets_1y_chg", label: "Fixed Asset Δ 1Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.fixed_assets_1y_chg} digits={1} /> },
+  { key: "fixed_assets_2y_chg", label: "Fixed Asset Δ 2Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.fixed_assets_2y_chg} digits={1} /> },
+  { key: "fixed_assets_3y_chg", label: "Fixed Asset Δ 3Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.fixed_assets_3y_chg} digits={1} /> },
+  { key: "cwip_1y_chg", label: "CWIP Δ 1Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.cwip_1y_chg} digits={1} /> },
+  { key: "cwip_2y_chg", label: "CWIP Δ 2Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.cwip_2y_chg} digits={1} /> },
+  { key: "cwip_3y_chg", label: "CWIP Δ 3Yr", group: "Fixed Assets / CWIP", source: "capex", render: (r) => <Signed v={r.cwip_3y_chg} digits={1} /> },
 ];
 
 const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
@@ -314,10 +324,18 @@ export default function AllFundamentals() {
         tw_all_three: tw?.all_three ?? false,
         tw_alpha_52w: tw?.alpha_52w ?? null,
 
+        fixed_assets_1y_chg: fund?.fixed_assets_1y_chg ?? null,
+        fixed_assets_2y_chg: fund?.fixed_assets_2y_chg ?? null,
+        fixed_assets_3y_chg: fund?.fixed_assets_3y_chg ?? null,
+        cwip_1y_chg: fund?.cwip_1y_chg ?? null,
+        cwip_2y_chg: fund?.cwip_2y_chg ?? null,
+        cwip_3y_chg: fund?.cwip_3y_chg ?? null,
+
         _has_core: !!fund,
         _has_quarterly: !!(fund?.q_labels && fund.q_labels.length > 0),
         _has_rdcf: !!rdcf,
         _has_turtle: !!tw,
+        _has_capex: typeof fund?.fixed_assets_1y_chg === "number",
       };
     });
   }, [ms]);
@@ -369,7 +387,9 @@ export default function AllFundamentals() {
         growth rate the market's current price already implies, then stages it down (see that tab's own methodology for the
         WACC/terminal-growth assumptions) to flag under/over/fairly valued. <b>Turtle Wealth</b> flags whether price/sales/profit are each
         at their own all-time high (per Screener's own multi-year table) — "All Three" is the closest this app gets to Turtle Wealth's own
-        "Super Performer" bucket (their real framework also weighs Outperformance vs sector, not modeled here yet). Every column below
+        "Super Performer" bucket (their real framework also weighs Outperformance vs sector, not modeled here yet). <b>Fixed Asset Δ</b>/
+        <b>CWIP Δ</b> are real % growth (not percentage-point change — these are ₹ Balance Sheet figures, not ratios) over 1/2/3 years;
+        see the dedicated <b>Fixed Asset Δ</b> page for the same factor sorted/filtered on its own. Every column below
         (except #/Symbol/Name/Price) can be individually shown/hidden with the column picker — picks are remembered on this device.
       </MethodologyNote>
 

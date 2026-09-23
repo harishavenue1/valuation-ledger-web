@@ -3958,6 +3958,13 @@ def _rdcf_fetch_fundamentals(ticker):
         # don't cross-import" convention.
         borrowings = None
         equity_capital_row = reserves_row = None
+        # 2026-09-23 ("add a new column for fixed asset change... and
+        # CWIP change") — same Balance Sheet table already open above,
+        # extended to also capture these two full annual rows. "Fixed
+        # Assets" is Screener's own expandable-total row label (Net
+        # Block + CWIP + Capital WIP sub-items collapse into it); CWIP
+        # is its own separate line directly below.
+        fixed_assets_row = cwip_row = None
         bs = next((s for s in soup.find_all("section")
                    if s.find("h2") and s.find("h2").get_text(strip=True) == "Balance Sheet"), None)
         if bs:
@@ -3976,6 +3983,10 @@ def _rdcf_fetch_fundamentals(ticker):
                         equity_capital_row = vals
                     elif "reserves" in low:
                         reserves_row = vals
+                    elif low == "fixed assets":
+                        fixed_assets_row = vals
+                    elif "cwip" in low:
+                        cwip_row = vals
 
         # 2026-09-19 ("add a column under all fundamentals for working
         # capital") — same "Ratios" section/row Detail's own
@@ -4032,6 +4043,31 @@ def _rdcf_fetch_fundamentals(ticker):
             latest, past = row[-1], row[idx]
             return round(latest - past, 1) if latest is not None and past is not None else None
 
+        # 2026-09-23 ("add a new column for fixed asset change... and
+        # CWIP change") — Fixed Assets/CWIP are ₹ balance-sheet figures,
+        # not ratios, so unlike ROCE/ROE's point-change above this is a
+        # real % growth (same indexing convention as _pt_chg — most-
+        # recent FY last, "years back" counted from the end so an early
+        # data gap doesn't shift the anchor).
+        def _pct_chg(row, years_back):
+            idx = -(years_back + 1)
+            if not row or len(row) < years_back + 1:
+                return None
+            latest, past = row[-1], row[idx]
+            if latest is None or past is None or past == 0:
+                return None
+            return round((latest - past) / abs(past) * 100, 1)
+
+        fixed_assets_cr = next((v for v in reversed(fixed_assets_row) if v is not None), None) if fixed_assets_row else None
+        fixed_assets_1y_chg = _pct_chg(fixed_assets_row, 1)
+        fixed_assets_2y_chg = _pct_chg(fixed_assets_row, 2)
+        fixed_assets_3y_chg = _pct_chg(fixed_assets_row, 3)
+
+        cwip_cr = next((v for v in reversed(cwip_row) if v is not None), None) if cwip_row else None
+        cwip_1y_chg = _pct_chg(cwip_row, 1)
+        cwip_2y_chg = _pct_chg(cwip_row, 2)
+        cwip_3y_chg = _pct_chg(cwip_row, 3)
+
         roce_pct = next((v for v in reversed(roce_row) if v is not None), None) if roce_row else None
         roce_1y_chg = _pt_chg(roce_row, 1)
         roce_3y_chg = _pt_chg(roce_row, 3)
@@ -4069,6 +4105,14 @@ def _rdcf_fetch_fundamentals(ticker):
             "roe_1y_chg": roe_1y_chg,
             "roe_3y_chg": roe_3y_chg,
             "roe_5y_chg": roe_5y_chg,
+            "fixed_assets_cr": fixed_assets_cr,  # ₹ Cr, latest FY, Screener's own "Fixed Assets" Balance Sheet total row
+            "fixed_assets_1y_chg": fixed_assets_1y_chg,  # % growth (not pp — this is a ₹ figure, not a ratio), None if <2 years of history
+            "fixed_assets_2y_chg": fixed_assets_2y_chg,
+            "fixed_assets_3y_chg": fixed_assets_3y_chg,
+            "cwip_cr": cwip_cr,  # ₹ Cr, latest FY, Screener's own CWIP (Capital Work in Progress) row
+            "cwip_1y_chg": cwip_1y_chg,
+            "cwip_2y_chg": cwip_2y_chg,
+            "cwip_3y_chg": cwip_3y_chg,
             # Last 6 quarters — see _rdcf_parse_quarterly's own comment.
             # Ascending chronological (oldest of the 6 first); empty
             # lists if the page had no parseable Quarterly section.
