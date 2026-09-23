@@ -443,15 +443,27 @@ export default function PortfolioAllocation() {
         render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
       {
+        // 2026-09-23 ("add the avg buy price as a column", then "move
+        // Avg Buy Price left to Price column so easy to match", then
+        // "move Avg Price before Price") — Kite's own blended buy price
+        // (same CNC+t1/MTF blend pnl_pct is computed against, see
+        // compute_portfolio_allocation.py's build_rows).
+        key: "avg_price",
+        label: "Avg Price",
+        width: 5.71,
+        render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
+      },
+      {
         // 2026-09-18 ("add a column for price with trading view link to
         // it") — same TradingView-link-on-the-price convention already
         // used elsewhere in this app (see ScreenerTable.tsx's PriceLink),
         // except exchange-aware here rather than hardcoded to NSE: Kite's
         // own `exchange` field per holding tells TradingView which
         // listing to open (E2E/KSHINTL/CARTRADE/CONCORDBIO/TANFACIND are
-        // BSE-only in this portfolio).
+        // BSE-only in this portfolio). Renamed "Price" -> "Cur Price"
+        // 2026-09-23 to read clearly next to Avg Price.
         key: "price",
-        label: "Price",
+        label: "Cur Price",
         width: 5.71,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
@@ -469,17 +481,6 @@ export default function PortfolioAllocation() {
             </a>
           );
         },
-      },
-      {
-        // 2026-09-23 ("add the avg buy price as a column", then "move
-        // Avg Buy Price left to Price column so easy to match") — Kite's
-        // own blended buy price (same CNC+t1/MTF blend pnl_pct is
-        // computed against, see compute_portfolio_allocation.py's
-        // build_rows), placed right next to Price for an easy compare.
-        key: "avg_price",
-        label: "Avg Price",
-        width: 5.71,
-        render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       {
         // 2026-09-23 ("move P&L % after Price Column") — completes the
