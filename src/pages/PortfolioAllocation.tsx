@@ -148,13 +148,17 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
       </svg>
       {/* Legend — always present for ≥2 series per the dataviz skill's
           own accessibility rule, so sector identity never rides on
-          color alone. Two columns (2026-09-06, "enough space on right
-          side... utilize to show side by side, instead of increasing
-          row height") — with every sector now shown individually
-          (no "Other" fold, see buildSectorSlices above) a single
-          column ran long enough to blow out the card's height well
-          past the donut's own, wasting the width beside it instead. */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs flex-1 min-w-0">
+          color alone. 2026-09-06, "enough space on right side...
+          utilize to show side by side, instead of increasing row
+          height" — with every sector now shown individually (no
+          "Other" fold, see buildSectorSlices above) a single column
+          ran long enough to blow out the card's height well past the
+          donut's own, wasting the width beside it instead. Widened
+          from 2 to up to 4 columns 2026-09-25 ("lot of space wasted")
+          — the sector count has grown well past what 2 columns needed
+          (22 sectors live), and this card's own width (half the
+          2000px shell) had a lot of blank room past a 2-column legend. */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-1 text-xs flex-1 min-w-0">
         {slices.map((sl, i) => {
           const isSelected = selected === sl.sector;
           return (
@@ -280,110 +284,70 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
 
   return (
     <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
-      <h2 className="text-sm font-medium text-slate-700 mb-3">Segment Summary</h2>
-      <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
+      {/* 2026-09-25 ("lot of space wasted merge and make ui better") —
+          these 3 small tables used to stack vertically, making this
+          card much taller than its Sector Allocation neighbor while
+          neither used its own full width well. Side by side on wide
+          screens now (stacking back to 1 column on narrow ones, same
+          responsive pattern the outer Segment Summary/Sector Allocation
+          grid already uses) — shorter, and the whole row balances
+          against the donut card's height instead of dwarfing it. */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <MiniStatTable title="Segment Summary" colLabel="Segment" stats={[stocks, funds, total]} />
+        {capBuckets.length > 0 && <MiniStatTable title="Market Cap Distribution" colLabel="Cap Bucket" stats={capBuckets} />}
+        {athBuckets.length > 0 && (
+          <MiniStatTable
+            title="ATH Proximity"
+            colLabel="Bucket"
+            stats={athBuckets}
+            footnote={
+              <p className="text-[10px] text-slate-400 mt-2">
+                Ranked by <b>% from ATH</b>, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed cutoff, so the
+                boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no
+                weekly-highs history for yet.
+              </p>
+            }
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MiniStatTable({ title, colLabel, stats, footnote }: { title: string; colLabel: string; stats: SegmentStat[]; footnote?: React.ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <h2 className="text-sm font-medium text-slate-700 mb-3">{title}</h2>
+      <table className="text-sm border-collapse w-full">
         <thead className="text-slate-500 text-xs">
           <tr>
-            <th className="text-left px-2 py-1.5">Segment</th>
-            <th className="text-right px-2 py-1.5">Allocation %</th>
-            <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
-            <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this segment's own gain/loss">
-              Contribution (pp)
+            <th className="text-left px-2 py-1.5">{colLabel}</th>
+            <th className="text-right px-2 py-1.5">Alloc %</th>
+            <th className="text-right px-2 py-1.5">P&amp;L %</th>
+            <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
+              Contrib (pp)
             </th>
           </tr>
         </thead>
         <tbody>
-          {[stocks, funds].map((s) => (
-            <tr key={s.label} className="border-t border-slate-100">
-              <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                <Signed v={s.weightedPnlPct} digits={1} />
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums">
-                <Signed v={s.contributionPct} digits={2} />
-              </td>
-            </tr>
-          ))}
-          <tr className="border-t border-slate-300 font-semibold">
-            <td className="px-2 py-1.5 text-slate-800">{total.label}</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">{fmtNum(total.allocationPct, 1)}%</td>
-            <td className="px-2 py-1.5 text-right tabular-nums">
-              <Signed v={total.weightedPnlPct} digits={1} />
-            </td>
-            <td className="px-2 py-1.5 text-right text-slate-300">—</td>
-          </tr>
+          {stats.map((s) => {
+            const isTotal = s.label === "Total Portfolio";
+            return (
+              <tr key={s.label} className={`border-t ${isTotal ? "border-slate-300 font-semibold" : "border-slate-100"}`}>
+                <td className={`px-2 py-1.5 ${isTotal ? "text-slate-800" : "font-medium text-slate-700"}`}>{s.label}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  <Signed v={s.weightedPnlPct} digits={1} />
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums">
+                  {isTotal && s.contributionPct === null ? <span className="text-slate-300">—</span> : <Signed v={s.contributionPct} digits={2} />}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
-
-      {capBuckets.length > 0 && (
-        <>
-          <h2 className="text-sm font-medium text-slate-700 mb-3 mt-5">Market Cap Distribution</h2>
-          <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
-            <thead className="text-slate-500 text-xs">
-              <tr>
-                <th className="text-left px-2 py-1.5">Cap Bucket</th>
-                <th className="text-right px-2 py-1.5">Allocation %</th>
-                <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
-                <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
-                  Contribution (pp)
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {capBuckets.map((s) => (
-                <tr key={s.label} className="border-t border-slate-100">
-                  <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    <Signed v={s.weightedPnlPct} digits={1} />
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    <Signed v={s.contributionPct} digits={2} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-
-      {athBuckets.length > 0 && (
-        <>
-          <h2 className="text-sm font-medium text-slate-700 mb-3 mt-5">ATH Proximity</h2>
-          <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
-            <thead className="text-slate-500 text-xs">
-              <tr>
-                <th className="text-left px-2 py-1.5">Bucket</th>
-                <th className="text-right px-2 py-1.5">Allocation %</th>
-                <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
-                <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
-                  Contribution (pp)
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {athBuckets.map((s) => (
-                <tr key={s.label} className="border-t border-slate-100">
-                  <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    <Signed v={s.weightedPnlPct} digits={1} />
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    <Signed v={s.contributionPct} digits={2} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="text-[10px] text-slate-400 mt-2 max-w-md">
-            Ranked by <b>% from ATH</b>, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed cutoff, so the
-            boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no weekly-highs
-            history for yet.
-          </p>
-        </>
-      )}
+      {footnote}
     </div>
   );
 }
