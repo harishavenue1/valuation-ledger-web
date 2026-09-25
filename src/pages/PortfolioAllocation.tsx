@@ -451,7 +451,7 @@ export default function PortfolioAllocation() {
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 5.71,
+        width: 5.33,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -464,7 +464,7 @@ export default function PortfolioAllocation() {
         // this page. "—" only if this row had no avg_price.
         key: "pct_of_portfolio_cost",
         label: "Buy %",
-        width: 5.71,
+        width: 5.33,
         groupStart: true,
         render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
@@ -472,7 +472,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
         key: "pct_of_portfolio",
         label: "Current %",
-        width: 5.71,
+        width: 5.33,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       {
@@ -483,7 +483,7 @@ export default function PortfolioAllocation() {
         // compute_portfolio_allocation.py's build_rows).
         key: "avg_price",
         label: "Avg Price",
-        width: 5.71,
+        width: 5.33,
         render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       {
@@ -497,7 +497,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 to read clearly next to Avg Price.
         key: "price",
         label: "Cur Price",
-        width: 5.71,
+        width: 5.33,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -521,7 +521,7 @@ export default function PortfolioAllocation() {
         // read runs left to right without jumping further down the row.
         key: "pnl_pct",
         label: "P&L %",
-        width: 5.71,
+        width: 5.33,
         render: (r) => <Signed v={r.pnl_pct} digits={1} />,
       },
       {
@@ -533,7 +533,7 @@ export default function PortfolioAllocation() {
         // of its own). "—" means the skill had neither figure for this row.
         key: "day_change_pct",
         label: "Day %",
-        width: 5.71,
+        width: 5.33,
         groupStart: true,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
@@ -546,13 +546,13 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 5.71,
+        width: 5.33,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 5.71,
+        width: 5.33,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
@@ -566,14 +566,14 @@ export default function PortfolioAllocation() {
         // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 5.71,
+        width: 5.33,
         groupStart: true,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 5.71,
+        width: 5.33,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
       {
@@ -590,8 +590,21 @@ export default function PortfolioAllocation() {
         // the stock's literal full listing history.
         key: "pct_from_ath",
         label: "% from ATH",
-        width: 5.71,
+        width: 5.33,
         render: (r) => (r.pct_from_ath === null || r.pct_from_ath === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_ath} digits={1} />),
+      },
+      {
+        // 2026-09-25 ("but I will I know 52WHs") — % from ATH alone
+        // can't tell "off a 5-year peak" apart from "off a 1-year
+        // peak" (ATH is always the stricter of the two, by definition
+        // — a stock at its 52W high isn't necessarily anywhere near
+        // its real ATH, e.g. ACE: -26% from ATH but only -1% from its
+        // 52W high). Same weekly-HIGHS source as % from ATH, just
+        // capped to the trailing 52 bars.
+        key: "pct_from_52w_high",
+        label: "% from 52W High",
+        width: 5.33,
+        render: (r) => (r.pct_from_52w_high === null || r.pct_from_52w_high === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_52w_high} digits={1} />),
       },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
@@ -603,7 +616,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 ("move this... to end of the table").
         key: "qtr_sales_growth_pct",
         label: "QSalG%",
-        width: 5.71,
+        width: 5.33,
         groupStart: true,
         render: (r) => {
           if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
@@ -628,7 +641,7 @@ export default function PortfolioAllocation() {
         // momentumPersonal already uses for this.
         key: "qtr_eps_growth_pct",
         label: "QEpsG%",
-        width: 5.71,
+        width: 5.33,
         render: (r) => {
           if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
           if (r.qtr_eps_growth_pct === "T")
