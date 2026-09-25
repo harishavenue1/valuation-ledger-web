@@ -302,14 +302,33 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
   return (
     <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
       <h2 className="text-sm font-medium text-slate-700 mb-3">Portfolio Breakdown</h2>
-      <table className="text-sm border-collapse w-full">
+      {/* 2026-09-25 ("resize column width and utilize free space") —
+          default table-layout (auto) let the browser hand almost all
+          the spare width to whichever column it judged "flexible"
+          (Bucket, here), leaving a big gap before the numeric columns
+          instead of spreading it evenly. Explicit % widths + fixed
+          layout make every column a predictable share of the table's
+          own full width instead. */}
+      <table className="text-sm border-collapse w-full" style={{ tableLayout: "fixed" }}>
         <thead className="text-slate-500 text-xs">
           <tr>
-            <th className="text-left px-2 py-1.5 whitespace-nowrap">Dimension</th>
-            <th className="text-left px-2 py-1.5 whitespace-nowrap">Bucket</th>
-            <th className="text-right px-2 py-1.5 whitespace-nowrap">Alloc %</th>
-            <th className="text-right px-2 py-1.5 whitespace-nowrap">P&amp;L %</th>
-            <th className="text-right px-2 py-1.5 whitespace-nowrap" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
+            <th className="text-left px-2 py-1.5 whitespace-nowrap" style={{ width: "15%" }}>
+              Dimension
+            </th>
+            <th className="text-left px-2 py-1.5 whitespace-nowrap" style={{ width: "27%" }}>
+              Bucket
+            </th>
+            <th className="text-right px-2 py-1.5 whitespace-nowrap" style={{ width: "18%" }}>
+              Alloc %
+            </th>
+            <th className="text-right px-2 py-1.5 whitespace-nowrap" style={{ width: "18%" }}>
+              P&amp;L %
+            </th>
+            <th
+              className="text-right px-2 py-1.5 whitespace-nowrap"
+              style={{ width: "22%" }}
+              title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss"
+            >
               Contrib (pp)
             </th>
           </tr>
@@ -708,9 +727,19 @@ export default function PortfolioAllocation() {
       {rows.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <SegmentSummary rows={rows} capBucketFor={capBucketFor} />
-          <div className="p-4 border border-slate-200 rounded-lg">
+          {/* 2026-09-25 ("sector allocation utilize free space") — this
+              card sits in the same grid row as Portfolio Breakdown,
+              which stretches it to match that table's height (CSS
+              Grid's default align-items: stretch), but the donut+legend
+              content itself was top-anchored, leaving a large blank
+              strip at the bottom whenever the table's taller. flex +
+              h-full + a centered inner wrapper puts the content in the
+              middle of whatever height the row ends up being instead. */}
+          <div className="p-4 border border-slate-200 rounded-lg flex flex-col h-full">
             <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
-            <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
+            <div className="flex-1 flex items-center">
+              <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
+            </div>
           </div>
         </div>
       )}
