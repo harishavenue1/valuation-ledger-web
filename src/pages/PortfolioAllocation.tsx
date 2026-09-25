@@ -213,6 +213,24 @@ function statsForSegment(segRows: any[], label: string): SegmentStat {
 
 const CAP_BUCKET_ORDER = ["Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Unclassified"];
 
+// 2026-09-25 ("add details of stocks its weight is top quardrant of
+// ATH, mid, slow") — same rank-based (not a fixed % cutoff) approach
+// Large/Mid cap already uses: sort this PORTFOLIO's own holdings by
+// pct_from_ath and split into 3 equal-COUNT groups, so the boundary
+// moves with wherever the portfolio's own distribution actually sits
+// instead of a hardcoded "-10%" that would mean something different in
+// a quiet market vs a hot one. Needs no external cache (unlike cap
+// buckets, which need the NSE750-wide cutoffs) — everything it needs is
+// already on these rows.
+const ATH_BUCKET_ORDER = ["🔥 Near ATH", "🚶 Mid", "🐢 Lagging", "Unclassified"];
+
+function athBucketFor(pctFromAth: number | null | undefined, cutoffs: { top: number; bottom: number } | null): string {
+  if (pctFromAth == null || !cutoffs) return "Unclassified";
+  if (pctFromAth >= cutoffs.top) return "🔥 Near ATH";
+  if (pctFromAth >= cutoffs.bottom) return "🚶 Mid";
+  return "🐢 Lagging";
+}
+
 function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (marketCapCr: number | null | undefined) => string | null }) {
   const stocks = statsForSegment(
     rows.filter((r) => !r.is_fund),
@@ -245,6 +263,18 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
   // silently dropped from the 100% total, same "show it, don't hide
   // it" convention every other segment on this page already follows.
   const capBuckets = CAP_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => (capBucketFor(r.market_cap_cr) ?? "Unclassified") === label), label)).filter(
+    (s) => s.allocationPct > 0
+  );
+
+  const athCutoffs = (() => {
+    const vals = rows
+      .map((r) => r.pct_from_ath)
+      .filter((v: any): v is number => typeof v === "number")
+      .sort((a: number, b: number) => b - a);
+    if (vals.length < 3) return null;
+    return { top: vals[Math.floor(vals.length / 3)], bottom: vals[Math.floor((vals.length * 2) / 3)] };
+  })();
+  const athBuckets = ATH_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => athBucketFor(r.pct_from_ath, athCutoffs) === label), label)).filter(
     (s) => s.allocationPct > 0
   );
 
@@ -315,6 +345,43 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
               ))}
             </tbody>
           </table>
+        </>
+      )}
+
+      {athBuckets.length > 0 && (
+        <>
+          <h2 className="text-sm font-medium text-slate-700 mb-3 mt-5">ATH Proximity</h2>
+          <table className="text-sm border-collapse" style={{ minWidth: 480 }}>
+            <thead className="text-slate-500 text-xs">
+              <tr>
+                <th className="text-left px-2 py-1.5">Bucket</th>
+                <th className="text-right px-2 py-1.5">Allocation %</th>
+                <th className="text-right px-2 py-1.5">Segment P&amp;L %</th>
+                <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
+                  Contribution (pp)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {athBuckets.map((s) => (
+                <tr key={s.label} className="border-t border-slate-100">
+                  <td className="px-2 py-1.5 font-medium text-slate-700">{s.label}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <Signed v={s.weightedPnlPct} digits={1} />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    <Signed v={s.contributionPct} digits={2} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="text-[10px] text-slate-400 mt-2 max-w-md">
+            Ranked by <b>% from ATH</b>, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed cutoff, so the
+            boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no weekly-highs
+            history for yet.
+          </p>
         </>
       )}
     </div>
