@@ -57,20 +57,6 @@ function extraColor(i: number): string {
   return `hsl(${hue.toFixed(1)}, 60%, 48%)`;
 }
 
-// 2026-09-25 ("sorting not working on ATH column") — GenericTable's
-// click-to-sort compares a[sortKey], and the column's key ("high_flag")
-// isn't a real field on the row (only is_52w_high/is_ath are) — every
-// row's lookup came back undefined, so every comparison landed in
-// compareVals' "both nil" branch and nothing ever moved. This gives the
-// column an actual numeric, sortable field to key off (Both > 52W High
-// only > neither) while the render function still reads the two
-// booleans directly for display.
-function highRank(r: any): number {
-  if (r.is_ath) return 2;
-  if (r.is_52w_high) return 1;
-  return 0;
-}
-
 function buildSectorSlices(rows: any[]): SectorSlice[] {
   const bySector = new Map<string, number>();
   for (const r of rows) {
@@ -408,11 +394,11 @@ export default function PortfolioAllocation() {
   // enough; no re-sort needed.
   const stockRows = useMemo(() => {
     const filtered = selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, high_rank: highRank(r) }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
   }, [rows, selectedRealSectors]);
   const fundRows = useMemo(() => {
     const filtered = selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, high_rank: highRank(r) }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
   }, [rows, selectedRealSectors]);
 
   const COLS: Col[] = useMemo(
@@ -560,26 +546,20 @@ export default function PortfolioAllocation() {
       },
       {
         // 2026-09-25 ("remove % vs 50D EMA... add column... is it
-        // 52WHigh or All Time High, if both Both") — off the same
-        // weekly-closes series the EMA columns already use, no extra
-        // fetch. "ATH" is only within Yahoo's ~5y fetch window, not the
-        // stock's literal full listing history — see
-        // compute_portfolio_allocation.py's fetch_weekly_technicals for
-        // why. A real ATH is always also a 52W high, so "Both" is what
-        // actually shows for genuine new highs; "52W High" alone means
-        // current price cleared the last year but not the last ~5. Keyed
-        // on the row's own precomputed high_rank (not is_52w_high/is_ath
-        // directly) so GenericTable's click-to-sort has an actual
-        // sortable field — see highRank()'s own comment for why.
-        key: "high_rank",
-        label: "52W High / ATH",
+        // 52WHigh or All Time High, if both Both", then "its wrong,
+        // SigmaAdvanced is ATH but shows blank", then "instead of blank
+        // we can use - % diff from ATH") — a single signed % distance
+        // from the stock's own all-time high, off weekly HIGHS (not
+        // closes — see compute_portfolio_allocation.py's
+        // fetch_weekly_technicals for why closes alone missed a
+        // stock that spiked intraday and pulled back before the week's
+        // close). 0/positive = at or making a fresh high right now;
+        // "ATH" is honestly only within Yahoo's ~5y fetch window, not
+        // the stock's literal full listing history.
+        key: "pct_from_ath",
+        label: "% from ATH",
         width: 5.71,
-        render: (r) => {
-          if (r.is_52w_high == null) return <span className="text-slate-300">—</span>;
-          if (r.is_ath) return <span className="font-semibold text-indigo-600">Both</span>;
-          if (r.is_52w_high) return <span className="font-semibold text-emerald-600">52W High</span>;
-          return <span className="text-slate-300">—</span>;
-        },
+        render: (r) => (r.pct_from_ath === null || r.pct_from_ath === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_ath} digits={1} />),
       },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
