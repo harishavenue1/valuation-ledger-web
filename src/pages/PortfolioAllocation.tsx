@@ -539,16 +539,30 @@ export default function PortfolioAllocation() {
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
-        key: "pct_50d_ema",
-        label: "% vs 50D EMA",
-        width: 5.71,
-        render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
-      },
-      {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
         width: 5.71,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
+      },
+      {
+        // 2026-09-25 ("remove % vs 50D EMA... add column... is it
+        // 52WHigh or All Time High, if both Both") — off the same
+        // weekly-closes series the EMA columns already use, no extra
+        // fetch. "ATH" is only within Yahoo's ~5y fetch window, not the
+        // stock's literal full listing history — see
+        // compute_portfolio_allocation.py's fetch_weekly_technicals for
+        // why. A real ATH is always also a 52W high, so "Both" is what
+        // actually shows for genuine new highs; "52W High" alone means
+        // current price cleared the last year but not the last ~5.
+        key: "high_flag",
+        label: "52W High / ATH",
+        width: 5.71,
+        render: (r) => {
+          if (r.is_52w_high == null) return <span className="text-slate-300">—</span>;
+          if (r.is_ath) return <span className="font-semibold text-indigo-600">Both</span>;
+          if (r.is_52w_high) return <span className="font-semibold text-emerald-600">52W High</span>;
+          return <span className="text-slate-300">—</span>;
+        },
       },
       {
         // 2026-09-11 ("instead of leader and outperf, can we add
