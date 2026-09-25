@@ -153,25 +153,30 @@ function SectorDonut({ slices, selected, onSelect }: { slices: SectorSlice[]; se
           height" — with every sector now shown individually (no
           "Other" fold, see buildSectorSlices above) a single column
           ran long enough to blow out the card's height well past the
-          donut's own, wasting the width beside it instead. Widened
-          from 2 to up to 4 columns 2026-09-25 ("lot of space wasted")
-          — the sector count has grown well past what 2 columns needed
-          (22 sectors live), and this card's own width (half the
-          2000px shell) had a lot of blank room past a 2-column legend. */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-x-4 gap-y-1 text-xs flex-1 min-w-0">
+          donut's own, wasting the width beside it instead.
+          2026-09-25 ("not looking good") — a CSS GRID version (tried
+          the same day) forces every item in a row to match the tallest
+          one, and several real sector names ("Automobile and Auto
+          Components", "Media, Entertainment & Publication") wrap to
+          2-3 lines — every row containing one went ragged. CSS
+          multi-column flow instead: each column fills independently
+          top-to-bottom, so one tall name only affects its own column,
+          not its neighbors' row alignment. break-inside-avoid keeps a
+          single legend row from splitting across the column break. */}
+      <div className="columns-2 md:columns-3 gap-x-4 text-xs flex-1 min-w-0">
         {slices.map((sl, i) => {
           const isSelected = selected === sl.sector;
           return (
             <div
               key={sl.sector}
-              className={`flex items-center gap-2 px-1 py-0.5 rounded cursor-pointer ${isSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : hover === i ? "bg-slate-100" : ""}`}
+              className={`flex items-center gap-2 px-1 py-1 rounded cursor-pointer break-inside-avoid ${isSelected ? "bg-indigo-50 ring-1 ring-indigo-200" : hover === i ? "bg-slate-100" : ""}`}
               onMouseEnter={() => setHover(i)}
               onMouseLeave={() => setHover(null)}
               onClick={() => toggle(sl.sector)}
             >
-              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: sl.color }} />
-              <span className={isSelected ? "text-indigo-700 font-medium" : "text-slate-600"}>{sl.sector}</span>
-              <span className="ml-auto font-semibold tabular-nums text-slate-700">{fmtNum(sl.pct, 1)}%</span>
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0 mt-0.5 self-start" style={{ backgroundColor: sl.color }} />
+              <span className={`flex-1 min-w-0 ${isSelected ? "text-indigo-700 font-medium" : "text-slate-600"}`}>{sl.sector}</span>
+              <span className="font-semibold tabular-nums text-slate-700 flex-shrink-0">{fmtNum(sl.pct, 1)}%</span>
             </div>
           );
         })}
@@ -318,13 +323,20 @@ function MiniStatTable({ title, colLabel, stats, footnote }: { title: string; co
   return (
     <div className="min-w-0">
       <h2 className="text-sm font-medium text-slate-700 mb-3">{title}</h2>
-      <table className="text-sm border-collapse w-full">
+      {/* 2026-09-25 ("not looking good") — whitespace-nowrap on every
+          header: at 3-across width these were wrapping ("Alloc %"
+          splitting onto two lines), uglier than just letting the table
+          be exactly as wide as its own content needs (w-full below
+          dropped for the same reason — this table doesn't need to
+          fill its grid cell, letting it size to its own labels reads
+          better than stretching numeric columns needlessly wide). */}
+      <table className="text-sm border-collapse">
         <thead className="text-slate-500 text-xs">
           <tr>
-            <th className="text-left px-2 py-1.5">{colLabel}</th>
-            <th className="text-right px-2 py-1.5">Alloc %</th>
-            <th className="text-right px-2 py-1.5">P&amp;L %</th>
-            <th className="text-right px-2 py-1.5" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
+            <th className="text-left px-2 py-1.5 whitespace-nowrap">{colLabel}</th>
+            <th className="text-right px-2 py-1.5 whitespace-nowrap">Alloc %</th>
+            <th className="text-right px-2 py-1.5 whitespace-nowrap">P&amp;L %</th>
+            <th className="text-right px-2 py-1.5 whitespace-nowrap" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
               Contrib (pp)
             </th>
           </tr>
@@ -334,12 +346,12 @@ function MiniStatTable({ title, colLabel, stats, footnote }: { title: string; co
             const isTotal = s.label === "Total Portfolio";
             return (
               <tr key={s.label} className={`border-t ${isTotal ? "border-slate-300 font-semibold" : "border-slate-100"}`}>
-                <td className={`px-2 py-1.5 ${isTotal ? "text-slate-800" : "font-medium text-slate-700"}`}>{s.label}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-semibold">{fmtNum(s.allocationPct, 1)}%</td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
+                <td className={`px-2 py-1.5 whitespace-nowrap ${isTotal ? "text-slate-800" : "font-medium text-slate-700"}`}>{s.label}</td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">{fmtNum(s.allocationPct, 1)}%</td>
+                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
                   <Signed v={s.weightedPnlPct} digits={1} />
                 </td>
-                <td className="px-2 py-1.5 text-right tabular-nums">
+                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
                   {isTotal && s.contributionPct === null ? <span className="text-slate-300">—</span> : <Signed v={s.contributionPct} digits={2} />}
                 </td>
               </tr>
