@@ -287,53 +287,26 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
     (s) => s.allocationPct > 0
   );
 
+  // 2026-09-25 ("create a single table with all details") — the 3
+  // dimensions (Segment/Market Cap/ATH Proximity) merged into ONE
+  // table instead of 3 side-by-side cards, with a leading "Dimension"
+  // column (rowSpan'd once per group, the standard HTML way to show
+  // grouping without repeating the label on every row) rather than 3
+  // separate <table>s.
+  const dimensionGroups: { dimension: string; stats: SegmentStat[] }[] = [
+    { dimension: "Segment", stats: [stocks, funds, total] },
+    ...(capBuckets.length > 0 ? [{ dimension: "Market Cap", stats: capBuckets }] : []),
+    ...(athBuckets.length > 0 ? [{ dimension: "ATH Proximity", stats: athBuckets }] : []),
+  ];
+
   return (
     <div className="p-4 border border-slate-200 rounded-lg overflow-x-auto">
-      {/* 2026-09-25 ("lot of space wasted merge and make ui better") —
-          these 3 small tables used to stack vertically, making this
-          card much taller than its Sector Allocation neighbor while
-          neither used its own full width well. Side by side on wide
-          screens now (stacking back to 1 column on narrow ones, same
-          responsive pattern the outer Segment Summary/Sector Allocation
-          grid already uses) — shorter, and the whole row balances
-          against the donut card's height instead of dwarfing it. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <MiniStatTable title="Segment Summary" colLabel="Segment" stats={[stocks, funds, total]} />
-        {capBuckets.length > 0 && <MiniStatTable title="Market Cap Distribution" colLabel="Cap Bucket" stats={capBuckets} />}
-        {athBuckets.length > 0 && (
-          <MiniStatTable
-            title="ATH Proximity"
-            colLabel="Bucket"
-            stats={athBuckets}
-            footnote={
-              <p className="text-[10px] text-slate-400 mt-2">
-                Ranked by <b>% from ATH</b>, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed cutoff, so the
-                boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no
-                weekly-highs history for yet.
-              </p>
-            }
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function MiniStatTable({ title, colLabel, stats, footnote }: { title: string; colLabel: string; stats: SegmentStat[]; footnote?: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <h2 className="text-sm font-medium text-slate-700 mb-3">{title}</h2>
-      {/* 2026-09-25 ("not looking good") — whitespace-nowrap on every
-          header: at 3-across width these were wrapping ("Alloc %"
-          splitting onto two lines), uglier than just letting the table
-          be exactly as wide as its own content needs (w-full below
-          dropped for the same reason — this table doesn't need to
-          fill its grid cell, letting it size to its own labels reads
-          better than stretching numeric columns needlessly wide). */}
-      <table className="text-sm border-collapse">
+      <h2 className="text-sm font-medium text-slate-700 mb-3">Portfolio Breakdown</h2>
+      <table className="text-sm border-collapse w-full">
         <thead className="text-slate-500 text-xs">
           <tr>
-            <th className="text-left px-2 py-1.5 whitespace-nowrap">{colLabel}</th>
+            <th className="text-left px-2 py-1.5 whitespace-nowrap">Dimension</th>
+            <th className="text-left px-2 py-1.5 whitespace-nowrap">Bucket</th>
             <th className="text-right px-2 py-1.5 whitespace-nowrap">Alloc %</th>
             <th className="text-right px-2 py-1.5 whitespace-nowrap">P&amp;L %</th>
             <th className="text-right px-2 py-1.5 whitespace-nowrap" title="Per ₹100 of the whole portfolio, how much of that is this bucket's own gain/loss">
@@ -342,24 +315,40 @@ function MiniStatTable({ title, colLabel, stats, footnote }: { title: string; co
           </tr>
         </thead>
         <tbody>
-          {stats.map((s) => {
-            const isTotal = s.label === "Total Portfolio";
-            return (
-              <tr key={s.label} className={`border-t ${isTotal ? "border-slate-300 font-semibold" : "border-slate-100"}`}>
-                <td className={`px-2 py-1.5 whitespace-nowrap ${isTotal ? "text-slate-800" : "font-medium text-slate-700"}`}>{s.label}</td>
-                <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">{fmtNum(s.allocationPct, 1)}%</td>
-                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
-                  <Signed v={s.weightedPnlPct} digits={1} />
-                </td>
-                <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
-                  {isTotal && s.contributionPct === null ? <span className="text-slate-300">—</span> : <Signed v={s.contributionPct} digits={2} />}
-                </td>
-              </tr>
-            );
-          })}
+          {dimensionGroups.map((g, gi) =>
+            g.stats.map((s, i) => {
+              const isTotal = s.label === "Total Portfolio";
+              return (
+                <tr
+                  key={`${g.dimension}-${s.label}`}
+                  className={`${i === 0 && gi > 0 ? "border-t-2 border-slate-300" : "border-t border-slate-100"} ${isTotal ? "font-semibold" : ""}`}
+                >
+                  {i === 0 && (
+                    <td rowSpan={g.stats.length} className="px-2 py-1.5 align-top font-semibold text-slate-500 text-xs whitespace-nowrap border-r border-slate-100">
+                      {g.dimension}
+                    </td>
+                  )}
+                  <td className={`px-2 py-1.5 whitespace-nowrap ${isTotal ? "text-slate-800" : "font-medium text-slate-700"}`}>{s.label}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums font-semibold whitespace-nowrap">{fmtNum(s.allocationPct, 1)}%</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                    <Signed v={s.weightedPnlPct} digits={1} />
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums whitespace-nowrap">
+                    {isTotal && s.contributionPct === null ? <span className="text-slate-300">—</span> : <Signed v={s.contributionPct} digits={2} />}
+                  </td>
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
-      {footnote}
+      {athBuckets.length > 0 && (
+        <p className="text-[10px] text-slate-400 mt-2 max-w-lg">
+          <b>ATH Proximity</b> is ranked by % from ATH, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed
+          cutoff, so the boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no
+          weekly-highs history for yet.
+        </p>
+      )}
     </div>
   );
 }
