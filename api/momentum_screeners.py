@@ -4180,6 +4180,140 @@ def _run_nse750_fundamentals_cache(symbols, name_map, sector_map):
     return {"label": "NSE 750 Fundamentals Cache", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
 
 
+# ── nse750Technicals (dense per-stock technicals, whole universe) ────────
+#
+# 2026-09-26 ("replicate similar pf page structure onto all technical
+# page") — the PortfolioAllocation skill's own fetch_weekly_technicals
+# ported here (not imported — momentum_screeners.py is a separate
+# Vercel function from that skill's script, no shared-module imports
+# between them by this account's own convention), extended to the
+# WHOLE NSE750 universe rather than just current holdings. Unlike
+# MA Breakout/the ATH/52W-High screeners (detector-style — only a
+# stock with a signal event THIS week gets a row), this computes a
+# value for every stock, every run — dense, matching what the
+# Portfolio Allocation page itself shows per holding.
+#
+# One real difference from the ported original: that version resolves
+# a .NS/.BO suffix ambiguity by sanity-checking against Kite's own
+# current_price for that specific lot (a holding CAN genuinely be a
+# BSE-only lot). NSE750 stocks have no such lot to check against, and
+# the universe itself (_ms_get_universe_symbols, NSE's own Total
+# Market list) is NSE-defined — so this always fetches .NS directly,
+# no fallback/sanity-check needed.
+NSE750T_EMA33W_PERIOD = 33
+NSE750T_EMA200D_PERIOD = 200
+
+
+def _nse750t_fetch_weekly_bars(yahoo_ticker):
+    """(ohlc4_list, closes_list, highs_list) for ~5y of weekly bars —
+    same shape as PortfolioAllocation's own _fetch_weekly_bars."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
+                          params={"range": "5y", "interval": "1wk"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        result = r.json()["chart"]["result"]
+        if not result:
+            return None
+        quote = result[0]["indicators"]["quote"][0]
+        o, h, l, c = quote["open"], quote["high"], quote["low"], quote["close"]
+        pairs = [(oi, hi, li, ci) for oi, hi, li, ci in zip(o, h, l, c) if None not in (oi, hi, li, ci)]
+        if not pairs:
+            return None
+        ohlc4 = [(oi + hi + li + ci) / 4 for oi, hi, li, ci in pairs]
+        closes = [ci for _, _, _, ci in pairs]
+        highs = [hi for _, hi, _, _ in pairs]
+        return ohlc4, closes, highs
+    except Exception:
+        return None
+
+
+def _nse750t_fetch_daily_bars(yahoo_ticker):
+    """ohlc4_list for ~2y of daily bars — comfortably covers the
+    200-bar EMA warmup even after weekends/holidays thin the range."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
+                          params={"range": "2y", "interval": "1d"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        result = r.json()["chart"]["result"]
+        if not result:
+            return None
+        quote = result[0]["indicators"]["quote"][0]
+        o, h, l, c = quote["open"], quote["high"], quote["low"], quote["close"]
+        pairs = [(oi, hi, li, ci) for oi, hi, li, ci in zip(o, h, l, c) if None not in (oi, hi, li, ci)]
+        if not pairs:
+            return None
+        return [(oi + hi + li + ci) / 4 for oi, hi, li, ci in pairs]
+    except Exception:
+        return None
+
+
+def _nse750t_ema_pct_distance(ohlc4, period, current_price):
+    if not ohlc4 or len(ohlc4) < period or not current_price:
+        return None
+    alpha = 2 / (period + 1)
+    ema = ohlc4[0]
+    for x in ohlc4[1:]:
+        ema = alpha * x + (1 - alpha) * ema
+    return round((current_price / ema - 1) * 100, 2) if ema else None
+
+
+def _fetch_nse750_technicals_one(symbol):
+    weekly = _nse750t_fetch_weekly_bars(f"{symbol}.NS")
+    if weekly is None:
+        return None
+    ohlc4_w, closes, highs = weekly
+    if not closes:
+        return None
+    current_price = closes[-1]
+
+    out = {"price": current_price, "pct_1w": None, "pct_1m": None, "pct_3m": None, "pct_6m": None,
+           "pct_33w_ema": None, "pct_200d_ema": None, "pct_from_ath": None, "pct_from_52w_high": None}
+
+    for key, bars_back in (("pct_1w", 1), ("pct_1m", 4), ("pct_3m", 13), ("pct_6m", 26)):
+        if len(closes) > bars_back and closes[-1 - bars_back]:
+            out[key] = round((current_price / closes[-1 - bars_back] - 1) * 100, 2)
+
+    out["pct_33w_ema"] = _nse750t_ema_pct_distance(ohlc4_w, NSE750T_EMA33W_PERIOD, current_price)
+
+    if highs:
+        ath = max(highs)
+        if ath:
+            out["pct_from_ath"] = round((current_price / ath - 1) * 100, 2)
+        high_52w = max(highs[-52:] if len(highs) >= 52 else highs)
+        if high_52w:
+            out["pct_from_52w_high"] = round((current_price / high_52w - 1) * 100, 2)
+
+    daily_ohlc4 = _nse750t_fetch_daily_bars(f"{symbol}.NS")
+    out["pct_200d_ema"] = _nse750t_ema_pct_distance(daily_ohlc4, NSE750T_EMA200D_PERIOD, current_price)
+
+    return out
+
+
+def _run_nse750_technicals_cache(symbols, name_map, sector_map):
+    """Same batched-cron/merge-on-write design as nse750Fundamentals
+    (see its own module comment) — each batch's rows fold into the
+    existing cache by symbol rather than replacing the whole 750-row
+    set, so only 1/N of the universe is ever stale between runs."""
+    new_rows = []
+    for sym in symbols:
+        tech = _fetch_nse750_technicals_one(sym)
+        time.sleep(0.8)  # two Yahoo fetches per symbol (weekly+daily) — lighter than the 1.0s Screener.in pacing convention elsewhere in this file, Yahoo's free chart endpoint tolerates it
+        if tech is None:
+            continue
+        new_rows.append({"symbol": sym, "as_of": date.today().isoformat(), **tech})
+
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    existing_rows = all_screeners.get("nse750Technicals", {}).get("rows", [])
+    by_symbol = {r["symbol"]: r for r in existing_rows}
+    for r in new_rows:
+        by_symbol[r["symbol"]] = r
+    merged = list(by_symbol.values())
+
+    return {"label": "NSE 750 Technicals Cache", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
+
+
 def _fund_cache_read_all():
     """Reads the WHOLE shared fundamentals cache ONCE per batch
     invocation (not per-symbol — an 80-stock loop calling this per
@@ -4961,6 +5095,7 @@ SCREENER_RUNNERS = {
     "turtleWealth": _run_turtle_wealth_nse750,
     "benchmarkNse500": _run_benchmark_nse500_cache,
     "nse750Fundamentals": _run_nse750_fundamentals_cache,
+    "nse750Technicals": _run_nse750_technicals_cache,
     "nse750PriceCache": _run_nse750_price_cache,
     "top100UsStocks": _run_top100_us_stocks,
     "countryYields": _run_country_yields,
