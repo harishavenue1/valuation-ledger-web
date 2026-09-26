@@ -172,6 +172,28 @@ const ALL_COLUMNS: ColumnDef[] = [
   // page.
   { key: "roce_1y_chg", label: "ROCE 1Y Δ", group: "Quality (ROCE)", source: "quality", render: (r) => (r.roce_1y_chg == null ? DASH : <Signed v={r.roce_1y_chg} digits={1} />) },
   { key: "roce_pct", label: "ROCE %", group: "Quality (ROCE)", source: "quality", render: (r) => fmtNum(r.roce_pct, 1) },
+
+  // 2026-09-26 ("replicate similar pf page structure on to all technical
+  // page, except for Buy % Avg Price P&L %" / "alos current %") — brings
+  // Portfolio Allocation's dense per-stock technical block (computed for
+  // EVERY holding, every run) to the full NSE750 universe here. Everything
+  // else on this page reusing an existing screener is SPARSE by design
+  // (see the module comment up top) — MA Breakout/ATH/52W High only
+  // populate for a stock with a signal event that week. This is a
+  // genuinely new backend screener (nse750Technicals, weekly batched cron,
+  // same merge-on-write pattern as nse750Fundamentals) computed for all
+  // ~750 stocks every run, not aliased off the sparse detectors above.
+  // Deliberately excludes Buy %/Avg Price/P&L %/Current % — those only
+  // make sense for an actual holding, not a market-wide screener.
+  { key: "nt_market_cap", label: "Market Cap (Cr)", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => fmtNum(r.nt_market_cap, 0) },
+  { key: "nt_1w_pct", label: "1W %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_1w_pct} digits={1} /> },
+  { key: "nt_1m_pct", label: "1M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_1m_pct} digits={1} /> },
+  { key: "nt_3m_pct", label: "3M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_3m_pct} digits={1} /> },
+  { key: "nt_6m_pct", label: "6M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_6m_pct} digits={1} /> },
+  { key: "nt_pct_200d_ema", label: "% vs 200D EMA", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_200d_ema} digits={1} /> },
+  { key: "nt_pct_33w_ema", label: "% vs 33W EMA", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_33w_ema} digits={1} /> },
+  { key: "nt_pct_from_ath", label: "% from ATH", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
+  { key: "nt_pct_from_52w_high", label: "% from 52W High", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
 ];
 
 const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
@@ -228,6 +250,7 @@ export default function AllTechnicals() {
     "quantBollinger",
     "smartMoney",
     "nse750Fundamentals",
+    "nse750Technicals",
   ]);
   const ms = bundle.momentum_screeners;
 
@@ -274,6 +297,7 @@ export default function AllTechnicals() {
     const qbMap = keyBy(ms?.quantBollinger?.rows);
     const smMap = keyBy(ms?.smartMoney?.rows);
     const fundMap = keyBy(ms?.nse750Fundamentals?.rows);
+    const ntMap = keyBy(ms?.nse750Technicals?.rows);
 
     return base.map((b: any) => {
       const sym = b.symbol;
@@ -292,6 +316,7 @@ export default function AllTechnicals() {
       const qb = qbMap.get(sym);
       const sm = smMap.get(sym);
       const fund = fundMap.get(sym);
+      const nt = ntMap.get(sym);
 
       return {
         symbol: sym,
@@ -393,6 +418,16 @@ export default function AllTechnicals() {
         roce_pct: fund?.roce_pct ?? null,
         roce_1y_chg: fund?.roce_1y_chg ?? null,
 
+        nt_market_cap: fund?.market_cap_cr ?? null,
+        nt_1w_pct: nt?.pct_1w ?? null,
+        nt_1m_pct: nt?.pct_1m ?? null,
+        nt_3m_pct: nt?.pct_3m ?? null,
+        nt_6m_pct: nt?.pct_6m ?? null,
+        nt_pct_200d_ema: nt?.pct_200d_ema ?? null,
+        nt_pct_33w_ema: nt?.pct_33w_ema ?? null,
+        nt_pct_from_ath: nt?.pct_from_ath ?? null,
+        nt_pct_from_52w_high: nt?.pct_from_52w_high ?? null,
+
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per
         // originating screener, used ONLY to drive the "only matches"
@@ -419,6 +454,7 @@ export default function AllTechnicals() {
         _has_bollinger: !!qb,
         _has_smartmoney: !!sm,
         _has_quality: fund?.roce_1y_chg != null,
+        _has_nt: !!nt,
       };
     });
   }, [ms]);
@@ -442,6 +478,7 @@ export default function AllTechnicals() {
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
+  const ntAsOf = ms?.nse750Technicals?.as_of;
 
   if (!ready) return <ScreenerLoading label="All Technicals" />;
 
@@ -458,6 +495,12 @@ export default function AllTechnicals() {
           <>
             {" "}
             <b>Quality (ROCE)</b> columns refresh weekly, not daily (fundamentals don't move day to day) — as of {fundAsOf}.
+          </>
+        )}
+        {ntAsOf && (
+          <>
+            {" "}
+            <b>Technicals (Dense, NSE750)</b> columns also refresh weekly — as of {ntAsOf}.
           </>
         )}
       </p>
@@ -478,6 +521,14 @@ export default function AllTechnicals() {
         0.02-0.06 for working capital, with a clean, roughly linear spread from -11pp (worst ROCE-decliners) to +14pp (best ROCE-improvers)
         median sector-relative return by quintile. <b>ROCE %</b> (the raw level) is shown alongside for context only — it was NOT itself a
         strong factor. Sourced from <b>nse750Fundamentals</b>, which refreshes weekly rather than daily.
+        <br />
+        <br />
+        <b>Technicals (Dense, NSE750)</b> — added 2026-09-26, replicating the Portfolio Allocation page's per-stock technical block across
+        the full universe rather than just current holdings (excludes Buy %/Avg Price/P&L %/Current %, which only make sense for an actual
+        position). Unlike every other optional column on this page, this group is <b>dense</b>: computed for all ~750 stocks every run, not
+        just the ones with a signal event this week. Sourced from a new weekly-batched screener (<b>nse750Technicals</b>) — 1W/1M/3M/6M %
+        are bar-count price changes, % vs 200D/33W EMA use OHLC4 (not close alone), and % from ATH/52W High are measured off weekly highs
+        (not closes), so an intraweek spike that pulled back before the week's close still counts as touching a new high.
       </MethodologyNote>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
