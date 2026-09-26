@@ -203,6 +203,14 @@ export function GenericTable({
   // between every column, and a stronger one before any column marked
   // `groupStart` on its Col.
   gridLines = false,
+  // 2026-09-26 (Sector Directory, deep-linked from FII Trend) — seeds
+  // the sector filter's initial value instead of always starting at
+  // "All". Read once at mount only (a plain useState initializer, not
+  // a controlled prop) — a caller that wants to change it after the
+  // fact remounts this component with a new `key`, the same pattern
+  // already used to reset internal state elsewhere in this app, rather
+  // than this component taking on a fully controlled sector prop.
+  initialSector,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -210,9 +218,10 @@ export function GenericTable({
   watchlist?: WatchlistControl;
   emptyMessage?: string;
   gridLines?: boolean;
+  initialSector?: string;
 }) {
   const [q, setQ] = useState("");
-  const [sector, setSector] = useState("All");
+  const [sector, setSector] = useState(initialSector ?? "All");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
