@@ -231,12 +231,21 @@ const CAP_BUCKET_ORDER = ["Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Unc
 // buckets with fixed thresholds" — these mean the same thing every
 // time regardless of how the portfolio's own distribution happens to
 // be shaped that day, at the cost of not adapting band width to it.
-const ATH_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Below -25%", "Unclassified"];
+//
+// 2026-09-26 ("these are misleading... instead we need to know how
+// many are in ATH 0-10% and how many are in 52W High 0-10%") — an
+// ATH-only breakdown conflates two different things: a stock can be
+// far below its all-time high (set years ago) while still sitting
+// right at its OWN 52-week high (i.e. making a genuine fresh move
+// right now). Same fixed bucket thresholds, run twice — once against
+// pct_from_ath, once against pct_from_52w_high — so both read
+// separately instead of one number standing in for both.
+const PROXIMITY_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Below -25%", "Unclassified"];
 
-function athBucketFor(pctFromAth: number | null | undefined): string {
-  if (pctFromAth == null) return "Unclassified";
-  if (pctFromAth >= -10) return "🔥 0% to -10%";
-  if (pctFromAth >= -25) return "🚶 -10% to -25%";
+function proximityBucketFor(pctFromHigh: number | null | undefined): string {
+  if (pctFromHigh == null) return "Unclassified";
+  if (pctFromHigh >= -10) return "🔥 0% to -10%";
+  if (pctFromHigh >= -25) return "🚶 -10% to -25%";
   return "🐢 Below -25%";
 }
 
@@ -275,20 +284,24 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
     (s) => s.allocationPct > 0
   );
 
-  const athBuckets = ATH_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => athBucketFor(r.pct_from_ath) === label), label)).filter(
+  const athBuckets = PROXIMITY_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => proximityBucketFor(r.pct_from_ath) === label), label)).filter(
+    (s) => s.allocationPct > 0
+  );
+  const high52wBuckets = PROXIMITY_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => proximityBucketFor(r.pct_from_52w_high) === label), label)).filter(
     (s) => s.allocationPct > 0
   );
 
-  // 2026-09-25 ("create a single table with all details") — the 3
-  // dimensions (Segment/Market Cap/ATH Proximity) merged into ONE
-  // table instead of 3 side-by-side cards, with a leading "Dimension"
-  // column (rowSpan'd once per group, the standard HTML way to show
-  // grouping without repeating the label on every row) rather than 3
-  // separate <table>s.
+  // 2026-09-25 ("create a single table with all details") — the
+  // dimensions (Segment/Market Cap/ATH Proximity/52W High Proximity)
+  // merged into ONE table instead of side-by-side cards, with a
+  // leading "Dimension" column (rowSpan'd once per group, the
+  // standard HTML way to show grouping without repeating the label on
+  // every row) rather than separate <table>s.
   const dimensionGroups: { dimension: string; stats: SegmentStat[] }[] = [
     { dimension: "Segment", stats: [stocks, funds, total] },
     ...(capBuckets.length > 0 ? [{ dimension: "Market Cap", stats: capBuckets }] : []),
     ...(athBuckets.length > 0 ? [{ dimension: "ATH Proximity", stats: athBuckets }] : []),
+    ...(high52wBuckets.length > 0 ? [{ dimension: "52W High Proximity", stats: high52wBuckets }] : []),
   ];
 
   return (
@@ -353,12 +366,14 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
           )}
         </tbody>
       </table>
-      {athBuckets.length > 0 && (
+      {(athBuckets.length > 0 || high52wBuckets.length > 0) && (
         <p className="text-[10px] text-slate-400 mt-2 max-w-lg">
-          <b>ATH Proximity</b> buckets are fixed % from ATH thresholds (0% to -10% / -10% to -25% / below -25%) — 2026-09-25, replacing an
-          earlier equal-count tercile split whose boundary moved with wherever this portfolio's own distribution happened to sit,
-          making "31.8% near ATH" actually mean anywhere from -8% to -0.1%. <b>Unclassified</b> is a symbol Yahoo had no weekly-highs
-          history for yet.
+          <b>ATH Proximity</b> and <b>52W High Proximity</b> use the same fixed % thresholds (0% to -10% / -10% to -25% / below -25%) —
+          2026-09-25, replacing an earlier equal-count tercile split whose boundary moved with wherever this portfolio's own distribution
+          happened to sit, making "31.8% near ATH" actually mean anywhere from -8% to -0.1%. Split into two separate dimensions
+          2026-09-26 ("how many are in ATH 0-10% and how many are in 52W High 0-10%") — a stock can be far below its all-time high while
+          still sitting right at its own 52-week high, so one collapsed "near a high" number was hiding that distinction.{" "}
+          <b>Unclassified</b> is a symbol Yahoo had no weekly-highs history for yet.
         </p>
       )}
     </div>
