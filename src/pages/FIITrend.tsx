@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
 import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtSigned } from "../components/ScreenerTable";
@@ -19,6 +19,18 @@ import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtSigned 
 // seeing that whole span, not just a recent slice of it. GenericTable
 // already scrolls horizontally, so this stays fine as more fortnights
 // accumulate.
+
+// NSDL's own sector spelling has commas NSE's "Industry" column
+// doesn't (verified live 2026-09-26, diffing both full 22-sector
+// lists — these are the ONLY two that differ, everything else is an
+// exact match). Sector Directory filters by NSE's exact string, so
+// linking through with NSDL's own spelling would silently resolve to
+// zero stocks for these two. Only affects the link target — the
+// table itself still displays NSDL's own label as-is.
+const NSDL_TO_NSE_SECTOR: Record<string, string> = {
+  "Media, Entertainment & Publication": "Media Entertainment & Publication",
+  "Oil, Gas & Consumable Fuels": "Oil Gas & Consumable Fuels",
+};
 
 function signalFor(latest: number | null, prev: number | null): "buy" | "sell" | null {
   if (latest == null || prev == null) return null;
@@ -99,7 +111,22 @@ export default function FIITrend() {
       render: (r) => <Signed v={r[`p${i}`]} digits={0} />,
     }));
     return [
-      { key: "sector_name", label: "Sector", align: "left", render: (r) => r.sector_name },
+      {
+        key: "sector_name",
+        label: "Sector",
+        align: "left",
+        // 2026-09-26 — links through to the Sector Directory's stock
+        // list for this exact sector, so a 🔥 2FN Buying flag is one
+        // click from "which stocks are actually in it".
+        render: (r) => (
+          <Link
+            to={`/sector-directory?sector=${encodeURIComponent(NSDL_TO_NSE_SECTOR[r.sector_name] ?? r.sector_name)}`}
+            className="hover:underline hover:text-indigo-600"
+          >
+            {r.sector_name}
+          </Link>
+        ),
+      },
       ...periodCols,
       { key: "signal", label: "Signal", render: (r) => <SignalBadge signal={r.signal} /> },
     ];
