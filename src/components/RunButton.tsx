@@ -54,6 +54,11 @@ const CLOUD_SCREENERS = new Set([
   // not refreshed with stocks") when the page's first-ever cron run
   // hadn't happened yet AND the manual fallback didn't work either.
   "top100UsStocks",
+  // 2026-09-26 — NSDL's own public fortnightly report, one small
+  // static-HTML fetch per period (no batching, no credentials, same
+  // "zero stored credentials" principle as every other cloud screener
+  // here) — runs the same way strategicAlpha/top100UsStocks do.
+  "fiiSectorTrend",
   // marketRatios folded into strategicAlpha 2026-09-13 ("merge the
   // strategic and ratios page under strategic") — no longer its own
   // screener key, so no separate entry here.
