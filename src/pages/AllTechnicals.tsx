@@ -204,8 +204,22 @@ const STORAGE_KEY = "allTechnicalsColumns";
 // A lean default — a handful of Core columns plus the single headline
 // number from each of the two full-coverage screeners (RS Score,
 // Alpha Score), not whole groups. "too many columns but lesser page
-// width" was the whole point of this redesign.
-const DEFAULT_ENABLED = ["sector", "change_pct", "weekly_pct", "monthly_pct", "rsi_w", "rs_score", "alpha_score", "roce_1y_chg"];
+// width" was the whole point of this redesign. Technicals (Dense,
+// NSE750) is the one exception — 2026-09-26 ("by default Technicals
+// (Dense, NSE750) be the concept on opening page"), its whole group
+// ships enabled out of the box since it's the page's newest and most
+// complete-coverage addition.
+const DEFAULT_ENABLED = [
+  "sector",
+  "change_pct",
+  "weekly_pct",
+  "monthly_pct",
+  "rsi_w",
+  "rs_score",
+  "alpha_score",
+  "roce_1y_chg",
+  ...ALL_COLUMNS.filter((c) => c.group === "Technicals (Dense, NSE750)").map((c) => c.key),
+];
 
 function loadEnabledColumns(): Set<string> {
   try {
@@ -270,6 +284,19 @@ export default function AllTechnicals() {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+  }
+
+  // 2026-09-26 ("allow check box at concept level as well") — toggles
+  // every column in a group together. All-on -> all-off; anything else
+  // (none or partial) -> all-on, so one click from a partial state
+  // completes the group rather than clearing it.
+  function toggleGroup(groupKeys: string[], allOn: boolean) {
+    setEnabledCols((prev) => {
+      const next = new Set(prev);
+      if (allOn) groupKeys.forEach((k) => next.delete(k));
+      else groupKeys.forEach((k) => next.add(k));
       return next;
     });
   }
@@ -553,9 +580,23 @@ export default function AllTechnicals() {
           {COLUMN_GROUP_ORDER.map((group) => {
             const groupCols = OPTIONAL_COLUMNS.filter((c) => c.group === group);
             if (groupCols.length === 0) return null;
+            const groupKeys = groupCols.map((c) => c.key);
+            const enabledCount = groupKeys.filter((k) => enabledCols.has(k)).length;
+            const allOn = enabledCount === groupKeys.length;
+            const someOn = enabledCount > 0 && !allOn;
             return (
               <div key={group}>
-                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">{group}</div>
+                <label className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={allOn}
+                    ref={(el) => {
+                      if (el) el.indeterminate = someOn;
+                    }}
+                    onChange={() => toggleGroup(groupKeys, allOn)}
+                  />
+                  {group}
+                </label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                   {groupCols.map((c) => (
                     <label key={c.key} className="flex items-center gap-2 text-sm cursor-pointer">
