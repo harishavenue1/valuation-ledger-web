@@ -14,9 +14,11 @@ import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtSigned 
 // fiiSectorTrend module comment for the full sourcing/parsing story
 // (including a real file-naming inconsistency that silently dropped a
 // whole month before being fixed). Only the LAST 2 periods drive the
-// signal (matching the video's own rule); more periods are shown as
-// columns purely for visual trend context.
-const VISIBLE_PERIODS = 6;
+// signal (matching the video's own rule); every backfilled period is
+// still shown as its own column — "build it since Mar2026" meant
+// seeing that whole span, not just a recent slice of it. GenericTable
+// already scrolls horizontally, so this stays fine as more fortnights
+// accumulate.
 
 function signalFor(latest: number | null, prev: number | null): "buy" | "sell" | null {
   if (latest == null || prev == null) return null;
@@ -46,7 +48,7 @@ export default function FIITrend() {
     const allPeriods = Array.from(periodMap.entries())
       .map(([period_end, period_label]) => ({ period_end, period_label }))
       .sort((a, b) => a.period_end.localeCompare(b.period_end));
-    const periods = allPeriods.slice(-VISIBLE_PERIODS);
+    const periods = allPeriods;
 
     const bySector = new Map<string, Record<string, number | null>>();
     for (const r of allRows) {
@@ -87,16 +89,19 @@ export default function FIITrend() {
   }, [allRows]);
 
   const cols: Col[] = useMemo(() => {
+    // No explicit `width` on any column here — GenericTable's own
+    // default (equal split across however many columns exist) handles
+    // a growing period count fine, unlike a fixed per-column % which
+    // breaks past ~8 columns (see Col's own width comment).
     const periodCols: Col[] = periods.map((p, i) => ({
       key: `p${i}`,
       label: p.period_label.replace(/, \d{4}$/, ""), // drop the year — already shown in the header note
-      width: 10,
       render: (r) => <Signed v={r[`p${i}`]} digits={0} />,
     }));
     return [
-      { key: "sector_name", label: "Sector", align: "left", width: 100 - periodCols.length * 10 - 14, render: (r) => r.sector_name },
+      { key: "sector_name", label: "Sector", align: "left", render: (r) => r.sector_name },
       ...periodCols,
-      { key: "signal", label: "Signal", width: 14, render: (r) => <SignalBadge signal={r.signal} /> },
+      { key: "signal", label: "Signal", render: (r) => <SignalBadge signal={r.signal} /> },
     ];
   }, [periods]);
 
@@ -123,12 +128,12 @@ export default function FIITrend() {
         <br />
         <br />
         <b>Signal</b> replicates a rule from a YouTube video (ACEink) that prompted this page: one fortnight of buying in a sector "says
-        nothing", but <b>two consecutive fortnights of buying</b> is a strong signal — shown as 🔥. The mirror case (two consecutive
-        fortnights of selling) is shown as 🔻. Backfilled since March 2026 (the user's own requested start); more fortnights accumulate
-        automatically as NSDL publishes new ones. Only the last {VISIBLE_PERIODS} fortnights are shown as columns — older history still
-        feeds the signal calculation via the underlying data, it's just not displayed. Sr.No 23 "Sovereign" (government debt) and 24
-        "Others" (unclassified/non-equity) aren't real equity sectors, so they're excluded from the sector rows, but both ARE folded into
-        the <b>Total FII Equity</b> headline below, matching NSDL's own published Grand Total.
+        nothing", but <b>two consecutive fortnights of buying</b> is a strong signal — shown as 🔥 (only the latest 2 fortnights drive
+        it). The mirror case (two consecutive fortnights of selling) is shown as 🔻. Backfilled since March 2026 (the user's own requested
+        start) — every fortnight since then is its own column, and more accumulate automatically as NSDL publishes new ones; scroll right
+        for the full span. Sr.No 23 "Sovereign" (government debt) and 24 "Others" (unclassified/non-equity) aren't real equity sectors, so
+        they're excluded from the sector rows, but both ARE folded into the <b>Total FII Equity</b> headline below, matching NSDL's own
+        published Grand Total.
       </MethodologyNote>
 
       {(totalLatest !== null || totalPrev !== null) && (
