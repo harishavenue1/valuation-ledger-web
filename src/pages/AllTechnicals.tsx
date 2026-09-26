@@ -445,7 +445,13 @@ export default function AllTechnicals() {
         roce_pct: fund?.roce_pct ?? null,
         roce_1y_chg: fund?.roce_1y_chg ?? null,
 
-        nt_market_cap: fund?.market_cap_cr ?? null,
+        // nse750Fundamentals' own pushed field is "marketcap" (no
+        // underscore/suffix), NOT "market_cap_cr" — that name only
+        // exists on reverseDcfScanNse750/turtleWealth's OWN rows, a
+        // different screener. Caught live 2026-09-26 building Sector
+        // Directory: this column silently showed "—" for all 750 rows
+        // in production before the mismatch was found.
+        nt_market_cap: fund?.marketcap ?? null,
         nt_1w_pct: nt?.pct_1w ?? null,
         nt_1m_pct: nt?.pct_1m ?? null,
         nt_3m_pct: nt?.pct_3m ?? null,
