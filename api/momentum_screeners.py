@@ -4425,6 +4425,196 @@ def _run_reverse_dcf_scan_nse750(symbols, name_map, sector_map):
     return {"label": "Reverse DCF Scan — NSE 750", "push_rows": merged, "scanned": len(new_rows), "skipped": len(symbols) - len(new_rows)}, None
 
 
+# ── fiiSectorTrend (NSDL Fortnightly Sector-wise FPI Investment) ─────────
+#
+# Added 2026-09-26, from a YouTube video (ACEink — "FIIs sold ₹21,000 Cr
+# but they're quietly buying THIS sector") showing a sector-wise FII
+# net-investment table and a stated rule: one fortnight of buying in a
+# sector "says nothing", but TWO CONSECUTIVE fortnights of buying is a
+# strong signal. The video's own spreadsheet turned out to be from a
+# paid tool (the channel's own "Smart Edge" product, per a pinned
+# comment) — but the underlying data is NSDL's own free, public,
+# no-login "Fortnightly Sector-wise FPI Investment Data" report
+# (fpi.nsdl.co.in), confirmed live to use the exact same 22 BSE-
+# classification sector names this app already tags every NSE750 stock
+# with (PortfolioAllocation/AllTechnicals/SectorLeaderCompare etc.), and
+# to publish at a predictable static URL going back at least a year —
+# so this replicates the real rule off real free data, not the paid
+# tool's exact spreadsheet.
+#
+# Each report (one fortnight-end date) is a single ~300KB static HTML
+# page with ONE data table: Sr.No, Sector, then 8 repeated 12-column
+# blocks (AUC-start/NetInvest-prev/NetInvest-curr/AUC-end, each in
+# INR Cr then USD Mn) = 98 cells/row. The "NetInvest-curr, INR Cr,
+# Equity" cell (index 50) is the fortnight-end date's OWN period's
+# equity net investment for that sector — verified against the live
+# page's rendered numbers before writing this parser. Unlike the
+# NSE750 screeners, there's no batching here: even 2 years of
+# fortnights is ~48 small fetches, comfortably inside one cron
+# invocation, so this refetches the WHOLE backfilled history every run
+# rather than merge-on-write by date — simpler, and cheap enough that
+# the extra bandwidth doesn't matter for years to come.
+FII_NSDL_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"}
+
+# NSDL's own Sr.No 1-22 order/spelling — matches this app's existing
+# BSE-classification sector tags elsewhere (confirmed live). Sr.No 23
+# "Sovereign" (government debt) and 24 "Others" (unclassified/non-
+# equity) are deliberately excluded from the per-sector rows — neither
+# is a real equity sector, so neither fits a "which sector are FIIs
+# rotating into" table. Both ARE folded into the "__TOTAL__" row below,
+# matching NSDL's own published Grand Total.
+FII_SECTOR_NAMES = [
+    "Automobile and Auto Components", "Capital Goods", "Chemicals", "Construction",
+    "Construction Materials", "Consumer Durables", "Consumer Services", "Diversified",
+    "Fast Moving Consumer Goods", "Financial Services", "Forest Materials", "Healthcare",
+    "Information Technology", "Media, Entertainment & Publication", "Metals & Mining",
+    "Oil, Gas & Consumable Fuels", "Power", "Realty", "Services", "Telecommunication",
+    "Textiles", "Utilities",
+]
+
+# 2026-09-26 ("build it since Mar2026") — the user's own requested
+# history start, not a technical limit (NSDL's archive goes back much
+# further; this is just how far this screener actually backfills).
+FII_BACKFILL_START = date(2026, 3, 1)
+
+
+def _fii_next_fortnight_end(d):
+    """The next NSDL fortnight-end date after d — the 15th of a month,
+    or that month's last day."""
+    if d.day == 15:
+        # last day of THIS month = one day before the 1st of next month
+        if d.month == 12:
+            return date(d.year, 12, 31)
+        return date(d.year, d.month + 1, 1) - timedelta(days=1)
+    # d is a month-end -> next is the 15th of the following month
+    if d.month == 12:
+        return date(d.year + 1, 1, 15)
+    return date(d.year, d.month + 1, 15)
+
+
+def _fii_fortnight_end_dates_since(start_date):
+    """Every NSDL fortnight-end date from start_date through today,
+    oldest first — the exact set of report URLs that exist."""
+    d = date(start_date.year, start_date.month, 15)
+    if d < start_date:
+        d = _fii_next_fortnight_end(d)
+    dates = []
+    today = date.today()
+    while d <= today:
+        dates.append(d)
+        d = _fii_next_fortnight_end(d)
+    return dates
+
+
+FII_SELECTION_PAGE = "https://www.fpi.nsdl.co.in/web/Reports/FPI_Fortnightly_Selection.aspx"
+
+
+def _fii_report_url_map():
+    """{date: full report URL}, scraped from NSDL's own report-picker
+    dropdown. The file-naming convention on this site is NOT a clean,
+    guessable pattern — confirmed live 2026-09-26: most months use a
+    3-letter abbreviation (e.g. "Sep152026"), but June/July
+    inconsistently use the FULL month name in some years and the
+    abbreviation in others — "June302026" vs "Jul312026" in the SAME
+    year (2026). A first version of this screener guessed the URL from
+    the date directly and silently skipped both June 2026 fortnights
+    as a result. Reading the dropdown's own <option value="..."> is
+    the only reliable way to get the real URL for a given date."""
+    try:
+        r = requests.get(FII_SELECTION_PAGE, headers=FII_NSDL_HEADERS, timeout=20)
+        if r.status_code != 200:
+            return {}
+    except Exception:
+        return {}
+    try:
+        soup = BeautifulSoup(r.text, "html.parser")
+        select = soup.find("select")
+        if not select:
+            return {}
+        out = {}
+        for opt in select.find_all("option"):
+            text = opt.get_text(strip=True)
+            value = opt.get("value", "")
+            if not value:
+                continue
+            d = None
+            for fmt in ("%b %d, %Y", "%B %d, %Y"):
+                try:
+                    d = datetime.strptime(text, fmt).date()
+                    break
+                except ValueError:
+                    continue
+            if d is None:
+                continue
+            out[d] = value.replace("~/", "https://www.fpi.nsdl.co.in/web/")
+        return out
+    except Exception:
+        return {}
+
+
+def _fii_period_label(d):
+    """'Sep 1-15, 2026' / 'Aug 16-31, 2026' — the fortnight ENDING on d."""
+    if d.day == 15:
+        return f"{d.strftime('%b')} 1-15, {d.year}"
+    return f"{d.strftime('%b')} 16-{d.day}, {d.year}"
+
+
+def _fii_fetch_report(url):
+    """{"sectors": {name: equity_net_investment_cr}, "total": ...}
+    for the report at this exact URL, or None if it fails to fetch or
+    parse."""
+    try:
+        r = requests.get(url, headers=FII_NSDL_HEADERS, timeout=20)
+        if r.status_code != 200:
+            return None
+    except Exception:
+        return None
+    try:
+        soup = BeautifulSoup(r.text, "html.parser")
+        table = soup.find_all("table")[0]
+        rows = table.find_all("tr")
+        sectors = {}
+        total = None
+        for row in rows:
+            cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+            if len(cells) != 98:
+                continue  # header/spacer rows
+            sector = cells[1]
+            equity_curr = _mp_parse_number(cells[50])  # NetInvest-curr, INR Cr, Equity — see module comment
+            if sector == "Grand Total":
+                total = equity_curr
+            elif sector in FII_SECTOR_NAMES:
+                sectors[sector] = equity_curr
+        if not sectors:
+            return None
+        return {"sectors": sectors, "total": total}
+    except Exception:
+        return None
+
+
+def _run_fii_sector_trend(symbols, name_map, sector_map):
+    url_map = _fii_report_url_map()
+    dates = _fii_fortnight_end_dates_since(FII_BACKFILL_START)
+    push_rows = []
+    scanned = 0
+    for d in dates:
+        url = url_map.get(d)
+        if not url:
+            continue  # not yet published, or this exact date isn't in NSDL's own dropdown
+        parsed = _fii_fetch_report(url)
+        time.sleep(0.5)
+        if parsed is None:
+            continue
+        scanned += 1
+        period_end = d.isoformat()
+        period_label = _fii_period_label(d)
+        for sector, equity_cr in parsed["sectors"].items():
+            push_rows.append({"period_end": period_end, "period_label": period_label, "sector": sector, "equity_net_cr": equity_cr})
+        push_rows.append({"period_end": period_end, "period_label": period_label, "sector": "__TOTAL__", "equity_net_cr": parsed["total"]})
+
+    return {"label": "FII Sector Trend (NSDL Fortnightly)", "push_rows": push_rows, "scanned": scanned, "skipped": len(dates) - scanned}, None
+
+
 # ── turtleWealth ──────────────────────────────────────────────────────────
 #
 # Added 2026-09-13 ("lets build one more page turtleWealth on main page
@@ -5092,6 +5282,7 @@ SCREENER_RUNNERS = {
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
+    "fiiSectorTrend": _run_fii_sector_trend,
     "turtleWealth": _run_turtle_wealth_nse750,
     "benchmarkNse500": _run_benchmark_nse500_cache,
     "nse750Fundamentals": _run_nse750_fundamentals_cache,

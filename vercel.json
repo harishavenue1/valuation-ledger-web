@@ -46,6 +46,7 @@
     { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=600&limit=60", "schedule": "4 11 * * 0" },
     { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=660&limit=60", "schedule": "10 11 * * 0" },
     { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=720&limit=60", "schedule": "16 11 * * 0" },
+    { "path": "/api/momentum_screeners?screener=fiiSectorTrend", "schedule": "0 6 3,18 * *" },
     { "path": "/api/momentum_screeners?screener=reverseDcfScanNse750", "schedule": "0 11 * * *" },
     { "path": "/api/momentum_screeners?screener=turtleWealth", "schedule": "0 12 * * *" },
     { "path": "/api/momentum_screeners?screener=technicalBatchWeekly", "schedule": "40 23 * * 6" },
