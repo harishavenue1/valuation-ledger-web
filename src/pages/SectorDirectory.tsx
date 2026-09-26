@@ -67,7 +67,14 @@ export default function SectorDirectory() {
         name: b.name,
         sector: b.sector,
         price: b.price,
-        market_cap_cr: fund?.market_cap_cr ?? null,
+        // nse750Fundamentals' own pushed field is "marketcap" (no
+        // underscore/suffix — _rdcf_fetch_fundamentals' own dict key,
+        // spread as-is into push_rows), NOT "market_cap_cr" — that name
+        // only exists on reverseDcfScanNse750/turtleWealth's OWN rows,
+        // a different screener. Caught live 2026-09-26: this column
+        // silently showed "—" for all 750 rows in production before
+        // the mismatch was found.
+        market_cap_cr: fund?.marketcap ?? null,
         day_change_pct: b.change_pct ?? null,
         pct_1w: nt?.pct_1w ?? null,
         pct_1m: nt?.pct_1m ?? null,
