@@ -223,21 +223,21 @@ function statsForSegment(segRows: any[], label: string): SegmentStat {
 const CAP_BUCKET_ORDER = ["Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Unclassified"];
 
 // 2026-09-25 ("add details of stocks its weight is top quardrant of
-// ATH, mid, slow") — same rank-based (not a fixed % cutoff) approach
-// Large/Mid cap already uses: sort this PORTFOLIO's own holdings by
-// pct_from_ath and split into 3 equal-COUNT groups, so the boundary
-// moves with wherever the portfolio's own distribution actually sits
-// instead of a hardcoded "-10%" that would mean something different in
-// a quiet market vs a hot one. Needs no external cache (unlike cap
-// buckets, which need the NSE750-wide cutoffs) — everything it needs is
-// already on these rows.
-const ATH_BUCKET_ORDER = ["🔥 Near ATH", "🚶 Mid", "🐢 Lagging", "Unclassified"];
+// ATH, mid, slow") tried a rank-based (not fixed %) tercile split
+// first, same idea Large/Mid cap uses — but a rank-based cutoff means
+// something different every time it's read: live-checked the same day
+// and "Near ATH" (31.8% weight) actually spanned -8.0% to -0.1% from
+// ATH, not anywhere close to a real high. "replace the ATH Proximity
+// buckets with fixed thresholds" — these mean the same thing every
+// time regardless of how the portfolio's own distribution happens to
+// be shaped that day, at the cost of not adapting band width to it.
+const ATH_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Below -25%", "Unclassified"];
 
-function athBucketFor(pctFromAth: number | null | undefined, cutoffs: { top: number; bottom: number } | null): string {
-  if (pctFromAth == null || !cutoffs) return "Unclassified";
-  if (pctFromAth >= cutoffs.top) return "🔥 Near ATH";
-  if (pctFromAth >= cutoffs.bottom) return "🚶 Mid";
-  return "🐢 Lagging";
+function athBucketFor(pctFromAth: number | null | undefined): string {
+  if (pctFromAth == null) return "Unclassified";
+  if (pctFromAth >= -10) return "🔥 0% to -10%";
+  if (pctFromAth >= -25) return "🚶 -10% to -25%";
+  return "🐢 Below -25%";
 }
 
 function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (marketCapCr: number | null | undefined) => string | null }) {
@@ -275,15 +275,7 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
     (s) => s.allocationPct > 0
   );
 
-  const athCutoffs = (() => {
-    const vals = rows
-      .map((r) => r.pct_from_ath)
-      .filter((v: any): v is number => typeof v === "number")
-      .sort((a: number, b: number) => b - a);
-    if (vals.length < 3) return null;
-    return { top: vals[Math.floor(vals.length / 3)], bottom: vals[Math.floor((vals.length * 2) / 3)] };
-  })();
-  const athBuckets = ATH_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => athBucketFor(r.pct_from_ath, athCutoffs) === label), label)).filter(
+  const athBuckets = ATH_BUCKET_ORDER.map((label) => statsForSegment(rows.filter((r) => athBucketFor(r.pct_from_ath) === label), label)).filter(
     (s) => s.allocationPct > 0
   );
 
@@ -363,9 +355,10 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
       </table>
       {athBuckets.length > 0 && (
         <p className="text-[10px] text-slate-400 mt-2 max-w-lg">
-          <b>ATH Proximity</b> is ranked by % from ATH, split into 3 equal-count thirds of this portfolio's own holdings — not a fixed
-          cutoff, so the boundary moves with wherever the portfolio's own distribution sits. <b>Unclassified</b> is a symbol Yahoo had no
-          weekly-highs history for yet.
+          <b>ATH Proximity</b> buckets are fixed % from ATH thresholds (0% to -10% / -10% to -25% / below -25%) — 2026-09-25, replacing an
+          earlier equal-count tercile split whose boundary moved with wherever this portfolio's own distribution happened to sit,
+          making "31.8% near ATH" actually mean anywhere from -8% to -0.1%. <b>Unclassified</b> is a symbol Yahoo had no weekly-highs
+          history for yet.
         </p>
       )}
     </div>
@@ -575,6 +568,21 @@ export default function PortfolioAllocation() {
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
+        // 2026-09-26 ("add 3M%, 6M% price change after Day % 1W % 1M %")
+        // — same bar-count-based Yahoo weekly series (13 bars back) the
+        // skill already fetches for 1W/1M — no extra request.
+        key: "pct_3m",
+        label: "3M %",
+        width: 5.33,
+        render: (r) => <Signed v={r.pct_3m} digits={1} />,
+      },
+      {
+        key: "pct_6m",
+        label: "6M %",
+        width: 5.33,
+        render: (r) => <Signed v={r.pct_6m} digits={1} />,
+      },
+      {
         // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
         // 33WEMA") — % distance, same OHLC4 EMA convention
         // api/momentum_screeners.py's MA Breakout screener uses. "—" means
@@ -624,53 +632,6 @@ export default function PortfolioAllocation() {
         label: "% from 52W High",
         width: 5.33,
         render: (r) => (r.pct_from_52w_high === null || r.pct_from_52w_high === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_52w_high} digits={1} />),
-      },
-      {
-        // 2026-09-11 ("instead of leader and outperf, can we add
-        // company's latest qtr sales growth and eps growth") — replaces
-        // the old Sector Leader column. Gold/Silver still show their
-        // MCX-proxy 1Y context here (no stock "leads" a commodity, and
-        // they have no quarterly results either) rather than leaving
-        // this cell blank for them. Moved to the end of the table
-        // 2026-09-23 ("move this... to end of the table").
-        key: "qtr_sales_growth_pct",
-        label: "QSalG%",
-        width: 5.33,
-        groupStart: true,
-        render: (r) => {
-          if (r.commodity_benchmark_1y !== null && r.commodity_benchmark_1y !== undefined) {
-            return (
-              <span
-                className="text-xs text-slate-500"
-                title="1-year COMEX gold/silver futures return (USD), converted to its INR-equivalent using USDINR's own 1Y move — MCX itself has no fetchable price history, this is the closest honest proxy"
-              >
-                MCX-proxy 1Y <Signed v={r.commodity_benchmark_1y} digits={1} />
-              </span>
-            );
-          }
-          if (r.qtr_sales_growth_pct === null || r.qtr_sales_growth_pct === undefined) return <span className="text-slate-300">—</span>;
-          return <Signed v={r.qtr_sales_growth_pct} digits={1} />;
-        },
-      },
-      {
-        // Same source/request as Qtr Sales Growth % above (one
-        // Screener.in fetch per holding, see the PortfolioAllocation
-        // skill). "T" means the year-ago quarter was a loss — no % is
-        // honest against a negative base, same convention
-        // momentumPersonal already uses for this.
-        key: "qtr_eps_growth_pct",
-        label: "QEpsG%",
-        width: 5.33,
-        render: (r) => {
-          if (r.qtr_eps_growth_pct === null || r.qtr_eps_growth_pct === undefined) return <span className="text-slate-300">—</span>;
-          if (r.qtr_eps_growth_pct === "T")
-            return (
-              <span className="text-xs font-medium text-emerald-700" title="Year-ago quarter was a loss — turned profitable">
-                Turned profitable
-              </span>
-            );
-          return <Signed v={r.qtr_eps_growth_pct} digits={1} />;
-        },
       },
     ],
     []
