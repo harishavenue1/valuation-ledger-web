@@ -2,8 +2,35 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api, ApiError, ChartResponse } from "../lib/api";
-import CandlestickChart from "../components/CandlestickChart";
+import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LineVisibility } from "../components/CandlestickChart";
 import { Signed, fmtNum } from "../components/ScreenerTable";
+
+// 2026-09-27 ("give controls to modify the lines, as I did on trading
+// view") — persisted the same way AllTechnicals' own column picker is
+// (localStorage, loaded once at mount) so a toggle sticks across
+// visits instead of resetting to the Pine script's own defaults every
+// time.
+const LINES_STORAGE_KEY = "portfolioChartsLines";
+const LINE_TOGGLES: { key: keyof LineVisibility; label: string }[] = [
+  { key: "ema1", label: "EMA1 (12W)" },
+  { key: "ema2", label: "EMA2 (21W)" },
+  { key: "slowEma", label: "Slow EMA (33W)" },
+  { key: "qbUpper", label: "QB Upper Band" },
+  { key: "qbTrail", label: "QB Trail (34W)" },
+  { key: "smLines", label: "SmartMoney Lines (EMA10/EMA20/Trend)" },
+  { key: "smChannel", label: "SmartMoney Channel" },
+  { key: "volume", label: "Volume" },
+];
+
+function loadLineVisibility(): LineVisibility {
+  try {
+    const raw = localStorage.getItem(LINES_STORAGE_KEY);
+    if (raw) return { ...DEFAULT_LINE_VISIBILITY, ...JSON.parse(raw) };
+  } catch {
+    // localStorage unavailable/corrupt — fall through to default
+  }
+  return DEFAULT_LINE_VISIBILITY;
+}
 
 // 2026-09-27 ("lets have dedicated page for charts with all my
 // holdings on the list, with just a up and down the stocks chart
@@ -80,6 +107,20 @@ export default function PortfolioCharts() {
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lineVisibility, setLineVisibility] = useState<LineVisibility>(() => loadLineVisibility());
+  const [linesOpen, setLinesOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LINES_STORAGE_KEY, JSON.stringify(lineVisibility));
+    } catch {
+      // best-effort persistence only
+    }
+  }, [lineVisibility]);
+
+  function toggleLine(key: keyof LineVisibility) {
+    setLineVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
 
   useEffect(() => {
     if (!symbol) return;
@@ -146,18 +187,38 @@ export default function PortfolioCharts() {
               <span className="text-[10px] text-slate-400">this week</span>
             </>
           )}
-          <div className="ml-auto flex gap-1">
-            {RANGES.map((r) => (
+          <div className="ml-auto flex items-center gap-2">
+            <div className="relative">
               <button
-                key={r.key}
-                onClick={() => setRange(r.key)}
-                className={`text-xs px-2.5 py-1 rounded border ${
-                  range === r.key ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"
-                }`}
+                onClick={() => setLinesOpen((v) => !v)}
+                className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 hover:border-slate-400"
               >
-                {r.label}
+                ⚙️ Lines {linesOpen ? "▲" : "▼"}
               </button>
-            ))}
+              {linesOpen && (
+                <div className="absolute right-0 top-full mt-1 z-20 w-64 p-2 border border-slate-200 rounded-lg bg-white shadow-lg">
+                  {LINE_TOGGLES.map((t) => (
+                    <label key={t.key} className="flex items-center gap-2 text-xs py-1 px-1 cursor-pointer hover:bg-slate-50 rounded">
+                      <input type="checkbox" checked={lineVisibility[t.key]} onChange={() => toggleLine(t.key)} />
+                      {t.label}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="flex gap-1">
+              {RANGES.map((r) => (
+                <button
+                  key={r.key}
+                  onClick={() => setRange(r.key)}
+                  className={`text-xs px-2.5 py-1 rounded border ${
+                    range === r.key ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -196,13 +257,13 @@ export default function PortfolioCharts() {
         {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg">No chart data for {symbol}.</div>}
         {!loading && !error && bars.length > 0 && (
           <div className="border border-slate-200 rounded-lg p-3">
-            <CandlestickChart bars={bars} height={560} />
+            <CandlestickChart bars={bars} height={560} lines={lineVisibility} />
           </div>
         )}
 
         <p className="text-[10px] text-slate-400 mt-2 leading-relaxed max-w-3xl">
           Weekly bars, ported line-for-line from this account's own "EMAs+Buy+Sell+SmartMoney" Pine Script — 3 systems, not generic
-          indicators. <b>EMA1/EMA2/Slow EMA</b> (12W/21W/33W on OHLC4) are myLongTermInvestingStrategy's own ribbon — 🔽 aqua "LTIS" marker
+          indicators. <b>EMA1/EMA2/Slow EMA</b> (12W/21W/33W on OHLC4) are myLongTermInvestingStrategy's own ribbon — 🔽 aqua "RSI&gt;66" marker
           when close is above all three AND weekly RSI &gt; 66 (fresh cross only), ✕ orange when close crosses below the slow EMA.{" "}
           <b>QB Upper/QB Trail</b> are quantBollinger's 55W-SMA+3.7σ band and 34W EMA trail — 🔼 lime "QB" marker on a weekly close breaking
           above the band, 🔽 red "QB" on a weekly close breaking below the trail. <b>SM Entry/SM Sell/SM Close</b> are SmartMoney (Vivek
