@@ -5,13 +5,17 @@ import CandlestickChart from "../components/CandlestickChart";
 import { Signed, fmtNum } from "../components/ScreenerTable";
 
 // 2026-09-27 ("start with the chart" / "lets build only for the
-// stocks we have bought in PF") — an in-app candlestick chart with
-// MA50/EMA21 overlays and an RSI14 sub-pane, replacing the out-to-
+// stocks we have bought in PF" / "the chart indicator has to be our
+// own built") — an in-app WEEKLY candlestick chart overlaying this
+// account's own 3 signal systems (quantBollinger, myLongTerm
+// InvestingStrategy, SmartMoney — see CandlestickChart.tsx and
+// api/momentum_screeners.py's chartData module comments for the full
+// port from the user's own Pine Script), replacing the out-to-
 // TradingView links every screener table currently uses. The backend
-// endpoint (api/momentum_screeners.py's chartData) works for any NSE
-// symbol — the "only bought stocks" scope is enforced by NOT linking
-// here from anywhere except Portfolio Allocation's own rows, not by
-// this page itself refusing other tickers.
+// endpoint works for any NSE symbol — the "only bought stocks" scope
+// is enforced by NOT linking here from anywhere except Portfolio
+// Allocation's own rows, not by this page itself refusing other
+// tickers.
 const RANGES: { key: "6mo" | "1y" | "2y" | "5y"; label: string }[] = [
   { key: "6mo", label: "6M" },
   { key: "1y", label: "1Y" },
@@ -49,7 +53,7 @@ export default function StockChart() {
   const bars = data?.bars ?? [];
   const last = bars[bars.length - 1];
   const prev = bars[bars.length - 2];
-  const dayChangePct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : null;
+  const weekChangePct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : null;
 
   return (
     <div className="max-w-5xl">
@@ -58,7 +62,8 @@ export default function StockChart() {
         {last && (
           <>
             <span className="text-lg font-semibold tabular-nums">₹{fmtNum(last.close, 2)}</span>
-            <Signed v={dayChangePct} digits={2} />
+            <Signed v={weekChangePct} digits={2} />
+            <span className="text-[10px] text-slate-400">this week</span>
           </>
         )}
         <div className="ml-auto flex gap-1">
@@ -77,20 +82,32 @@ export default function StockChart() {
       </div>
 
       {last && (
-        <div className="flex items-center gap-4 text-xs text-slate-500 mb-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
           <span>
-            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 mr-1" />
-            MA50 {fmtNum(last.ma50, 2)}
+            <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#d4aa00" }} />
+            EMA1 (12W) {fmtNum(last.ema1, 2)}
           </span>
           <span>
-            <span className="inline-block w-2 h-2 rounded-full bg-blue-600 mr-1" />
-            EMA21 {fmtNum(last.ema21, 2)}
+            <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#94a3b8" }} />
+            EMA2 (21W) {fmtNum(last.ema2, 2)}
+          </span>
+          <span>
+            <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#47b027" }} />
+            Slow EMA (33W) {fmtNum(last.slow_ema, 2)}
+          </span>
+          <span>
+            <span className="inline-block w-2 h-2 rounded-full bg-sky-500 mr-1" />
+            QB Upper {fmtNum(last.qb_upper, 2)}
+          </span>
+          <span>
+            <span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />
+            QB Trail (34W) {fmtNum(last.qb_trail, 2)}
           </span>
           <span>
             <span className="inline-block w-2 h-2 rounded-full bg-violet-600 mr-1" />
             RSI14 {fmtNum(last.rsi14, 1)}
           </span>
-          <span className="ml-auto text-slate-400">as of {last.date}</span>
+          <span className="ml-auto text-slate-400">week ending {last.date}</span>
         </div>
       )}
 
@@ -103,9 +120,14 @@ export default function StockChart() {
         </div>
       )}
 
-      <p className="text-[10px] text-slate-400 mt-2">
-        MA50 = 50-day simple moving average on Close. EMA21 = 21-day exponential moving average on OHLC4 (this account's own standing
-        convention). RSI14 = Wilder RSI on Close. Daily bars from Yahoo Finance, fetched fresh on each visit — not cached.
+      <p className="text-[10px] text-slate-400 mt-2 leading-relaxed max-w-3xl">
+        Weekly bars, ported line-for-line from this account's own "EMAs+Buy+Sell+SmartMoney" Pine Script — 3 systems, not generic
+        indicators. <b>EMA1/EMA2/Slow EMA</b> (12W/21W/33W on OHLC4) are myLongTermInvestingStrategy's own ribbon — 🔽 aqua "LTIS" marker
+        when close is above all three AND weekly RSI &gt; 66 (fresh cross only), ✕ orange when close crosses below the slow EMA.{" "}
+        <b>QB Upper/QB Trail</b> are quantBollinger's 55W-SMA+3.7σ band and 34W EMA trail — 🔼 lime "QB" marker on a weekly close breaking
+        above the band, 🔽 red "QB" on a weekly close breaking below the trail. <b>SM Entry/SM Sell/SM Close</b> are SmartMoney (Vivek
+        Equity Tool) — an EMA(10)/EMA(20) vs SMA(40) trend inside a Wilder-ATR(40)×0.618 neutral channel, driving a state machine carried
+        bar-to-bar. Fetched fresh from Yahoo Finance on each visit — not cached.
       </p>
     </div>
   );

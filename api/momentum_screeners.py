@@ -4615,40 +4615,77 @@ def _run_fii_sector_trend(symbols, name_map, sector_map):
     return {"label": "FII Sector Trend (NSDL Fortnightly)", "push_rows": push_rows, "scanned": scanned, "skipped": len(dates) - scanned}, None
 
 
-# ── chartData (on-demand single-symbol OHLCV + MA/EMA/RSI) ────────────────
+# ── chartData (on-demand single-symbol OHLCV + this account's own
+#    3 signal systems) ──────────────────────────────────────────────────
 #
 # 2026-09-27 — "start with the chart" (an in-app candlestick chart,
-# replacing the current out-to-TradingView links), then "lets build
-# only for the stocks we have bought in PF". This endpoint itself is
-# symbol-agnostic (any NSE ticker works, same as every other yfinance
-# fetch in this file) — the "only bought stocks" scope is a FRONTEND
-# choice (the 📈 chart link only appears on Portfolio Allocation's own
-# rows, see PortfolioAllocation.tsx), not a backend restriction, so
-# this is reusable elsewhere later without more backend work.
+# replacing the current out-to-TradingView links), "lets build only
+# for the stocks we have bought in PF", then "the chart indicator has
+# to be our own built" — a Pine Script (EMAs+Buy+Sell+SmartMoney) the
+# user pasted, combining THREE systems already implemented elsewhere
+# in this exact file, ported here line-for-line rather than showing
+# generic MA50/EMA21/RSI:
+#   1. quantBollinger (see _run_quant_bollinger below) — 55W SMA basis,
+#      upper band = basis + 3.7 weekly std-dev, BUY on weekly close
+#      crossing above the band; a 34W EMA trail, SELL on weekly close
+#      crossing below it.
+#   2. myLongTermInvestingStrategy (see _run_myltis below) — 12W/21W/
+#      33W EMA ribbon on OHLC4, BUY when close is above all three AND
+#      weekly RSI(14) > 66 (fresh cross only), SELL when close crosses
+#      under the slow (33W) EMA.
+#   3. SmartMoney (Vivek Equity Tool, ported verbatim from the pasted
+#      Pine, (c) Vivek_AlfaTraders) — EMA(10)/EMA(20) momentum vs an
+#      SMA(40) trend, inside a Wilder-ATR(40)*0.618 neutral/ranging
+#      channel, driving a path-dependent Entry/Exit(Sell)/Exit(Close)
+#      state machine carried bar-to-bar (smCondition) — ported as a
+#      genuine sequential loop, matching Pine's own bar-by-bar `[1]`
+#      history-reference model, since the carried state can't be
+#      vectorized the way the other two systems' EMAs/crossovers can.
+#
+# The Pine script gates almost every signal to the WEEKLY chart
+# (`isW`/`smShowOnThisTF`) — all three systems are weekly in this
+# account's own screeners too (see quantBollinger/myLongTermInvesting
+# Strategy's own module comments) — so this fetches WEEKLY bars, not
+# daily, unlike the very first version of this endpoint.
+#
+# Indicators are always computed on a full 5y weekly history regardless
+# of the requested display range (Bollinger alone needs 55 warmup
+# bars) — the range param only trims how much of the COMPUTED series
+# is returned, the same "TradingView loads full history, view window
+# just crops it" behavior the Pine script itself relies on.
 #
 # NOT a cron/SCREENER_RUNNERS entry — unlike every other screener in
 # this file, this fetches fresh data and returns it directly on each
-# request, no Postgres push. A single stock's daily bars are cheap and
-# always-fresh-enough to fetch live (matches fetch_company.py's own
-# on-demand-per-ticker precedent), and storing years of raw OHLCV for
-# 750+ stocks would be a real storage/complexity jump this app has
+# request, no Postgres push. A single stock's weekly bars are cheap
+# and always-fresh-enough to fetch live (matches fetch_company.py's
+# own on-demand-per-ticker precedent), and storing years of raw OHLCV
+# for 750+ stocks would be a real storage/complexity jump this app has
 # deliberately avoided everywhere else (always derived metrics, never
-# raw time series, in Postgres).
-CHART_RANGE_DAYS_OK = {"6mo", "1y", "2y", "5y"}
-CHART_MA_PERIOD = 50
-CHART_EMA_PERIOD = 21
+# raw time series, in Postgres). Symbol-agnostic — the "only bought
+# stocks" scope is a FRONTEND choice (the 📈 chart link only appears
+# on Portfolio Allocation's own rows), not a backend restriction.
+CHART_RANGE_WEEKS = {"6mo": 26, "1y": 52, "2y": 104, "5y": 260}
+CHART_RIBBON_PERIODS = (12, 21, 33)  # weekly EMA ribbon — myLongTermInvestingStrategy's own lengths
 CHART_RSI_PERIOD = 14
+CHART_RSI_THRESHOLD = 66
+CHART_QB_BASIS_LEN = 55
+CHART_QB_BAND_SD = 3.7
+CHART_QB_TRAIL_LEN = 34
+CHART_SM_FAST1 = 10
+CHART_SM_FAST2 = 20
+CHART_SM_TREND_LEN = 40
+CHART_SM_RANGE_MULT = 0.618
 
 
-def _chart_fetch_bars(yahoo_ticker, range_param):
-    """[(timestamp, open, high, low, close, volume), ...] daily bars,
-    oldest first, or None. Same query1.finance.yahoo.com/v8 endpoint
-    every other per-symbol fetch in this file uses, kept here with its
-    own OWN timestamp field (the ported nse750Technicals fetchers
-    above discard it — they only ever needed values, not dates)."""
+def _chart_fetch_weekly_bars(yahoo_ticker):
+    """[(timestamp, open, high, low, close, volume), ...] ~5y of weekly
+    bars, oldest first, or None. Same query1.finance.yahoo.com/v8
+    endpoint every other per-symbol fetch in this file uses, kept here
+    with its OWN timestamp field (the nse750Technicals fetchers above
+    discard it — they only ever needed values, not dates)."""
     try:
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
-                          params={"range": range_param, "interval": "1d"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                          params={"range": "5y", "interval": "1wk"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         result = r.json()["chart"]["result"]
         if not result:
             return None
@@ -4661,44 +4698,131 @@ def _chart_fetch_bars(yahoo_ticker, range_param):
         return None
 
 
+def _chart_ema(values, period):
+    """Standard EMA, alpha=2/(period+1) — this account's own EMA
+    convention (see feedback_ema_ohlc4_source.md), NOT Wilder/RMA
+    smoothing. Returns a list the same length as `values`; None for
+    the first `period-1` bars (not enough warmup yet)."""
+    alpha = 2 / (period + 1)
+    out, e = [], values[0]
+    for i, x in enumerate(values):
+        e = x if i == 0 else alpha * x + (1 - alpha) * e
+        out.append(e if i >= period - 1 else None)
+    return out
+
+
+def _chart_sma(values, period):
+    return [sum(values[i - period + 1:i + 1]) / period if i >= period - 1 else None for i in range(len(values))]
+
+
+def _chart_wilder_rma(values, period):
+    """Wilder's RMA smoothing — ewm(alpha=1/period, adjust=False) —
+    Pine's ta.rma, used by ta.atr. None for the first `period-1` bars."""
+    s = pd.Series(values).ewm(alpha=1 / period, min_periods=period, adjust=False).mean()
+    return [round(float(v), 4) if pd.notna(v) else None for v in s]
+
+
 def _run_chart_data(symbol, range_param):
-    rows = _chart_fetch_bars(f"{symbol}.NS", range_param)
+    rows = _chart_fetch_weekly_bars(f"{symbol}.NS")
     if rows is None:
         return None
+    n = len(rows)
+    opens = [r[1] for r in rows]
+    highs = [r[2] for r in rows]
+    lows = [r[3] for r in rows]
     closes = [r[4] for r in rows]
     ohlc4 = [(r[1] + r[2] + r[3] + r[4]) / 4 for r in rows]
 
-    # MA50 — simple moving average on Close (standard convention,
-    # unlike this account's EMA-on-OHLC4 rule below).
-    ma50 = [round(sum(closes[i - CHART_MA_PERIOD + 1:i + 1]) / CHART_MA_PERIOD, 2) if i >= CHART_MA_PERIOD - 1 else None for i in range(len(closes))]
-
-    # EMA21 — on OHLC4, this account's own standing rule (see
-    # feedback_ema_ohlc4_source.md), same alpha=2/(period+1) convention
-    # nse750Technicals' own EMA distances already use.
-    alpha = 2 / (CHART_EMA_PERIOD + 1)
-    ema21 = []
-    e = ohlc4[0]
-    for i, x in enumerate(ohlc4):
-        e = x if i == 0 else alpha * x + (1 - alpha) * e
-        ema21.append(round(e, 2) if i >= CHART_EMA_PERIOD - 1 else None)
-
-    # RSI14 — on Close (SMA/RSI/trigger comparisons stay on Close per
-    # the same standing rule), reusing valueRsiTurnaround's own Wilder-
-    # style rolling series rather than a second implementation.
+    # ── system 2: myLongTermInvestingStrategy's own 12W/21W/33W ribbon
+    ema1 = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[0])
+    ema2 = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[1])
+    slow_ema = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[2])  # ema3 in the Pine script
     rsi_series = _val_rsi_series(pd.Series(closes), CHART_RSI_PERIOD)
+    rsi = [round(float(v), 2) if pd.notna(v) else None for v in rsi_series]
+
+    # Guard on slow_ema (33W, the longest warmup of the three ribbon
+    # lengths) — once it's non-None, ema1/ema2 (shorter periods,
+    # computed from the same starting index) are guaranteed non-None too.
+    ribbon_aligned = [
+        slow_ema[i] is not None and closes[i] > ema1[i] and closes[i] > ema2[i] and closes[i] > slow_ema[i]
+        for i in range(n)
+    ]
+    mltis_buy_raw = [bool(ribbon_aligned[i]) and rsi[i] is not None and rsi[i] > CHART_RSI_THRESHOLD for i in range(n)]
+    mltis_buy = [mltis_buy_raw[i] and not (i > 0 and mltis_buy_raw[i - 1]) and i > 0 for i in range(n)]
+    mltis_sell = [i > 0 and slow_ema[i - 1] is not None and slow_ema[i] is not None and closes[i - 1] >= slow_ema[i - 1] and closes[i] < slow_ema[i] for i in range(n)]
+
+    # ── system 1: quantBollinger — 55W SMA basis, upper = basis +
+    # 3.7*stdev (population stdev, ddof=0 — matches Pine's ta.stdev,
+    # NOT pandas' default sample stdev), 34W EMA trail.
+    qb_basis = _chart_sma(closes, CHART_QB_BASIS_LEN)
+    qb_std = pd.Series(closes).rolling(CHART_QB_BASIS_LEN).std(ddof=0)
+    qb_upper = [round(qb_basis[i] + CHART_QB_BAND_SD * float(qb_std.iloc[i]), 2) if qb_basis[i] is not None and pd.notna(qb_std.iloc[i]) else None for i in range(n)]
+    qb_trail = _chart_ema(ohlc4, CHART_QB_TRAIL_LEN)
+    qb_buy = [i > 0 and qb_upper[i - 1] is not None and qb_upper[i] is not None and closes[i - 1] <= qb_upper[i - 1] and closes[i] > qb_upper[i] for i in range(n)]
+    qb_sell = [i > 0 and qb_trail[i - 1] is not None and qb_trail[i] is not None and closes[i - 1] >= qb_trail[i - 1] and closes[i] < qb_trail[i] for i in range(n)]
+
+    # ── system 3: SmartMoney (Vivek Equity Tool) — ported verbatim,
+    # including the bar-to-bar carried state machine (smCondition).
+    sm_fast1 = _chart_ema(closes, CHART_SM_FAST1)
+    sm_fast2 = _chart_ema(closes, CHART_SM_FAST2)
+    sm_trend = _chart_sma(closes, CHART_SM_TREND_LEN)
+    tr = [highs[i] - lows[i] if i == 0 else max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])) for i in range(n)]
+    sm_atr_raw = _chart_wilder_rma(tr, CHART_SM_TREND_LEN)
+    sm_atr = [round(v * CHART_SM_RANGE_MULT, 4) if v is not None else None for v in sm_atr_raw]
+
+    sm_buy, sm_sell, sm_close = [False] * n, [False] * n, [False] * n
+    prev_condition = 0
+    for i in range(n):
+        if sm_trend[i] is None or sm_atr[i] is None or sm_fast1[i] is None or sm_fast2[i] is None:
+            sm_buy[i] = sm_sell[i] = sm_close[i] = False
+            continue
+        ch_top = sm_trend[i] + sm_atr[i]
+        ch_bot = sm_trend[i] - sm_atr[i]
+        in_range = (opens[i] <= ch_top or closes[i] <= ch_top) and (opens[i] >= ch_bot or closes[i] >= ch_bot)
+        direction = 0 if in_range else (1 if closes[i] >= sm_trend[i] else -1)
+        buy_cond = direction == 1 and sm_fast1[i] > sm_fast2[i]
+        sell_cond = direction == -1 and sm_fast1[i] < sm_fast2[i]
+        buy_close_cond = direction == 1 and sm_fast1[i] < sm_fast2[i]
+        sell_close_cond = direction == -1 and sm_fast1[i] > sm_fast2[i]
+        close_cond = buy_close_cond or sell_close_cond
+
+        if prev_condition != 1 and buy_cond:
+            condition = 1
+        elif prev_condition != -1 and sell_cond:
+            condition = -1
+        elif prev_condition != 0 and close_cond:
+            condition = 0
+        else:
+            condition = prev_condition
+
+        sm_buy[i] = condition == 1 and prev_condition != 1
+        sm_sell[i] = condition == -1 and prev_condition != -1
+        sm_close[i] = prev_condition != 0 and close_cond
+        prev_condition = condition
 
     bars = []
     for i, r in enumerate(rows):
-        rsi_val = rsi_series.iloc[i]
         bars.append({
             "date": datetime.utcfromtimestamp(r[0]).strftime("%Y-%m-%d"),
             "open": round(r[1], 2), "high": round(r[2], 2), "low": round(r[3], 2), "close": round(r[4], 2),
             "volume": int(r[5]) if r[5] is not None else None,
-            "ma50": ma50[i],
-            "ema21": ema21[i],
-            "rsi14": round(float(rsi_val), 2) if pd.notna(rsi_val) else None,
+            "ema1": round(ema1[i], 2) if ema1[i] is not None else None,
+            "ema2": round(ema2[i], 2) if ema2[i] is not None else None,
+            "slow_ema": round(slow_ema[i], 2) if slow_ema[i] is not None else None,
+            "rsi14": rsi[i],
+            "qb_upper": qb_upper[i],
+            "qb_trail": round(qb_trail[i], 2) if qb_trail[i] is not None else None,
+            "qb_buy": qb_buy[i],
+            "qb_sell": qb_sell[i],
+            "mltis_buy": mltis_buy[i],
+            "mltis_sell": mltis_sell[i],
+            "sm_buy": sm_buy[i],
+            "sm_sell": sm_sell[i],
+            "sm_close": sm_close[i],
         })
-    return bars
+
+    weeks = CHART_RANGE_WEEKS.get(range_param, 260)
+    return bars[-weeks:]
 
 
 # ── turtleWealth ──────────────────────────────────────────────────────────
@@ -5419,7 +5543,7 @@ class handler(BaseHTTPRequestHandler):
         chart_symbol = (query.get("chart_symbol") or [None])[0]
         if chart_symbol:
             range_param = (query.get("range") or ["2y"])[0]
-            if range_param not in CHART_RANGE_DAYS_OK:
+            if range_param not in CHART_RANGE_WEEKS:
                 range_param = "2y"
             bars = _run_chart_data(chart_symbol.upper(), range_param)
             if bars is None:
