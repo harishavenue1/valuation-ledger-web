@@ -60,8 +60,8 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
 // screenshot of the user's own TradingView, teal up / warm-tan down
 // candles, not red) — approximated from the screenshot, not pixel-
 // sampled exactly; nudge these if they're visibly off.
-const UP_COLOR = "#26a69a"; // teal, matches the user's own TradingView color scheme
-const DOWN_COLOR = "#d4a574"; // warm tan/beige, NOT red — same source
+const UP_COLOR = "#1a796f"; // teal, pixel-sampled from the user's own TradingView screenshot (not a visual guess)
+const DOWN_COLOR = "#a79177"; // warm tan/beige, NOT red — same pixel-sampled source
 const EMA1_COLOR = "#d4aa00"; // Pine's own EMA1 color
 const EMA2_COLOR = "#94a3b8"; // Pine's own EMA2 (#dee3e7) is too light for a white background here
 const SLOW_EMA_COLOR = "#47b027"; // Pine's own EMA3/slow color
