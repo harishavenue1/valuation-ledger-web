@@ -473,17 +473,19 @@ export default function PortfolioAllocation() {
       { key: "symbol", label: "Symbol", align: "left", width: 9 },
       {
         // 2026-09-27 ("start with the chart" / "only for the stocks we
-        // have bought in PF") — the new in-app candlestick chart
-        // (StockChart.tsx) is only linked from HERE, deliberately, not
-        // from GenericTable's shared Symbol-column rendering (which
+        // have bought in PF") — the in-app candlestick chart
+        // (PortfolioCharts.tsx) is only linked from HERE, deliberately,
+        // not from GenericTable's shared Symbol-column rendering (which
         // every other screener table on this app also uses) — that
         // would put the link on all 750 NSE stocks everywhere, not
-        // just actual holdings.
+        // just actual holdings. PortfolioCharts.tsx's own holdings list
+        // makes this a one-time entry point, not a per-row necessity —
+        // kept anyway so a specific row jumps straight to its own chart.
         key: "chart_link",
         label: "",
         width: 3,
         render: (r) => (
-          <Link to={`/chart/${encodeURIComponent(r.symbol)}`} onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-600" title={`Open ${r.symbol} chart`}>
+          <Link to={`/portfolio-charts/${encodeURIComponent(r.symbol)}`} onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-600" title={`Open ${r.symbol} chart`}>
             📈
           </Link>
         ),
