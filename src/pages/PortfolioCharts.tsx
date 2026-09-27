@@ -12,6 +12,7 @@ import { Signed, fmtNum } from "../components/ScreenerTable";
 // time.
 const LINES_STORAGE_KEY = "portfolioChartsLines";
 const LINE_TOGGLES: { key: keyof LineVisibility; label: string }[] = [
+  { key: "logScale", label: "Log Scale (price axis)" },
   { key: "ema1", label: "EMA1 (12W)" },
   { key: "ema2", label: "EMA2 (21W)" },
   { key: "slowEma", label: "Slow EMA (33W)" },
@@ -193,7 +194,7 @@ export default function PortfolioCharts() {
                 onClick={() => setLinesOpen((v) => !v)}
                 className="text-xs px-2.5 py-1 rounded border border-slate-300 text-slate-600 hover:border-slate-400"
               >
-                ⚙️ Lines {linesOpen ? "▲" : "▼"}
+                ⚙️ Chart Settings {linesOpen ? "▲" : "▼"}
               </button>
               {linesOpen && (
                 <div className="absolute right-0 top-full mt-1 z-20 w-64 p-2 border border-slate-200 rounded-lg bg-white shadow-lg">
