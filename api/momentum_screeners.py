@@ -4771,6 +4771,7 @@ def _run_chart_data(symbol, range_param):
     sm_atr = [round(v * CHART_SM_RANGE_MULT, 4) if v is not None else None for v in sm_atr_raw]
 
     sm_buy, sm_sell, sm_close = [False] * n, [False] * n, [False] * n
+    sm_ch_top, sm_ch_bot = [None] * n, [None] * n
     prev_condition = 0
     for i in range(n):
         if sm_trend[i] is None or sm_atr[i] is None or sm_fast1[i] is None or sm_fast2[i] is None:
@@ -4778,6 +4779,8 @@ def _run_chart_data(symbol, range_param):
             continue
         ch_top = sm_trend[i] + sm_atr[i]
         ch_bot = sm_trend[i] - sm_atr[i]
+        sm_ch_top[i] = round(ch_top, 2)
+        sm_ch_bot[i] = round(ch_bot, 2)
         in_range = (opens[i] <= ch_top or closes[i] <= ch_top) and (opens[i] >= ch_bot or closes[i] >= ch_bot)
         direction = 0 if in_range else (1 if closes[i] >= sm_trend[i] else -1)
         buy_cond = direction == 1 and sm_fast1[i] > sm_fast2[i]
@@ -4819,6 +4822,17 @@ def _run_chart_data(symbol, range_param):
             "sm_buy": sm_buy[i],
             "sm_sell": sm_sell[i],
             "sm_close": sm_close[i],
+            # 2026-09-27 ("give controls to modify the lines... smart
+            # indicator in lighter green curve") — Pine's own
+            # smShowLines/smShowChannel toggles (both default OFF in
+            # the pasted script) needed the underlying series exposed,
+            # not just the buy/sell/close signal booleans, so the
+            # frontend can plot them when the user turns them on.
+            "sm_fast1": round(sm_fast1[i], 2) if sm_fast1[i] is not None else None,
+            "sm_fast2": round(sm_fast2[i], 2) if sm_fast2[i] is not None else None,
+            "sm_trend": round(sm_trend[i], 2) if sm_trend[i] is not None else None,
+            "sm_ch_top": sm_ch_top[i],
+            "sm_ch_bot": sm_ch_bot[i],
         })
 
     weeks = CHART_RANGE_WEEKS.get(range_param, 260)

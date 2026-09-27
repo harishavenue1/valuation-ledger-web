@@ -82,6 +82,13 @@ export interface ChartBar {
   sm_buy: boolean; // SmartMoney Entry
   sm_sell: boolean; // SmartMoney Exit (Sell)
   sm_close: boolean; // SmartMoney Exit (Close warning)
+  // Pine's own smShowLines/smShowChannel — both default OFF, only
+  // plotted when the user turns them on via the chart's line controls.
+  sm_fast1: number | null; // SmartMoney EMA(10) on Close
+  sm_fast2: number | null; // SmartMoney EMA(20) on Close
+  sm_trend: number | null; // SmartMoney SMA(40) trend line
+  sm_ch_top: number | null; // SmartMoney channel top (trend + ATR*0.618)
+  sm_ch_bot: number | null; // SmartMoney channel bottom (trend - ATR*0.618)
 }
 export interface ChartResponse {
   symbol: string;
