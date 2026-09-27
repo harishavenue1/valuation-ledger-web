@@ -17,6 +17,7 @@ import PortfolioPerformance from "./pages/PortfolioPerformance";
 import GlobalMacro from "./pages/GlobalMacro";
 import FIITrend from "./pages/FIITrend";
 import SectorDirectory from "./pages/SectorDirectory";
+import StockChart from "./pages/StockChart";
 import StrategicAlpha from "./pages/StrategicAlpha";
 import Top100UsStocks from "./pages/Top100UsStocks";
 import ReverseDCF from "./pages/ReverseDCF";
@@ -275,6 +276,7 @@ export default function App() {
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/fii-trend" element={<FIITrend />} />
             <Route path="/sector-directory" element={<SectorDirectory />} />
+            <Route path="/chart/:symbol" element={<StockChart />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />

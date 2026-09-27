@@ -4615,6 +4615,92 @@ def _run_fii_sector_trend(symbols, name_map, sector_map):
     return {"label": "FII Sector Trend (NSDL Fortnightly)", "push_rows": push_rows, "scanned": scanned, "skipped": len(dates) - scanned}, None
 
 
+# ── chartData (on-demand single-symbol OHLCV + MA/EMA/RSI) ────────────────
+#
+# 2026-09-27 — "start with the chart" (an in-app candlestick chart,
+# replacing the current out-to-TradingView links), then "lets build
+# only for the stocks we have bought in PF". This endpoint itself is
+# symbol-agnostic (any NSE ticker works, same as every other yfinance
+# fetch in this file) — the "only bought stocks" scope is a FRONTEND
+# choice (the 📈 chart link only appears on Portfolio Allocation's own
+# rows, see PortfolioAllocation.tsx), not a backend restriction, so
+# this is reusable elsewhere later without more backend work.
+#
+# NOT a cron/SCREENER_RUNNERS entry — unlike every other screener in
+# this file, this fetches fresh data and returns it directly on each
+# request, no Postgres push. A single stock's daily bars are cheap and
+# always-fresh-enough to fetch live (matches fetch_company.py's own
+# on-demand-per-ticker precedent), and storing years of raw OHLCV for
+# 750+ stocks would be a real storage/complexity jump this app has
+# deliberately avoided everywhere else (always derived metrics, never
+# raw time series, in Postgres).
+CHART_RANGE_DAYS_OK = {"6mo", "1y", "2y", "5y"}
+CHART_MA_PERIOD = 50
+CHART_EMA_PERIOD = 21
+CHART_RSI_PERIOD = 14
+
+
+def _chart_fetch_bars(yahoo_ticker, range_param):
+    """[(timestamp, open, high, low, close, volume), ...] daily bars,
+    oldest first, or None. Same query1.finance.yahoo.com/v8 endpoint
+    every other per-symbol fetch in this file uses, kept here with its
+    own OWN timestamp field (the ported nse750Technicals fetchers
+    above discard it — they only ever needed values, not dates)."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
+                          params={"range": range_param, "interval": "1d"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        result = r.json()["chart"]["result"]
+        if not result:
+            return None
+        timestamps = result[0]["timestamp"]
+        quote = result[0]["indicators"]["quote"][0]
+        o, h, l, c, v = quote["open"], quote["high"], quote["low"], quote["close"], quote["volume"]
+        rows = [(t, oi, hi, li, ci, vi) for t, oi, hi, li, ci, vi in zip(timestamps, o, h, l, c, v) if None not in (oi, hi, li, ci)]
+        return rows or None
+    except Exception:
+        return None
+
+
+def _run_chart_data(symbol, range_param):
+    rows = _chart_fetch_bars(f"{symbol}.NS", range_param)
+    if rows is None:
+        return None
+    closes = [r[4] for r in rows]
+    ohlc4 = [(r[1] + r[2] + r[3] + r[4]) / 4 for r in rows]
+
+    # MA50 — simple moving average on Close (standard convention,
+    # unlike this account's EMA-on-OHLC4 rule below).
+    ma50 = [round(sum(closes[i - CHART_MA_PERIOD + 1:i + 1]) / CHART_MA_PERIOD, 2) if i >= CHART_MA_PERIOD - 1 else None for i in range(len(closes))]
+
+    # EMA21 — on OHLC4, this account's own standing rule (see
+    # feedback_ema_ohlc4_source.md), same alpha=2/(period+1) convention
+    # nse750Technicals' own EMA distances already use.
+    alpha = 2 / (CHART_EMA_PERIOD + 1)
+    ema21 = []
+    e = ohlc4[0]
+    for i, x in enumerate(ohlc4):
+        e = x if i == 0 else alpha * x + (1 - alpha) * e
+        ema21.append(round(e, 2) if i >= CHART_EMA_PERIOD - 1 else None)
+
+    # RSI14 — on Close (SMA/RSI/trigger comparisons stay on Close per
+    # the same standing rule), reusing valueRsiTurnaround's own Wilder-
+    # style rolling series rather than a second implementation.
+    rsi_series = _val_rsi_series(pd.Series(closes), CHART_RSI_PERIOD)
+
+    bars = []
+    for i, r in enumerate(rows):
+        rsi_val = rsi_series.iloc[i]
+        bars.append({
+            "date": datetime.utcfromtimestamp(r[0]).strftime("%Y-%m-%d"),
+            "open": round(r[1], 2), "high": round(r[2], 2), "low": round(r[3], 2), "close": round(r[4], 2),
+            "volume": int(r[5]) if r[5] is not None else None,
+            "ma50": ma50[i],
+            "ema21": ema21[i],
+            "rsi14": round(float(rsi_val), 2) if pd.notna(rsi_val) else None,
+        })
+    return bars
+
+
 # ── turtleWealth ──────────────────────────────────────────────────────────
 #
 # Added 2026-09-13 ("lets build one more page turtleWealth on main page
@@ -5326,6 +5412,22 @@ class handler(BaseHTTPRequestHandler):
             return
 
         query = parse_qs(urlparse(self.path).query)
+
+        # ?chart_symbol=... short-circuits before the screener dispatch
+        # below — see _run_chart_data's own module comment for why this
+        # isn't a registered SCREENER_RUNNERS entry.
+        chart_symbol = (query.get("chart_symbol") or [None])[0]
+        if chart_symbol:
+            range_param = (query.get("range") or ["2y"])[0]
+            if range_param not in CHART_RANGE_DAYS_OK:
+                range_param = "2y"
+            bars = _run_chart_data(chart_symbol.upper(), range_param)
+            if bars is None:
+                send_json(self, 502, {"error": f"chart data fetch failed for {chart_symbol}"})
+            else:
+                send_json(self, 200, {"symbol": chart_symbol.upper(), "range": range_param, "bars": bars})
+            return
+
         screener = (query.get("screener") or [None])[0]
         batch_names = TECHNICAL_BATCHES.get(screener)
         runner = None if batch_names is not None else SCREENER_RUNNERS.get(screener)

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
 import { Col, GenericTable, MethodologyNote, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
@@ -471,7 +471,24 @@ export default function PortfolioAllocation() {
       // stay equidistant among themselves.
       { key: "rank", label: "Rank", width: 3 },
       { key: "symbol", label: "Symbol", align: "left", width: 9 },
-      { key: "sector", label: "Sector", align: "left", width: 8 },
+      {
+        // 2026-09-27 ("start with the chart" / "only for the stocks we
+        // have bought in PF") — the new in-app candlestick chart
+        // (StockChart.tsx) is only linked from HERE, deliberately, not
+        // from GenericTable's shared Symbol-column rendering (which
+        // every other screener table on this app also uses) — that
+        // would put the link on all 750 NSE stocks everywhere, not
+        // just actual holdings.
+        key: "chart_link",
+        label: "",
+        width: 3,
+        render: (r) => (
+          <Link to={`/chart/${encodeURIComponent(r.symbol)}`} onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-600" title={`Open ${r.symbol} chart`}>
+            📈
+          </Link>
+        ),
+      },
+      { key: "sector", label: "Sector", align: "left", width: 5 },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
