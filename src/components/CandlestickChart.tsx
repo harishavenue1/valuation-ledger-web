@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, LogicalRangeChangeEventHandler, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
+import { AreaSeries, CandlestickSeries, ColorType, HistogramSeries, LineSeries, LogicalRangeChangeEventHandler, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
 import { ChartBar } from "../lib/api";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
@@ -56,11 +56,16 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
   logScale: true,
 };
 
-const UP_COLOR = "#059669"; // emerald-600, matches Signed's positive color elsewhere in this app
-const DOWN_COLOR = "#dc2626"; // red-600, matches Signed's negative color
+// 2026-09-27 ("needs some more fine tuning, see this format" — a
+// screenshot of the user's own TradingView, teal up / warm-tan down
+// candles, not red) — approximated from the screenshot, not pixel-
+// sampled exactly; nudge these if they're visibly off.
+const UP_COLOR = "#26a69a"; // teal, matches the user's own TradingView color scheme
+const DOWN_COLOR = "#d4a574"; // warm tan/beige, NOT red — same source
 const EMA1_COLOR = "#d4aa00"; // Pine's own EMA1 color
 const EMA2_COLOR = "#94a3b8"; // Pine's own EMA2 (#dee3e7) is too light for a white background here
 const SLOW_EMA_COLOR = "#47b027"; // Pine's own EMA3/slow color
+const SLOW_EMA_FILL_TOP = "rgba(71, 176, 39, 0.22)"; // soft glow beneath the slow EMA line — same "lighter green curve" look as the screenshot, via an Area series' gradient fill (no true band-between-two-lines primitive exists in this library without a custom plugin)
 const QB_UPPER_COLOR = "#0ea5e9"; // sky-500 — quantBollinger upper band
 const QB_TRAIL_COLOR = "#f97316"; // orange-500 — quantBollinger 34W trail
 const SM_TREND_COLOR = "#0d9488"; // teal-600 — Pine's own smLineColor when dir==1, close enough as a fixed color
@@ -68,6 +73,7 @@ const SM_FAST1_COLOR = "#a855f7"; // purple-500
 const SM_FAST2_COLOR = "#ec4899"; // pink-500
 const SM_CHANNEL_COLOR = "#94a3b8"; // slate-400
 const RSI_COLOR = "#7c3aed"; // violet-600
+const QB_SELL_MARKER_COLOR = "#dc2626"; // Pine hardcodes color.red for this ONE marker, independent of DOWN_COLOR (candle down-color is now tan, not red — this stays red regardless)
 
 function toUnixSeconds(dateStr: string): UTCTimestamp {
   return (Date.parse(dateStr + "T00:00:00Z") / 1000) as UTCTimestamp;
@@ -91,7 +97,7 @@ function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
   for (const b of bars) {
     const time = toUnixSeconds(b.date);
     if (b.qb_buy) markers.push({ time, position: "belowBar", color: "#84cc16", shape: "arrowUp", text: "QB" }); // lime, triangleup belowbar
-    if (b.qb_sell) markers.push({ time, position: "aboveBar", color: DOWN_COLOR, shape: "arrowDown", text: "QB" }); // red, triangledown abovebar
+    if (b.qb_sell) markers.push({ time, position: "aboveBar", color: QB_SELL_MARKER_COLOR, shape: "arrowDown", text: "QB" }); // red, triangledown abovebar
     if (b.mltis_buy) markers.push({ time, position: "aboveBar", color: "#06b6d4", shape: "arrowDown", text: "RSI>66" }); // aqua, triangledown abovebar — Pine's own (unusual) placement, kept faithful; labeled by the condition it fires on (ribbon + weekly RSI>66)
     if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square", text: "✕" }); // orange, xcross abovebar (approximated as square)
     if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp", text: "SM Entry" }); // teal
@@ -135,7 +141,18 @@ export default function CandlestickChart({ bars, height = 380, lines = DEFAULT_L
       s.setData(toPoints("ema2"));
     }
     if (lines.slowEma) {
-      const s = mainChart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 2, title: "Slow EMA (33W)", priceLineVisible: false, lastValueVisible: false });
+      // Area series, not Line — the gradient fill beneath the line is
+      // the "lighter green curve" look the user pointed at, not
+      // achievable with a plain LineSeries.
+      const s = mainChart.addSeries(AreaSeries, {
+        lineColor: SLOW_EMA_COLOR,
+        lineWidth: 2,
+        topColor: SLOW_EMA_FILL_TOP,
+        bottomColor: "rgba(71, 176, 39, 0)",
+        title: "Slow EMA (33W)",
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
       s.setData(toPoints("slow_ema"));
     }
     if (lines.qbUpper) {
