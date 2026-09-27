@@ -1,17 +1,18 @@
 import { useEffect, useRef } from "react";
-import { AreaSeries, CandlestickSeries, ColorType, HistogramSeries, LineSeries, LogicalRangeChangeEventHandler, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
+import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
 import { ChartBar } from "../lib/api";
+import { BandSeries } from "./BandSeries";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
 // (StrategicAlpha's TimeSeriesChart, PortfolioAllocation's SectorDonut)
 // are hand-rolled SVG specifically to avoid a charting library
 // dependency for simple line/donut shapes. A real candlestick chart
-// with volume + a synced RSI sub-pane + signal markers is a different
-// order of problem — reinventing pan/zoom/crosshair/multi-pane sync in
-// raw SVG would be a lot of code for a worse result than the purpose-
-// built library. lightweight-charts is TradingView's own open-source
-// library (MIT, ~45KB gzipped) — a deliberate, one-off exception to
-// the "no charting library" precedent, not a general policy change.
+// with volume + signal markers is a different order of problem —
+// reinventing pan/zoom/crosshair sync in raw SVG would be a lot of
+// code for a worse result than the purpose-built library.
+// lightweight-charts is TradingView's own open-source library (MIT,
+// ~45KB gzipped) — a deliberate, one-off exception to the "no
+// charting library" precedent, not a general policy change.
 //
 // 2026-09-27 ("the chart indicator has to be our own built") — the
 // overlays/markers here are this account's own 3 signal systems
@@ -23,11 +24,24 @@ import { ChartBar } from "../lib/api";
 // view... currently on 33WEMA green line with smart indicator in
 // lighter green curve") — the Pine script's own smShowLines/
 // smShowChannel toggles (both default OFF) are now real controls here
-// too, not a fixed on/off choice baked into the component. No true
-// filled band between two lines exists in lightweight-charts' base API
-// (that needs a custom series plugin) — the SmartMoney channel is
-// approximated as two dashed lines (top/bottom) rather than a shaded
-// fill.
+// too, not a fixed on/off choice baked into the component.
+//
+// 2026-09-27 ("green patch was supposed to be only for the smart
+// money band but you made full lower half") — the SmartMoney channel
+// is now a genuine filled band between sm_ch_top/sm_ch_bot, via
+// BandSeries.ts's own custom series plugin — see that file's comment
+// for why a plain built-in series can't do this (Area only fills down
+// to the chart's own bottom edge, not to another moving line).
+//
+// 2026-09-27 ("remove rsi as its already built-in with indicator and
+// expand the chart to full screen to utilize free space") — the
+// separate RSI sub-pane (and the crosshair-sync plumbing it needed
+// between two chart instances) is gone; RSI>66 is already visible as
+// the myLongTermInvestingStrategy marker on the main chart. The
+// component no longer takes a fixed `height` — it fills whatever
+// height its container is given via CSS (a ResizeObserver on the
+// wrapper div), so a page can make it as large as the available
+// layout allows instead of this component dictating a fixed size.
 export interface LineVisibility {
   ema1: boolean;
   ema2: boolean;
@@ -40,8 +54,6 @@ export interface LineVisibility {
   // 2026-09-27 ("chart needs log format") — not really a "line", but
   // lives in the same settings object/panel/localStorage entry as
   // everything else here rather than its own separate piece of state.
-  // Only the MAIN price scale switches — RSI stays linear (it's
-  // already bounded 0-100, log makes no sense there).
   logScale: boolean;
 }
 export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
@@ -57,22 +69,20 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
 };
 
 // 2026-09-27 ("needs some more fine tuning, see this format" — a
-// screenshot of the user's own TradingView, teal up / warm-tan down
-// candles, not red) — approximated from the screenshot, not pixel-
-// sampled exactly; nudge these if they're visibly off.
-const UP_COLOR = "#1a796f"; // teal, pixel-sampled from the user's own TradingView screenshot (not a visual guess)
+// screenshot of the user's own TradingView) — pixel-sampled from the
+// attached image with PIL, not eyeballed.
+const UP_COLOR = "#1a796f"; // teal, pixel-sampled from the user's own TradingView screenshot
 const DOWN_COLOR = "#a79177"; // warm tan/beige, NOT red — same pixel-sampled source
 const EMA1_COLOR = "#d4aa00"; // Pine's own EMA1 color
 const EMA2_COLOR = "#94a3b8"; // Pine's own EMA2 (#dee3e7) is too light for a white background here
 const SLOW_EMA_COLOR = "#47b027"; // Pine's own EMA3/slow color
-const SLOW_EMA_FILL_TOP = "rgba(71, 176, 39, 0.22)"; // soft glow beneath the slow EMA line — same "lighter green curve" look as the screenshot, via an Area series' gradient fill (no true band-between-two-lines primitive exists in this library without a custom plugin)
 const QB_UPPER_COLOR = "#0ea5e9"; // sky-500 — quantBollinger upper band
 const QB_TRAIL_COLOR = "#f97316"; // orange-500 — quantBollinger 34W trail
 const SM_TREND_COLOR = "#0d9488"; // teal-600 — Pine's own smLineColor when dir==1, close enough as a fixed color
 const SM_FAST1_COLOR = "#a855f7"; // purple-500
 const SM_FAST2_COLOR = "#ec4899"; // pink-500
-const SM_CHANNEL_COLOR = "#94a3b8"; // slate-400
-const RSI_COLOR = "#7c3aed"; // violet-600
+const SM_CHANNEL_FILL = "rgba(71, 176, 39, 0.15)"; // the "lighter green curve" band fill the user pointed at
+const SM_CHANNEL_BORDER = "rgba(71, 176, 39, 0.5)";
 const QB_SELL_MARKER_COLOR = "#dc2626"; // Pine hardcodes color.red for this ONE marker, independent of DOWN_COLOR (candle down-color is now tan, not red — this stays red regardless)
 
 function toUnixSeconds(dateStr: string): UTCTimestamp {
@@ -107,22 +117,21 @@ function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
   return markers;
 }
 
-export default function CandlestickChart({ bars, height = 380, lines = DEFAULT_LINE_VISIBILITY }: { bars: ChartBar[]; height?: number; lines?: LineVisibility }) {
-  const mainRef = useRef<HTMLDivElement>(null);
-  const rsiRef = useRef<HTMLDivElement>(null);
+export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY }: { bars: ChartBar[]; lines?: LineVisibility }) {
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!mainRef.current || !rsiRef.current || bars.length === 0) return;
+    if (!containerRef.current || bars.length === 0) return;
+    const container = containerRef.current;
 
-    const mainChart = createChart(mainRef.current, {
+    const chart = createChart(container, {
       ...COMMON_LAYOUT,
-      height,
-      width: mainRef.current.clientWidth,
+      height: container.clientHeight,
+      width: container.clientWidth,
       rightPriceScale: { ...COMMON_LAYOUT.rightPriceScale, mode: lines.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
     });
-    const rsiChart = createChart(rsiRef.current, { ...COMMON_LAYOUT, height: 110, width: rsiRef.current.clientWidth });
 
-    const candleSeries = mainChart.addSeries(CandlestickSeries, {
+    const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: UP_COLOR,
       downColor: DOWN_COLOR,
       borderVisible: false,
@@ -133,113 +142,85 @@ export default function CandlestickChart({ bars, height = 380, lines = DEFAULT_L
     const toPoints = (key: keyof ChartBar) => bars.filter((b) => b[key] != null).map((b) => ({ time: toUnixSeconds(b.date), value: b[key] as number }));
 
     if (lines.ema1) {
-      const s = mainChart.addSeries(LineSeries, { color: EMA1_COLOR, lineWidth: 1, title: "EMA1 (12W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: EMA1_COLOR, lineWidth: 1, title: "EMA1 (12W)", priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("ema1"));
     }
     if (lines.ema2) {
-      const s = mainChart.addSeries(LineSeries, { color: EMA2_COLOR, lineWidth: 1, title: "EMA2 (21W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: EMA2_COLOR, lineWidth: 1, title: "EMA2 (21W)", priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("ema2"));
     }
     if (lines.slowEma) {
-      // Area series, not Line — the gradient fill beneath the line is
-      // the "lighter green curve" look the user pointed at, not
-      // achievable with a plain LineSeries.
-      const s = mainChart.addSeries(AreaSeries, {
-        lineColor: SLOW_EMA_COLOR,
-        lineWidth: 2,
-        topColor: SLOW_EMA_FILL_TOP,
-        bottomColor: "rgba(71, 176, 39, 0)",
-        title: "Slow EMA (33W)",
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
+      // 2026-09-27 ("green patch was supposed to be only for the
+      // smart money band but you made full lower half") — this was
+      // briefly an Area series with a gradient glow underneath, which
+      // was the wrong element to shade. Plain line, like every other
+      // EMA here.
+      const s = chart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 2, title: "Slow EMA (33W)", priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("slow_ema"));
     }
     if (lines.qbUpper) {
-      const s = mainChart.addSeries(LineSeries, { color: QB_UPPER_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Upper Band", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: QB_UPPER_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Upper Band", priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("qb_upper"));
     }
     if (lines.qbTrail) {
-      const s = mainChart.addSeries(LineSeries, { color: QB_TRAIL_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Trail (34W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: QB_TRAIL_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Trail (34W)", priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("qb_trail"));
     }
     if (lines.smLines) {
-      const trend = mainChart.addSeries(LineSeries, { color: SM_TREND_COLOR, lineWidth: 2, title: "SM Trend (SMA40)", priceLineVisible: false, lastValueVisible: false });
+      const trend = chart.addSeries(LineSeries, { color: SM_TREND_COLOR, lineWidth: 2, title: "SM Trend (SMA40)", priceLineVisible: false, lastValueVisible: false });
       trend.setData(toPoints("sm_trend"));
-      const fast1 = mainChart.addSeries(LineSeries, { color: SM_FAST1_COLOR, lineWidth: 1, title: "SM EMA10", priceLineVisible: false, lastValueVisible: false });
+      const fast1 = chart.addSeries(LineSeries, { color: SM_FAST1_COLOR, lineWidth: 1, title: "SM EMA10", priceLineVisible: false, lastValueVisible: false });
       fast1.setData(toPoints("sm_fast1"));
-      const fast2 = mainChart.addSeries(LineSeries, { color: SM_FAST2_COLOR, lineWidth: 1, title: "SM EMA20", priceLineVisible: false, lastValueVisible: false });
+      const fast2 = chart.addSeries(LineSeries, { color: SM_FAST2_COLOR, lineWidth: 1, title: "SM EMA20", priceLineVisible: false, lastValueVisible: false });
       fast2.setData(toPoints("sm_fast2"));
     }
     if (lines.smChannel) {
-      const top = mainChart.addSeries(LineSeries, { color: SM_CHANNEL_COLOR, lineWidth: 1, lineStyle: 3, title: "SM Channel Top", priceLineVisible: false, lastValueVisible: false });
-      top.setData(toPoints("sm_ch_top"));
-      const bot = mainChart.addSeries(LineSeries, { color: SM_CHANNEL_COLOR, lineWidth: 1, lineStyle: 3, title: "SM Channel Bottom", priceLineVisible: false, lastValueVisible: false });
-      bot.setData(toPoints("sm_ch_bot"));
+      // 2026-09-27 ("green patch was supposed to be only for the
+      // smart money band") — a real filled band between sm_ch_top and
+      // sm_ch_bot, not two dashed lines (the earlier approximation,
+      // before it was clear the user specifically wanted the shaded
+      // fill here). See BandSeries.ts's own module comment for why
+      // this needed a custom series plugin.
+      const band = chart.addCustomSeries(new BandSeries(), { fillColor: SM_CHANNEL_FILL, borderColor: SM_CHANNEL_BORDER, borderWidth: 1 });
+      band.setData(
+        bars.filter((b) => b.sm_ch_top != null && b.sm_ch_bot != null).map((b) => ({ time: toUnixSeconds(b.date), top: b.sm_ch_top as number, bottom: b.sm_ch_bot as number }))
+      );
     }
 
-    // Volume as a low-profile histogram in the bottom ~20% of the main
-    // pane, on its own price scale (id "vol") so it never fights the
+    // Volume as a low-profile histogram in the bottom ~20% of the pane,
+    // on its own price scale (id "vol") so it never fights the
     // candlesticks' own scale. Not part of the Pine script (indicator-
     // only, no volume plot) — kept anyway as a cheap, standard addition.
     if (lines.volume) {
-      const volumeSeries = mainChart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
-      mainChart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      const volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
+      chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       volumeSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), value: b.volume ?? 0, color: b.close >= b.open ? `${UP_COLOR}66` : `${DOWN_COLOR}66` })));
     }
-
-    const rsiSeries = rsiChart.addSeries(LineSeries, { color: RSI_COLOR, lineWidth: 1, title: "RSI14", priceLineVisible: false });
-    rsiSeries.setData(toPoints("rsi14"));
 
     candleSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     createSeriesMarkers(candleSeries, buildMarkers(bars));
 
-    // Keep both panes' visible range in sync (drag/zoom one, the other
-    // follows) — the standard lightweight-charts multi-pane pattern; a
-    // guard flag stops the two subscriptions from re-triggering each
-    // other in an infinite loop.
-    let syncing = false;
-    const syncFromMain: LogicalRangeChangeEventHandler = (range) => {
-      if (syncing || !range) return;
-      syncing = true;
-      rsiChart.timeScale().setVisibleLogicalRange(range);
-      syncing = false;
-    };
-    const syncFromRsi: LogicalRangeChangeEventHandler = (range) => {
-      if (syncing || !range) return;
-      syncing = true;
-      mainChart.timeScale().setVisibleLogicalRange(range);
-      syncing = false;
-    };
-    mainChart.timeScale().subscribeVisibleLogicalRangeChange(syncFromMain);
-    rsiChart.timeScale().subscribeVisibleLogicalRangeChange(syncFromRsi);
+    chart.timeScale().fitContent();
 
-    mainChart.timeScale().fitContent();
-    rsiChart.timeScale().fitContent();
-
-    function handleResize() {
-      if (mainRef.current) mainChart.applyOptions({ width: mainRef.current.clientWidth });
-      if (rsiRef.current) rsiChart.applyOptions({ width: rsiRef.current.clientWidth });
-    }
-    window.addEventListener("resize", handleResize);
+    // Fills whatever size its container is given by CSS (flex-1 in
+    // PortfolioCharts.tsx) rather than the component dictating a fixed
+    // pixel size — a plain window-resize listener wouldn't catch a
+    // container that changes size without the WINDOW changing (e.g.
+    // the sidebar's own content reflowing), so this observes the
+    // container element itself.
+    const resizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      if (width > 0 && height > 0) chart.applyOptions({ width, height });
+    });
+    resizeObserver.observe(container);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      mainChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncFromMain);
-      rsiChart.timeScale().unsubscribeVisibleLogicalRangeChange(syncFromRsi);
-      mainChart.remove();
-      rsiChart.remove();
+      resizeObserver.disconnect();
+      chart.remove();
     };
-  }, [bars, height, lines]);
+  }, [bars, lines]);
 
-  return (
-    <div>
-      <div ref={mainRef} />
-      <div className="flex items-center gap-2 mt-1 mb-0.5">
-        <span className="text-[10px] font-medium text-violet-600 pl-2">RSI (14, weekly)</span>
-        <span className="text-[10px] text-slate-300">66 threshold not drawn — read the line's own level</span>
-      </div>
-      <div ref={rsiRef} />
-    </div>
-  );
+  return <div ref={containerRef} className="w-full h-full" />;
 }

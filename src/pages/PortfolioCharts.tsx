@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api, ApiError, ChartResponse } from "../lib/api";
 import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LineVisibility } from "../components/CandlestickChart";
-import { Signed, fmtNum } from "../components/ScreenerTable";
+import { MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
 
 // 2026-09-27 ("give controls to modify the lines, as I did on trading
 // view") — persisted the same way AllTechnicals' own column picker is
@@ -178,8 +178,8 @@ export default function PortfolioCharts() {
         ))}
       </div>
 
-      <div className="flex-1 min-w-0 overflow-y-auto">
-        <div className="flex items-center gap-3 mb-1">
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex items-center gap-3 mb-1 shrink-0">
           <h1 className="text-xl font-semibold">📈 {symbol}</h1>
           {last && (
             <>
@@ -224,7 +224,7 @@ export default function PortfolioCharts() {
         </div>
 
         {last && (
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-3">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-2 shrink-0">
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#d4aa00" }} />
               EMA1 (12W) {fmtNum(last.ema1, 2)}
@@ -253,24 +253,32 @@ export default function PortfolioCharts() {
           </div>
         )}
 
-        {loading && <div className="text-sm text-slate-400 text-center py-16">Loading {symbol}…</div>}
-        {!loading && error && <div className="text-sm text-red-600 text-center py-16 border border-red-200 rounded-lg bg-red-50">{error}</div>}
-        {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg">No chart data for {symbol}.</div>}
+        {loading && <div className="text-sm text-slate-400 text-center py-16 shrink-0">Loading {symbol}…</div>}
+        {!loading && error && <div className="text-sm text-red-600 text-center py-16 border border-red-200 rounded-lg bg-red-50 shrink-0">{error}</div>}
+        {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg shrink-0">No chart data for {symbol}.</div>}
         {!loading && !error && bars.length > 0 && (
-          <div className="border border-slate-200 rounded-lg p-3">
-            <CandlestickChart bars={bars} height={560} lines={lineVisibility} />
+          <div className="flex-1 min-h-0 border border-slate-200 rounded-lg p-3">
+            <CandlestickChart bars={bars} lines={lineVisibility} />
           </div>
         )}
 
-        <p className="text-[10px] text-slate-400 mt-2 leading-relaxed max-w-3xl">
-          Weekly bars, ported line-for-line from this account's own "EMAs+Buy+Sell+SmartMoney" Pine Script — 3 systems, not generic
-          indicators. <b>EMA1/EMA2/Slow EMA</b> (12W/21W/33W on OHLC4) are myLongTermInvestingStrategy's own ribbon — 🔽 aqua "RSI&gt;66" marker
-          when close is above all three AND weekly RSI &gt; 66 (fresh cross only), ✕ orange when close crosses below the slow EMA.{" "}
-          <b>QB Upper/QB Trail</b> are quantBollinger's 55W-SMA+3.7σ band and 34W EMA trail — 🔼 lime "QB" marker on a weekly close breaking
-          above the band, 🔽 red "QB" on a weekly close breaking below the trail. <b>SM Entry/SM Sell/SM Close</b> are SmartMoney (Vivek
-          Equity Tool) — an EMA(10)/EMA(20) vs SMA(40) trend inside a Wilder-ATR(40)×0.618 neutral channel, driving a state machine carried
-          bar-to-bar. Fetched fresh from Yahoo Finance on each visit — not cached.
-        </p>
+        {/* 2026-09-27 ("expand the chart to full screen to utilize free
+            space") — collapsed into the same MethodologyNote pattern
+            every other screener page uses, instead of an always-visible
+            paragraph competing with the chart for vertical space. */}
+        <div className="shrink-0 mt-2">
+          <MethodologyNote>
+            Weekly bars, ported line-for-line from this account's own "EMAs+Buy+Sell+SmartMoney" Pine Script — 3 systems, not generic
+            indicators. <b>EMA1/EMA2/Slow EMA</b> (12W/21W/33W on OHLC4) are myLongTermInvestingStrategy's own ribbon — 🔽 aqua "RSI&gt;66"
+            marker when close is above all three AND weekly RSI &gt; 66 (fresh cross only), ✕ orange when close crosses below the slow EMA.
+            {" "}
+            <b>QB Upper/QB Trail</b> are quantBollinger's 55W-SMA+3.7σ band and 34W EMA trail — 🔼 lime "QB" marker on a weekly close breaking
+            above the band, 🔽 red "QB" on a weekly close breaking below the trail. <b>SM Entry/SM Sell/SM Close</b> are SmartMoney (Vivek
+            Equity Tool) — an EMA(10)/EMA(20) vs SMA(40) trend inside a Wilder-ATR(40)×0.618 neutral channel, driving a state machine carried
+            bar-to-bar. There's no separate RSI sub-panel — the RSI&gt;66 marker above already surfaces it; RSI14's own current value is
+            still in the legend. Fetched fresh from Yahoo Finance on each visit — not cached.
+          </MethodologyNote>
+        </div>
       </div>
     </div>
   );
