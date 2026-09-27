@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, LogicalRangeChangeEventHandler, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
+import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, LogicalRangeChangeEventHandler, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
 import { ChartBar } from "../lib/api";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
@@ -37,6 +37,12 @@ export interface LineVisibility {
   smLines: boolean; // SmartMoney EMA(10)/EMA(20)/SMA(40) trend — Pine's smShowLines
   smChannel: boolean; // SmartMoney ATR channel top/bottom — Pine's smShowChannel
   volume: boolean;
+  // 2026-09-27 ("chart needs log format") — not really a "line", but
+  // lives in the same settings object/panel/localStorage entry as
+  // everything else here rather than its own separate piece of state.
+  // Only the MAIN price scale switches — RSI stays linear (it's
+  // already bounded 0-100, log makes no sense there).
+  logScale: boolean;
 }
 export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
   ema1: true,
@@ -47,6 +53,7 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
   smLines: false,
   smChannel: false,
   volume: true,
+  logScale: true,
 };
 
 const UP_COLOR = "#059669"; // emerald-600, matches Signed's positive color elsewhere in this app
@@ -101,7 +108,12 @@ export default function CandlestickChart({ bars, height = 380, lines = DEFAULT_L
   useEffect(() => {
     if (!mainRef.current || !rsiRef.current || bars.length === 0) return;
 
-    const mainChart = createChart(mainRef.current, { ...COMMON_LAYOUT, height, width: mainRef.current.clientWidth });
+    const mainChart = createChart(mainRef.current, {
+      ...COMMON_LAYOUT,
+      height,
+      width: mainRef.current.clientWidth,
+      rightPriceScale: { ...COMMON_LAYOUT.rightPriceScale, mode: lines.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
+    });
     const rsiChart = createChart(rsiRef.current, { ...COMMON_LAYOUT, height: 110, width: rsiRef.current.clientWidth });
 
     const candleSeries = mainChart.addSeries(CandlestickSeries, {
