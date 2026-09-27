@@ -54,6 +54,25 @@ export interface MomentumScreenerEntry {
 }
 export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
 
+// api/momentum_screeners.py's chartData — one daily bar, MA50/EMA21/
+// RSI14 null until their own warmup period has enough bars.
+export interface ChartBar {
+  date: string; // "YYYY-MM-DD"
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number | null;
+  ma50: number | null;
+  ema21: number | null;
+  rsi14: number | null;
+}
+export interface ChartResponse {
+  symbol: string;
+  range: string;
+  bars: ChartBar[];
+}
+
 // "Run now" queue — see api/run_requests.py for why this is a queue a
 // local poller drains rather than something Vercel executes itself.
 export type RunStatus = "pending" | "running" | "done" | "error";
@@ -282,6 +301,15 @@ export const api = {
   // of assuming bundle.momentum_screeners is already fully populated.
   getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
     req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),
+
+  // On-demand single-symbol daily OHLCV + MA50/EMA21/RSI14 for the
+  // in-app candlestick chart (StockChart.tsx) — see
+  // api/momentum_screeners.py's chartData module comment. Not part of
+  // the momentum_screeners bundle (no Postgres push, fetched fresh
+  // every call), so it's its own request rather than going through
+  // useScreeners/getScreeners.
+  getChartData: (symbol: string, range: "6mo" | "1y" | "2y" | "5y" = "2y"): Promise<ChartResponse> =>
+    req(`/api/momentum_screeners?chart_symbol=${encodeURIComponent(symbol)}&range=${range}`),
 
   fetchCompany: (ticker: string): Promise<{ stock: Stock }> =>
     req("/api/fetch_company", { method: "POST", body: JSON.stringify({ ticker }) }),
