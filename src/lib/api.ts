@@ -54,18 +54,34 @@ export interface MomentumScreenerEntry {
 }
 export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
 
-// api/momentum_screeners.py's chartData — one daily bar, MA50/EMA21/
-// RSI14 null until their own warmup period has enough bars.
+// api/momentum_screeners.py's chartData — one WEEKLY bar, ported from
+// the user's own "EMAs+Buy+Sell+SmartMoney" Pine Script (combining
+// quantBollinger/myLongTermInvestingStrategy/SmartMoney, this
+// account's own 3 signal systems, not generic indicators). Indicator
+// fields null until their own warmup period has enough bars; signal
+// fields (qb_buy, mltis_sell, etc.) are booleans, true only on the bar
+// where that system's condition FIRST fires (a fresh cross/state
+// transition, not "currently true").
 export interface ChartBar {
-  date: string; // "YYYY-MM-DD"
+  date: string; // "YYYY-MM-DD", week-ending
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number | null;
-  ma50: number | null;
-  ema21: number | null;
-  rsi14: number | null;
+  ema1: number | null; // 12W EMA, OHLC4
+  ema2: number | null; // 21W EMA, OHLC4
+  slow_ema: number | null; // 33W EMA, OHLC4 — myLTIS's own slow/exit line
+  rsi14: number | null; // weekly RSI(14) on Close
+  qb_upper: number | null; // quantBollinger upper band (55W SMA + 3.7 stdev)
+  qb_trail: number | null; // quantBollinger 34W EMA trail-stop
+  qb_buy: boolean; // weekly close crossed above qb_upper
+  qb_sell: boolean; // weekly close crossed below qb_trail
+  mltis_buy: boolean; // ribbon-aligned + weekly RSI>66, fresh cross
+  mltis_sell: boolean; // close crossed below slow_ema
+  sm_buy: boolean; // SmartMoney Entry
+  sm_sell: boolean; // SmartMoney Exit (Sell)
+  sm_close: boolean; // SmartMoney Exit (Close warning)
 }
 export interface ChartResponse {
   symbol: string;
