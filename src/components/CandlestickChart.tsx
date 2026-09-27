@@ -124,13 +124,36 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     if (!containerRef.current || bars.length === 0) return;
     const container = containerRef.current;
 
-    const chart = createChart(container, {
-      ...COMMON_LAYOUT,
-      height: container.clientHeight,
-      width: container.clientWidth,
-      rightPriceScale: { ...COMMON_LAYOUT.rightPriceScale, mode: lines.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
-    });
+    // 2026-09-27 ("on top left corner what is wrong, some green
+    // path" / "sometime bottom left corner") — a stray zigzag from
+    // the SmartMoney band's custom renderer, only ever at a corner,
+    // only sometimes. Root cause: this component used to call
+    // createChart() synchronously at mount using container.
+    // clientWidth/clientHeight, but the flex-column layout in
+    // PortfolioCharts.tsx hasn't necessarily finished sizing the
+    // container on the very first paint — the chart could initialize
+    // at a transitional 0×0 or wrong size, draw the custom series
+    // once against that bad geometry, and the leftover pixels from
+    // that one bad frame never got cleared since later ResizeObserver
+    // callbacks only redraw with corrected data, not a full clear of
+    // stale canvas content in an unrelated region. Deferring the
+    // FIRST chart creation until the first real ResizeObserver
+    // callback (a non-zero size) avoids ever drawing at a bad size in
+    // the first place, rather than trying to clean up after it.
+    let chart: ReturnType<typeof createChart> | null = null;
 
+    function initChart(width: number, height: number) {
+      if (chart || width <= 0 || height <= 0) return;
+      chart = createChart(container, {
+        ...COMMON_LAYOUT,
+        height,
+        width,
+        rightPriceScale: { ...COMMON_LAYOUT.rightPriceScale, mode: lines.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
+      });
+      setUpSeries(chart);
+    }
+
+    function setUpSeries(chart: ReturnType<typeof createChart>) {
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: UP_COLOR,
       downColor: DOWN_COLOR,
@@ -181,7 +204,14 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       // before it was clear the user specifically wanted the shaded
       // fill here). See BandSeries.ts's own module comment for why
       // this needed a custom series plugin.
-      const band = chart.addCustomSeries(new BandSeries(), { fillColor: SM_CHANNEL_FILL, borderColor: SM_CHANNEL_BORDER, borderWidth: 1 });
+      // 2026-09-27 ("why 2 horizontal rows on every chart") — a
+      // custom series defaults to showing its own price line + last-
+      // value label (here, the channel's own "bottom" value, since
+      // priceValueBuilder's last array entry is treated as "current
+      // price") — a second, meaningless dashed line alongside the
+      // candles' own legitimate one. Every other overlay series here
+      // already has both off; this one was missed.
+      const band = chart.addCustomSeries(new BandSeries(), { fillColor: SM_CHANNEL_FILL, borderColor: SM_CHANNEL_BORDER, borderWidth: 1, priceLineVisible: false, lastValueVisible: false });
       band.setData(
         bars.filter((b) => b.sm_ch_top != null && b.sm_ch_bot != null).map((b) => ({ time: toUnixSeconds(b.date), top: b.sm_ch_top as number, bottom: b.sm_ch_bot as number }))
       );
@@ -201,24 +231,29 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     createSeriesMarkers(candleSeries, buildMarkers(bars));
 
     chart.timeScale().fitContent();
+    } // end setUpSeries
 
     // Fills whatever size its container is given by CSS (flex-1 in
     // PortfolioCharts.tsx) rather than the component dictating a fixed
     // pixel size — a plain window-resize listener wouldn't catch a
     // container that changes size without the WINDOW changing (e.g.
     // the sidebar's own content reflowing), so this observes the
-    // container element itself.
+    // container element itself. Also the trigger for the FIRST chart
+    // creation (see initChart's own comment above) rather than a
+    // separate synchronous createChart call at mount.
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];
       if (!entry) return;
       const { width, height } = entry.contentRect;
-      if (width > 0 && height > 0) chart.applyOptions({ width, height });
+      if (width <= 0 || height <= 0) return;
+      if (!chart) initChart(width, height);
+      else chart.applyOptions({ width, height });
     });
     resizeObserver.observe(container);
 
     return () => {
       resizeObserver.disconnect();
-      chart.remove();
+      chart?.remove();
     };
   }, [bars, lines]);
 

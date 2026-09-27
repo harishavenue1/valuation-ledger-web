@@ -8,7 +8,7 @@
 // plugin (the library's own documented extension mechanism,
 // ICustomSeriesPaneView) that draws exactly that: a filled polygon
 // between a `top` and `bottom` value per bar, nothing more.
-import { CustomData, CustomSeriesOptions, CustomSeriesPricePlotValues, ICustomSeriesPaneRenderer, ICustomSeriesPaneView, PaneRendererCustomData, Time, WhitespaceData, customSeriesDefaultOptions } from "lightweight-charts";
+import { CustomConflationContext, CustomData, CustomSeriesOptions, CustomSeriesPricePlotValues, ICustomSeriesPaneRenderer, ICustomSeriesPaneView, PaneRendererCustomData, Time, WhitespaceData, customSeriesDefaultOptions } from "lightweight-charts";
 
 export interface BandData extends CustomData<Time> {
   top: number;
@@ -26,6 +26,12 @@ export const defaultBandSeriesOptions: BandSeriesOptions = {
   fillColor: "rgba(71, 176, 39, 0.15)",
   borderColor: "rgba(71, 176, 39, 0.5)",
   borderWidth: 1,
+  // A band/channel has no single meaningful "current price" — off by
+  // default here at the source (2026-09-27, "why 2 horizontal rows on
+  // every chart") rather than relying on every caller to remember to
+  // pass this.
+  priceLineVisible: false,
+  lastValueVisible: false,
 };
 
 class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
@@ -42,6 +48,16 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
     const options = this._options;
     const bars = this._data.bars;
 
+    // 2026-09-27 ("on top left corner what is wrong, some green
+    // path" / "sometime bottom left corner") — a zigzag traced back to
+    // the chart sometimes being (re)created before its container had
+    // settled to a real size (see CandlestickChart.tsx's initChart
+    // comment for the actual fix). This guard is a second, independent
+    // layer: never plot a point whose coordinate isn't a finite number,
+    // regardless of how a bad one might arise — a NaN/Infinity
+    // priceToCoordinate result is what turns into the visible zigzag.
+    const finite = (n: number) => Number.isFinite(n);
+
     target.useBitmapCoordinateSpace((scope) => {
       const ctx = scope.context;
       const ratio = scope.horizontalPixelRatio;
@@ -51,8 +67,8 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
       let started = false;
       for (const bar of bars) {
         const y = priceToCoordinate(bar.originalData.top);
-        if (y === null) continue;
         const x = bar.x * ratio;
+        if (y === null || !finite(y) || !finite(x)) continue;
         if (!started) {
           ctx.moveTo(x, y * vRatio);
           started = true;
@@ -63,8 +79,9 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
       for (let i = bars.length - 1; i >= 0; i--) {
         const bar = bars[i];
         const y = priceToCoordinate(bar.originalData.bottom);
-        if (y === null) continue;
-        ctx.lineTo(bar.x * ratio, y * vRatio);
+        const x = bar.x * ratio;
+        if (y === null || !finite(y) || !finite(x)) continue;
+        ctx.lineTo(x, y * vRatio);
       }
       ctx.closePath();
       ctx.fillStyle = options.fillColor;
@@ -80,8 +97,8 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
         let lineStarted = false;
         for (const bar of bars) {
           const y = priceToCoordinate(bar.originalData[key]);
-          if (y === null) continue;
           const x = bar.x * ratio;
+          if (y === null || !finite(y) || !finite(x)) continue;
           if (!lineStarted) {
             ctx.moveTo(x, y * vRatio);
             lineStarted = true;
@@ -116,5 +133,26 @@ export class BandSeries implements ICustomSeriesPaneView<Time, BandData, BandSer
 
   defaultOptions(): BandSeriesOptions {
     return defaultBandSeriesOptions;
+  }
+
+  // 2026-09-27 ("both left and right side of chart has the smart
+  // money banner distorted") — at a wide range (5Y = 260 weekly bars)
+  // the chart needs to CONFLATE multiple time points into fewer
+  // rendered columns once each bar would be narrower than the
+  // library's minimum spacing. Every other series here (candles,
+  // lines) has well-tested built-in conflation; a custom series has
+  // none unless it implements this method itself — without it, the
+  // library was falling back to some default that didn't understand
+  // this series' {top, bottom} shape, producing the jagged zigzag
+  // (worst at the edges, where conflation groups are least stable).
+  // Averaging top-with-top and bottom-with-bottom across the two
+  // merging points is the same idea line/area series already use for
+  // their own single value.
+  conflationReducer(item1: CustomConflationContext<Time, BandData>, item2: CustomConflationContext<Time, BandData>): BandData {
+    return {
+      time: item2.data.time,
+      top: (item1.data.top + item2.data.top) / 2,
+      bottom: (item1.data.bottom + item2.data.bottom) / 2,
+    };
   }
 }
