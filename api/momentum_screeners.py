@@ -2745,6 +2745,46 @@ def _gxc_pct_return(df, days):
     return (end / start - 1.0) * 100.0
 
 
+# 2026-09-28 ("macro page not matching alltechnical page, where is
+# 52WH%, ATH% and other details") — same two columns All Technicals
+# shows per NSE750 stock (nse750Technicals' own pct_from_ath/
+# pct_from_52w_high), now for the ETF/currency universe too. "ATH" here
+# means "highest point within whatever history _gxc_fetch_history
+# fetched" (5y for these two call sites, bumped from the shared
+# helper's 2y default) — the same honest, bounded-by-fetch-window
+# caveat nse750Technicals' own ATH already carries, not a genuine
+# since-inception high.
+#
+# is_direct mirrors _gxc_pct_return's own currency-direction handling
+# (see _run_global_currencies' module comment): for a directly-quoted
+# pair (USD per 1 local unit, e.g. EURUSD), "strength" tracks the raw
+# price, so its peak is the raw series' own High. For an inverted pair
+# (local units per 1 USD, e.g. USDINR), strength is the RECIPROCAL of
+# the raw price, so strength's own peak is the raw series' own trough
+# (Low) — inverted twice, the ratio flips accordingly. Country ETFs
+# are always direct (a plain USD price, no inversion concept).
+def _gxc_pct_from_high(df, is_direct=True, lookback_days=None):
+    if df is None or len(df) < 2:
+        return None
+    close = df["Close"].dropna()
+    if close.empty:
+        return None
+    extreme = df["High" if is_direct else "Low"].dropna()
+    if extreme.empty:
+        return None
+    if lookback_days is not None:
+        cutoff = extreme.index[-1] - pd.Timedelta(days=lookback_days)
+        extreme = extreme[extreme.index >= cutoff]
+        if extreme.empty:
+            return None
+    current = close.iloc[-1]
+    if is_direct:
+        peak = extreme.max()
+        return round((current / peak - 1) * 100, 2) if peak else None
+    trough = extreme.min()
+    return round((trough / current - 1) * 100, 2) if trough else None
+
+
 def _gce_classify(alpha_1y, alpha_3m):
     if alpha_1y is None or alpha_1y < GCE_MIN_ALPHA_1Y_TAG:
         return None
@@ -2758,7 +2798,10 @@ def _gce_classify(alpha_1y, alpha_3m):
 
 
 def _run_global_country_etfs(symbols, name_map, sector_map):
-    hist = {label: _gxc_fetch_history(ticker) for label, (ticker, _region) in GCE_ETF_UNIVERSE.items()}
+    # 2026-09-28 — 5y, not the shared helper's 2y default, so
+    # pct_from_ath below has a meaningfully deeper lookback than the
+    # 52W-high figure it sits next to.
+    hist = {label: _gxc_fetch_history(ticker, period="5y") for label, (ticker, _region) in GCE_ETF_UNIVERSE.items()}
     india_hist = hist.get("India (benchmark)")
 
     rows, skipped = [], []
@@ -2790,6 +2833,8 @@ def _run_global_country_etfs(symbols, name_map, sector_map):
         if row["alpha_1y"] is None:
             skipped.append(label)
         row["tag"] = _gce_classify(alphas.get("1y"), alphas.get("3m"))
+        row["pct_from_52w_high"] = _gxc_pct_from_high(h, lookback_days=365)
+        row["pct_from_ath"] = _gxc_pct_from_high(h)
         rows.append(row)
 
     rows.sort(key=lambda r: (r["alpha_1y"] is None, -(r["alpha_1y"] if r["alpha_1y"] is not None else -999)))
@@ -2825,7 +2870,7 @@ def _run_global_currencies(symbols, name_map, sector_map):
     fx_hist = {}
     for _country, fx_ticker, _is_direct in GCU_CURRENCY_UNIVERSE:
         if fx_ticker not in fx_hist:
-            fx_hist[fx_ticker] = _gxc_fetch_history(fx_ticker)
+            fx_hist[fx_ticker] = _gxc_fetch_history(fx_ticker, period="5y")
 
     rows, skipped = [], []
     for country, fx_ticker, is_direct in GCU_CURRENCY_UNIVERSE:
@@ -2847,6 +2892,13 @@ def _run_global_currencies(symbols, name_map, sector_map):
             row[f"r_{tf}"] = round(ret, 2) if ret is not None else None
         if row["r_1m"] is None:
             skipped.append(country)
+        # 2026-09-28 — direction-matched to the r_* columns above: for
+        # an inverted pair (is_direct=False), "52W high"/"ATH" mean the
+        # local currency's own strongest point against the dollar, not
+        # a literal max of the raw quoted rate (see _gxc_pct_from_high's
+        # own comment for why that's the raw series' Low, not High).
+        row["pct_from_52w_high"] = _gxc_pct_from_high(h, is_direct=is_direct, lookback_days=365)
+        row["pct_from_ath"] = _gxc_pct_from_high(h, is_direct=is_direct)
         rows.append(row)
 
     rows.sort(key=lambda r: (r["r_1m"] is None, -(r["r_1m"] if r["r_1m"] is not None else -999)))

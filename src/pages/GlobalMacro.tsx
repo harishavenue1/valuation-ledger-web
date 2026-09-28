@@ -59,6 +59,8 @@ const ETF_ALL_COLUMNS: ColumnDef[] = [
   { key: "r_3m", label: "3M %", group: "Returns", render: (r) => <Signed v={r.r_3m} digits={1} /> },
   { key: "r_6m", label: "6M %", group: "Returns", render: (r) => <Signed v={r.r_6m} digits={1} /> },
   { key: "r_1y", label: "1Y %", group: "Returns", render: (r) => <Signed v={r.r_1y} digits={1} /> },
+  { key: "pct_from_52w_high", label: "% from 52W High", group: "52W High / ATH", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+  { key: "pct_from_ath", label: "% from ATH", group: "52W High / ATH", render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
   { key: "alpha_1w", label: "Alpha 1W", group: "Alpha vs India", render: (r) => <Signed v={r.alpha_1w} digits={1} /> },
   { key: "alpha_1m", label: "Alpha 1M", group: "Alpha vs India", render: (r) => <Signed v={r.alpha_1m} digits={1} /> },
   { key: "alpha_3m", label: "Alpha 3M", group: "Alpha vs India", render: (r) => <Signed v={r.alpha_3m} digits={1} /> },
@@ -113,13 +115,18 @@ const CURRENCY_ALL_COLUMNS: ColumnDef[] = [
   { key: "r_3m", label: "3M %", group: "Returns", render: (r) => <Signed v={r.r_3m} digits={2} /> },
   { key: "r_6m", label: "6M %", group: "Returns", render: (r) => <Signed v={r.r_6m} digits={2} /> },
   { key: "r_1y", label: "1Y %", group: "Returns", render: (r) => <Signed v={r.r_1y} digits={2} /> },
+  { key: "pct_from_52w_high", label: "% from 52W High", group: "52W High / ATH", render: (r) => <Signed v={r.pct_from_52w_high} digits={2} /> },
+  { key: "pct_from_ath", label: "% from ATH", group: "52W High / ATH", render: (r) => <Signed v={r.pct_from_ath} digits={2} /> },
 ];
 
-const ETF_STORAGE_KEY = "globalMacroEtfColumns";
-const ETF_DEFAULT_ENABLED = ["country", "sector", "r_1m", "r_1y", "alpha_1y", "tag"];
+// v2 (2026-09-28, "where is 52WH%, ATH% and other details") — bumped
+// so the two new columns show by default instead of staying invisible
+// behind an already-saved localStorage pick from before they existed.
+const ETF_STORAGE_KEY = "globalMacroEtfColumns_v2";
+const ETF_DEFAULT_ENABLED = ["country", "sector", "r_1m", "r_1y", "pct_from_52w_high", "pct_from_ath", "alpha_1y", "tag"];
 
-const CURRENCY_STORAGE_KEY = "globalMacroCurrencyColumns";
-const CURRENCY_DEFAULT_ENABLED = ["country", "r_1m", "r_1y"];
+const CURRENCY_STORAGE_KEY = "globalMacroCurrencyColumns_v2";
+const CURRENCY_DEFAULT_ENABLED = ["country", "r_1m", "r_1y", "pct_from_52w_high", "pct_from_ath"];
 
 function useColumnPicker(storageKey: string, allColumns: ColumnDef[], defaultEnabled: string[]) {
   const mandatory = useMemo(() => allColumns.filter((c) => c.mandatory), [allColumns]);
@@ -268,8 +275,10 @@ export default function GlobalMacro() {
         per-stock alpha vs sector — a different, market-level question ("which country is beating India") using a different universe (country
         ETFs, not NSE stocks). <b>Price</b> is the ETF's own last close (USD) and is itself the TradingView link — assumed listed on NYSE Arca
         (TradingView's "AMEX" code), same convention already used for other US ETFs elsewhere in this app; not individually verified per
-        ticker, so flag it if any specific one's chart link looks wrong. Rank/ETF/Price always show — every other column can be individually
-        shown or hidden with the column picker below; picks are remembered on this device.
+        ticker, so flag it if any specific one's chart link looks wrong. <b>% from 52W High/ATH</b> — same convention as All Technicals'
+        Technicals (Dense, NSE750) group: negative means below that peak, "ATH" here means the highest point within a 5-year fetch window,
+        not a genuine since-inception high. Rank/ETF/Price always show — every other column can be individually shown or hidden with the
+        column picker below; picks are remembered on this device.
       </MethodologyNote>
       <ColumnPicker
         label="Columns"
@@ -301,6 +310,9 @@ export default function GlobalMacro() {
         as "local units per 1 USD" (INR, BRL, JPY, and the rest) are inverted so a positive number always means the same thing across every
         row — local-currency strength, not a quoting-convention artifact. <b>Price</b> is the RAW quoted rate (not direction-adjusted like the
         % columns) — exactly what the ticker itself shows, and itself the TradingView link (FX_IDC, TradingView's free FX data provider).
+        <b> % from 52W High/ATH</b> follow the same appreciation-positive direction as the return columns (an inverted pair's own "high" is its
+        strongest point against the dollar, not a literal max of the raw quoted rate) — "ATH" means the highest point within a 5-year fetch
+        window, not a genuine since-inception high.
       </MethodologyNote>
       <ColumnPicker
         label="Columns"
