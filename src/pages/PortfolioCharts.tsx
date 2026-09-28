@@ -59,15 +59,25 @@ export default function PortfolioCharts() {
   const { symbol = "" } = useParams();
   const { ready: holdingsReady } = useScreeners(["portfolioAllocation"]);
 
+  interface Holding {
+    symbol: string;
+    pct_of_portfolio: number;
+    pnl_pct: number | null;
+    day_change_pct: number | null;
+    pct_from_ath: number | null;
+    pct_from_52w_high: number | null;
+  }
+
   const holdings = useMemo(() => {
     const rows = bundle.momentum_screeners.portfolioAllocation?.rows ?? [];
     const seen = new Set<string>();
     // 2026-09-27 ("add a column for ATH% and 52WH% from the pf page
-    // which is already calculated") — portfolioAllocation's own rows
-    // already carry pct_from_ath/pct_from_52w_high (same fields
+    // which is already calculated" / "add a col for recent day
+    // change%") — portfolioAllocation's own rows already carry
+    // pct_from_ath/pct_from_52w_high/day_change_pct (same fields
     // PortfolioAllocation.tsx's own table shows) — no new fetch,
     // reused straight off the same screener this page already loads.
-    const out: { symbol: string; pct_of_portfolio: number; pnl_pct: number | null; pct_from_ath: number | null; pct_from_52w_high: number | null }[] = [];
+    const out: Holding[] = [];
     for (const r of rows) {
       if (!r.symbol || seen.has(r.symbol)) continue;
       seen.add(r.symbol);
@@ -75,6 +85,7 @@ export default function PortfolioCharts() {
         symbol: r.symbol,
         pct_of_portfolio: r.pct_of_portfolio ?? 0,
         pnl_pct: r.pnl_pct ?? null,
+        day_change_pct: r.day_change_pct ?? null,
         pct_from_ath: r.pct_from_ath ?? null,
         pct_from_52w_high: r.pct_from_52w_high ?? null,
       });
@@ -83,37 +94,77 @@ export default function PortfolioCharts() {
     return out;
   }, [bundle.momentum_screeners.portfolioAllocation]);
 
-  const currentIndex = holdings.findIndex((h) => h.symbol === symbol);
+  // 2026-09-28 ("add sort option on columns") — click a header to sort
+  // by it, click again to flip direction; nulls always sort last
+  // regardless of direction (same convention GenericTable's own
+  // compareVals uses elsewhere in this app). Arrow-key browsing
+  // follows whatever order is currently ON SCREEN, not always the
+  // underlying allocation-weight order — see sortedHoldings below,
+  // used for both the list and the up/down navigation.
+  type SortKey = "symbol" | "pct_of_portfolio" | "day_change_pct" | "pct_from_ath" | "pct_from_52w_high";
+  const [sortKey, setSortKey] = useState<SortKey>("pct_of_portfolio");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function clickSort(key: SortKey) {
+    if (key === sortKey) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir(key === "symbol" ? "asc" : "desc");
+    }
+  }
+
+  const sortedHoldings = useMemo(() => {
+    const copy = [...holdings];
+    copy.sort((a, b) => {
+      let cmp: number;
+      if (sortKey === "symbol") {
+        cmp = a.symbol.localeCompare(b.symbol);
+      } else {
+        const av = a[sortKey];
+        const bv = b[sortKey];
+        if (av == null && bv == null) cmp = 0;
+        else if (av == null) cmp = 1; // nulls last regardless of direction
+        else if (bv == null) cmp = -1;
+        else cmp = av - bv;
+      }
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+    return copy;
+  }, [holdings, sortKey, sortDir]);
+
+  const currentIndex = sortedHoldings.findIndex((h) => h.symbol === symbol);
 
   // No symbol in the URL yet (first visit to /portfolio-charts), or an
   // unrecognized one — land on the top holding by allocation weight.
   // `replace: true` so this doesn't spam browser history.
   useEffect(() => {
-    if (holdingsReady && holdings.length > 0 && currentIndex === -1) {
-      navigate(`/portfolio-charts/${encodeURIComponent(holdings[0].symbol)}`, { replace: true });
+    if (holdingsReady && sortedHoldings.length > 0 && currentIndex === -1) {
+      navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
     }
-  }, [holdingsReady, holdings, currentIndex, navigate]);
+  }, [holdingsReady, sortedHoldings, currentIndex, navigate]);
 
-  // ArrowUp/ArrowDown move to the previous/next holding — clamped, not
-  // wrapping, at the list's ends. Ignored while typing in an input (the
-  // range buttons and sidebar are plain buttons/links, not inputs, but
-  // this guard is a cheap, standard precaution).
+  // ArrowUp/ArrowDown move to the previous/next holding IN THE CURRENT
+  // ON-SCREEN ORDER (sortedHoldings, not the raw allocation order) —
+  // clamped, not wrapping, at the list's ends. Ignored while typing in
+  // an input (the range buttons and sidebar are plain buttons/links,
+  // not inputs, but this guard is a cheap, standard precaution).
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (holdings.length === 0 || currentIndex === -1) return;
+      if (sortedHoldings.length === 0 || currentIndex === -1) return;
       if (e.key === "ArrowUp" && currentIndex > 0) {
         e.preventDefault();
-        navigate(`/portfolio-charts/${encodeURIComponent(holdings[currentIndex - 1].symbol)}`);
-      } else if (e.key === "ArrowDown" && currentIndex < holdings.length - 1) {
+        navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[currentIndex - 1].symbol)}`);
+      } else if (e.key === "ArrowDown" && currentIndex < sortedHoldings.length - 1) {
         e.preventDefault();
-        navigate(`/portfolio-charts/${encodeURIComponent(holdings[currentIndex + 1].symbol)}`);
+        navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[currentIndex + 1].symbol)}`);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [holdings, currentIndex, navigate]);
+  }, [sortedHoldings, currentIndex, navigate]);
 
   const [range, setRange] = useState<"6mo" | "1y" | "2y" | "5y">("2y");
   const [data, setData] = useState<ChartResponse | null>(null);
@@ -171,26 +222,38 @@ export default function PortfolioCharts() {
 
   return (
     <div className="flex gap-4" style={{ height: "calc(100vh - 130px)" }}>
-      <div className="w-72 shrink-0 overflow-y-auto border border-slate-200 rounded-lg">
+      <div className="w-80 shrink-0 overflow-y-auto border border-slate-200 rounded-lg">
         <div className="sticky top-0 bg-slate-50 text-[10px] text-slate-400 border-b border-slate-200">
           <div className="px-2 py-1">{holdings.length} holdings · ↑↓ to browse</div>
-          <div className="grid grid-cols-[1fr_44px_44px_44px] gap-1 px-2 pb-1 font-medium">
-            <span>Symbol</span>
-            <span className="text-right">Alloc</span>
-            <span className="text-right">ATH%</span>
-            <span className="text-right">52WH%</span>
+          <div className="grid grid-cols-[1fr_38px_38px_38px_42px] gap-1 px-2 pb-1 font-medium">
+            {(
+              [
+                ["symbol", "Symbol"],
+                ["pct_of_portfolio", "Alloc"],
+                ["day_change_pct", "Day%"],
+                ["pct_from_ath", "ATH%"],
+                ["pct_from_52w_high", "52WH%"],
+              ] as [SortKey, string][]
+            ).map(([key, label]) => (
+              <button key={key} onClick={() => clickSort(key)} className={`text-right first:text-left hover:text-slate-700 ${sortKey === key ? "text-slate-700 font-semibold" : ""}`}>
+                {label} {sortKey === key ? (sortDir === "desc" ? "▼" : "▲") : ""}
+              </button>
+            ))}
           </div>
         </div>
-        {holdings.map((h) => (
+        {sortedHoldings.map((h) => (
           <button
             key={h.symbol}
             onClick={() => navigate(`/portfolio-charts/${encodeURIComponent(h.symbol)}`)}
-            className={`w-full grid grid-cols-[1fr_44px_44px_44px] gap-1 items-center px-2 py-1.5 text-xs text-left border-b border-slate-100 ${
+            className={`w-full grid grid-cols-[1fr_38px_38px_38px_42px] gap-1 items-center px-2 py-1.5 text-xs text-left border-b border-slate-100 ${
               h.symbol === symbol ? "bg-indigo-50 text-indigo-700 font-semibold" : "text-slate-600 hover:bg-slate-50"
             }`}
           >
             <span className="truncate">{h.symbol}</span>
             <span className="tabular-nums text-slate-400 text-right shrink-0">{fmtNum(h.pct_of_portfolio, 1)}%</span>
+            <span className="text-right">
+              <Signed v={h.day_change_pct} digits={1} />
+            </span>
             <span className="text-right">
               <Signed v={h.pct_from_ath} digits={0} />
             </span>
