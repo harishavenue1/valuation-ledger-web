@@ -46,6 +46,18 @@ import { ChartBar } from "../lib/api";
 // height its container is given via CSS (a ResizeObserver on the
 // wrapper div), so a page can make it as large as the available
 // layout allows instead of this component dictating a fixed size.
+//
+// 2026-09-28 ("also dont show the text") — every overlay LineSeries
+// had `priceLineVisible: false, lastValueVisible: false` yet was still
+// showing a floating colored "title" pill mid-pane at its last value
+// (confirmed live via Chart Settings — unchecking a line made
+// specifically its own pill disappear, e.g. EMA1's). Root cause:
+// lightweight-charts' series `title` renders that pane label whenever
+// it's a non-empty string, independent of both those flags — neither
+// one governs it. Fix is to just not set `title` on these series at
+// all; the existing dot-legend row above the chart in
+// PortfolioCharts.tsx already names/values each line, so nothing reads
+// `title` elsewhere.
 export interface LineVisibility {
   ema1: boolean;
   ema2: boolean;
@@ -105,17 +117,24 @@ const COMMON_LAYOUT = {
 // shapes are limited to circle/square/arrowUp/arrowDown, so xcross and
 // Pine's "label" shapes are approximated with the closest available
 // shape rather than a lookalike.
+// 2026-09-28 ("also dont show the text" / "also no need to mention QB
+// and RSI >66 text") — no caption under/above any marker, just the
+// shape+color+position, which the MethodologyNote legend already
+// explains. Also flipped RSI>66 to an up arrow below the bar ("make
+// arrow for RSI>66 to uparrow instead of down arrow"), matching the
+// other buy-side markers (QB/SM Entry) instead of Pine's original
+// above-bar down-arrow placement.
 function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
   for (const b of bars) {
     const time = toUnixSeconds(b.date);
-    if (b.qb_buy) markers.push({ time, position: "belowBar", color: "#84cc16", shape: "arrowUp", text: "QB" }); // lime, triangleup belowbar
-    if (b.qb_sell) markers.push({ time, position: "aboveBar", color: QB_SELL_MARKER_COLOR, shape: "arrowDown", text: "QB" }); // red, triangledown abovebar
-    if (b.mltis_buy) markers.push({ time, position: "aboveBar", color: "#06b6d4", shape: "arrowDown", text: "RSI>66" }); // aqua, triangledown abovebar — Pine's own (unusual) placement, kept faithful; labeled by the condition it fires on (ribbon + weekly RSI>66)
-    if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square", text: "✕" }); // orange, xcross abovebar (approximated as square)
-    if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp", text: "SM Entry" }); // teal
-    if (b.sm_sell) markers.push({ time, position: "aboveBar", color: "#7f1d1d", shape: "arrowDown", text: "SM Sell" }); // maroon
-    if (b.sm_close) markers.push({ time, position: "inBar", color: QB_TRAIL_COLOR, shape: "circle", text: "SM Close" }); // orange, closest to Pine's absolute-position xcross
+    if (b.qb_buy) markers.push({ time, position: "belowBar", color: "#84cc16", shape: "arrowUp" }); // lime
+    if (b.qb_sell) markers.push({ time, position: "aboveBar", color: QB_SELL_MARKER_COLOR, shape: "arrowDown" }); // red
+    if (b.mltis_buy) markers.push({ time, position: "belowBar", color: "#06b6d4", shape: "arrowUp" }); // aqua
+    if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square" }); // orange, xcross abovebar (approximated as square)
+    if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp" }); // teal
+    if (b.sm_sell) markers.push({ time, position: "aboveBar", color: "#7f1d1d", shape: "arrowDown" }); // maroon
+    if (b.sm_close) markers.push({ time, position: "inBar", color: QB_TRAIL_COLOR, shape: "circle" }); // orange, closest to Pine's absolute-position xcross
   }
   return markers;
 }
@@ -168,11 +187,11 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     const toPoints = (key: keyof ChartBar) => bars.filter((b) => b[key] != null).map((b) => ({ time: toUnixSeconds(b.date), value: b[key] as number }));
 
     if (lines.ema1) {
-      const s = chart.addSeries(LineSeries, { color: EMA1_COLOR, lineWidth: 1, title: "EMA1 (12W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: EMA1_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("ema1"));
     }
     if (lines.ema2) {
-      const s = chart.addSeries(LineSeries, { color: EMA2_COLOR, lineWidth: 1, title: "EMA2 (21W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: EMA2_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("ema2"));
     }
     if (lines.slowEma) {
@@ -181,23 +200,23 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       // briefly an Area series with a gradient glow underneath, which
       // was the wrong element to shade. Plain line, like every other
       // EMA here.
-      const s = chart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 2, title: "Slow EMA (33W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("slow_ema"));
     }
     if (lines.qbUpper) {
-      const s = chart.addSeries(LineSeries, { color: QB_UPPER_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Upper Band", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: QB_UPPER_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("qb_upper"));
     }
     if (lines.qbTrail) {
-      const s = chart.addSeries(LineSeries, { color: QB_TRAIL_COLOR, lineWidth: 1, lineStyle: 2, title: "QB Trail (34W)", priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: QB_TRAIL_COLOR, lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("qb_trail"));
     }
     if (lines.smLines) {
-      const trend = chart.addSeries(LineSeries, { color: SM_TREND_COLOR, lineWidth: 2, title: "SM Trend (SMA40)", priceLineVisible: false, lastValueVisible: false });
+      const trend = chart.addSeries(LineSeries, { color: SM_TREND_COLOR, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
       trend.setData(toPoints("sm_trend"));
-      const fast1 = chart.addSeries(LineSeries, { color: SM_FAST1_COLOR, lineWidth: 1, title: "SM EMA10", priceLineVisible: false, lastValueVisible: false });
+      const fast1 = chart.addSeries(LineSeries, { color: SM_FAST1_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       fast1.setData(toPoints("sm_fast1"));
-      const fast2 = chart.addSeries(LineSeries, { color: SM_FAST2_COLOR, lineWidth: 1, title: "SM EMA20", priceLineVisible: false, lastValueVisible: false });
+      const fast2 = chart.addSeries(LineSeries, { color: SM_FAST2_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       fast2.setData(toPoints("sm_fast2"));
     }
     if (lines.smChannel) {
@@ -211,9 +230,9 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       // feature, that's not a good trade against just reverting to
       // this simpler, two-dashed-lines approximation, which never had
       // a rendering artifact across any of its uses this session.
-      const top = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, title: "SM Channel Top", priceLineVisible: false, lastValueVisible: false });
+      const top = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, priceLineVisible: false, lastValueVisible: false });
       top.setData(toPoints("sm_ch_top"));
-      const bot = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, title: "SM Channel Bottom", priceLineVisible: false, lastValueVisible: false });
+      const bot = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, priceLineVisible: false, lastValueVisible: false });
       bot.setData(toPoints("sm_ch_bot"));
     }
 
