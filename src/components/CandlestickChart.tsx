@@ -118,12 +118,14 @@ const COMMON_LAYOUT = {
 // Pine's "label" shapes are approximated with the closest available
 // shape rather than a lookalike.
 // 2026-09-28 ("also dont show the text" / "also no need to mention QB
-// and RSI >66 text") — no caption under/above any marker, just the
-// shape+color+position, which the MethodologyNote legend already
-// explains. Also flipped RSI>66 to an up arrow below the bar ("make
-// arrow for RSI>66 to uparrow instead of down arrow"), matching the
-// other buy-side markers (QB/SM Entry) instead of Pine's original
-// above-bar down-arrow placement.
+// and RSI >66 text") — that exclusion was scoped to exactly those two
+// ("SM ENTRY and SM EXIT was not supposed to be removed") — QB/RSI>66
+// markers stay caption-free, every SmartMoney marker (and the EMA-
+// breakdown ✕) keeps its own text, same as before. Also flipped
+// RSI>66 to an up arrow below the bar ("make arrow for RSI>66 to
+// uparrow instead of down arrow"), matching the other buy-side
+// markers (QB/SM Entry) instead of Pine's original above-bar
+// down-arrow placement.
 function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
   const markers: SeriesMarker<Time>[] = [];
   for (const b of bars) {
@@ -131,10 +133,10 @@ function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
     if (b.qb_buy) markers.push({ time, position: "belowBar", color: "#84cc16", shape: "arrowUp" }); // lime
     if (b.qb_sell) markers.push({ time, position: "aboveBar", color: QB_SELL_MARKER_COLOR, shape: "arrowDown" }); // red
     if (b.mltis_buy) markers.push({ time, position: "belowBar", color: "#06b6d4", shape: "arrowUp" }); // aqua
-    if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square" }); // orange, xcross abovebar (approximated as square)
-    if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp" }); // teal
-    if (b.sm_sell) markers.push({ time, position: "aboveBar", color: "#7f1d1d", shape: "arrowDown" }); // maroon
-    if (b.sm_close) markers.push({ time, position: "inBar", color: QB_TRAIL_COLOR, shape: "circle" }); // orange, closest to Pine's absolute-position xcross
+    if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square", text: "✕" }); // orange, xcross abovebar (approximated as square)
+    if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp", text: "SM Entry" }); // teal
+    if (b.sm_sell) markers.push({ time, position: "aboveBar", color: "#7f1d1d", shape: "arrowDown", text: "SM Sell" }); // maroon
+    if (b.sm_close) markers.push({ time, position: "inBar", color: QB_TRAIL_COLOR, shape: "circle", text: "SM Close" }); // orange, closest to Pine's absolute-position xcross
   }
   return markers;
 }
