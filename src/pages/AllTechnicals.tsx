@@ -231,6 +231,20 @@ function loadEnabledColumns(): Set<string> {
   return new Set(DEFAULT_ENABLED);
 }
 
+// 2026-09-28 ("welcorp ATH value is less than current day") —
+// nse750Technicals' own pct_from_ath/pct_from_52w_high are only as
+// fresh as ITS OWN weekly current_price snapshot, but this page shows
+// them next to nseScreener's Price column, which refreshes daily. A
+// stock that moved between those two snapshots could show a big same-
+// day Day% drop right next to a barely-off-the-high %, which reads as
+// self-contradictory. Recomputed here against nseScreener's fresher
+// price and the raw peak prices nse750Technicals now also pushes
+// (ath_price/high_52w_price), instead of trusting its baked-in %.
+function pctFromPeak(price: number | null | undefined, peak: number | null | undefined): number | null {
+  if (price == null || peak == null || peak === 0) return null;
+  return Math.round((price / peak - 1) * 1000) / 10;
+}
+
 function keyBy<T extends Record<string, any>>(rows: T[] | undefined, dedupeFirst = false): Map<string, T> {
   const map = new Map<string, T>();
   for (const r of rows ?? []) {
@@ -458,8 +472,8 @@ export default function AllTechnicals() {
         nt_6m_pct: nt?.pct_6m ?? null,
         nt_pct_200d_ema: nt?.pct_200d_ema ?? null,
         nt_pct_33w_ema: nt?.pct_33w_ema ?? null,
-        nt_pct_from_ath: nt?.pct_from_ath ?? null,
-        nt_pct_from_52w_high: nt?.pct_from_52w_high ?? null,
+        nt_pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? null),
+        nt_pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? null),
 
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per

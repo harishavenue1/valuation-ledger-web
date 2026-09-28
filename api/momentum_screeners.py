@@ -4317,7 +4317,8 @@ def _fetch_nse750_technicals_one(symbol):
     current_price = closes[-1]
 
     out = {"price": current_price, "pct_1w": None, "pct_1m": None, "pct_3m": None, "pct_6m": None,
-           "pct_33w_ema": None, "pct_200d_ema": None, "pct_from_ath": None, "pct_from_52w_high": None}
+           "pct_33w_ema": None, "pct_200d_ema": None, "pct_from_ath": None, "pct_from_52w_high": None,
+           "ath_price": None, "high_52w_price": None}
 
     for key, bars_back in (("pct_1w", 1), ("pct_1m", 4), ("pct_3m", 13), ("pct_6m", 26)):
         if len(closes) > bars_back and closes[-1 - bars_back]:
@@ -4325,13 +4326,26 @@ def _fetch_nse750_technicals_one(symbol):
 
     out["pct_33w_ema"] = _nse750t_ema_pct_distance(ohlc4_w, NSE750T_EMA33W_PERIOD, current_price)
 
+    # 2026-09-28 ("welcorp ATH value is less than current day") — this
+    # screener's OWN current_price is only as fresh as its own weekly
+    # refresh (see this file's module comment — batched, not daily),
+    # but the page shows it next to nseScreener's PRICE column, which
+    # refreshes daily. When a stock moves between those two snapshots,
+    # the pre-baked pct_from_ath here goes stale against the displayed
+    # price and can look self-contradictory (a big same-day drop next
+    # to a barely-off-the-high %). Now also pushing the raw peak
+    # PRICES, not just this snapshot's own %, so the frontend can
+    # recompute the % against nseScreener's fresher price instead of
+    # trusting this weekly one.
     if highs:
         ath = max(highs)
         if ath:
             out["pct_from_ath"] = round((current_price / ath - 1) * 100, 2)
+            out["ath_price"] = ath
         high_52w = max(highs[-52:] if len(highs) >= 52 else highs)
         if high_52w:
             out["pct_from_52w_high"] = round((current_price / high_52w - 1) * 100, 2)
+            out["high_52w_price"] = high_52w
 
     daily_ohlc4 = _nse750t_fetch_daily_bars(f"{symbol}.NS")
     out["pct_200d_ema"] = _nse750t_ema_pct_distance(daily_ohlc4, NSE750T_EMA200D_PERIOD, current_price)

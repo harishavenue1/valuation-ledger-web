@@ -31,6 +31,16 @@ function keyBy<T extends Record<string, any>>(rows: T[] | undefined): Map<string
   return map;
 }
 
+// 2026-09-28 ("welcorp ATH value is less than current day") — same fix
+// as AllTechnicals.tsx's own pctFromPeak: nse750Technicals' baked-in %
+// is only as fresh as its own weekly snapshot, but sits next to
+// nseScreener's daily Price here — recompute against the fresher price
+// and the raw peak prices nse750Technicals now also pushes.
+function pctFromPeak(price: number | null | undefined, peak: number | null | undefined): number | null {
+  if (price == null || peak == null || peak === 0) return null;
+  return Math.round((price / peak - 1) * 1000) / 10;
+}
+
 const DENSE_COLS: Col[] = [
   { key: "symbol", label: "Symbol", align: "left" },
   { key: "name", label: "Name", align: "left" },
@@ -82,8 +92,8 @@ export default function SectorDirectory() {
         pct_6m: nt?.pct_6m ?? null,
         pct_200d_ema: nt?.pct_200d_ema ?? null,
         pct_33w_ema: nt?.pct_33w_ema ?? null,
-        pct_from_ath: nt?.pct_from_ath ?? null,
-        pct_from_52w_high: nt?.pct_from_52w_high ?? null,
+        pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? null),
+        pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? null),
       };
     });
   }, [ms]);
