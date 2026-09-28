@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
 import { ChartBar } from "../lib/api";
-import { BandSeries } from "./BandSeries";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
 // (StrategicAlpha's TimeSeriesChart, PortfolioAllocation's SectorDonut)
@@ -28,10 +27,15 @@ import { BandSeries } from "./BandSeries";
 //
 // 2026-09-27 ("green patch was supposed to be only for the smart
 // money band but you made full lower half") — the SmartMoney channel
-// is now a genuine filled band between sm_ch_top/sm_ch_bot, via
-// BandSeries.ts's own custom series plugin — see that file's comment
-// for why a plain built-in series can't do this (Area only fills down
-// to the chart's own bottom edge, not to another moving line).
+// was briefly a genuine filled band via a custom series plugin, then
+// reverted (see the smChannel block's own comment) after that plugin
+// turned out to have a reproducible edge-of-chart rendering bug that
+// survived two rounds of targeted fixes. It's two dashed lines
+// (sm_ch_top/sm_ch_bot) — no built-in series in this library fills
+// between two independent moving lines (Area only fills down to the
+// chart's own bottom edge), and a correct custom-series fill would
+// need more plugin-debugging time than this cosmetic, off-by-default
+// feature is worth.
 //
 // 2026-09-27 ("remove rsi as its already built-in with indicator and
 // expand the chart to full screen to utilize free space") — the
@@ -81,8 +85,7 @@ const QB_TRAIL_COLOR = "#f97316"; // orange-500 — quantBollinger 34W trail
 const SM_TREND_COLOR = "#0d9488"; // teal-600 — Pine's own smLineColor when dir==1, close enough as a fixed color
 const SM_FAST1_COLOR = "#a855f7"; // purple-500
 const SM_FAST2_COLOR = "#ec4899"; // pink-500
-const SM_CHANNEL_FILL = "rgba(71, 176, 39, 0.15)"; // the "lighter green curve" band fill the user pointed at
-const SM_CHANNEL_BORDER = "rgba(71, 176, 39, 0.5)";
+const SM_CHANNEL_LINE = "rgba(71, 176, 39, 0.6)"; // the "lighter green curve" the user pointed at — see this block's own comment for why it's two dashed lines, not a filled band
 const QB_SELL_MARKER_COLOR = "#dc2626"; // Pine hardcodes color.red for this ONE marker, independent of DOWN_COLOR (candle down-color is now tan, not red — this stays red regardless)
 
 function toUnixSeconds(dateStr: string): UTCTimestamp {
@@ -198,23 +201,20 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       fast2.setData(toPoints("sm_fast2"));
     }
     if (lines.smChannel) {
-      // 2026-09-27 ("green patch was supposed to be only for the
-      // smart money band") — a real filled band between sm_ch_top and
-      // sm_ch_bot, not two dashed lines (the earlier approximation,
-      // before it was clear the user specifically wanted the shaded
-      // fill here). See BandSeries.ts's own module comment for why
-      // this needed a custom series plugin.
-      // 2026-09-27 ("why 2 horizontal rows on every chart") — a
-      // custom series defaults to showing its own price line + last-
-      // value label (here, the channel's own "bottom" value, since
-      // priceValueBuilder's last array entry is treated as "current
-      // price") — a second, meaningless dashed line alongside the
-      // candles' own legitimate one. Every other overlay series here
-      // already has both off; this one was missed.
-      const band = chart.addCustomSeries(new BandSeries(), { fillColor: SM_CHANNEL_FILL, borderColor: SM_CHANNEL_BORDER, borderWidth: 1, priceLineVisible: false, lastValueVisible: false });
-      band.setData(
-        bars.filter((b) => b.sm_ch_top != null && b.sm_ch_bot != null).map((b) => ({ time: toUnixSeconds(b.date), top: b.sm_ch_top as number, bottom: b.sm_ch_bot as number }))
-      );
+      // 2026-09-27 — briefly a real filled band via a custom series
+      // plugin (BandSeries.ts). That plugin had a reproducible zigzag
+      // rendering bug at the chart's edges ("on top left corner what
+      // is wrong" / "sometime bottom left corner" / "both left and
+      // right side ... distorted") that survived two rounds of
+      // targeted fixes (deferred chart init, finite-coordinate
+      // guards, a conflationReducer) — for a cosmetic, off-by-default
+      // feature, that's not a good trade against just reverting to
+      // this simpler, two-dashed-lines approximation, which never had
+      // a rendering artifact across any of its uses this session.
+      const top = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, title: "SM Channel Top", priceLineVisible: false, lastValueVisible: false });
+      top.setData(toPoints("sm_ch_top"));
+      const bot = chart.addSeries(LineSeries, { color: SM_CHANNEL_LINE, lineWidth: 1, lineStyle: 3, title: "SM Channel Bottom", priceLineVisible: false, lastValueVisible: false });
+      bot.setData(toPoints("sm_ch_bot"));
     }
 
     // Volume as a low-profile histogram in the bottom ~20% of the pane,
