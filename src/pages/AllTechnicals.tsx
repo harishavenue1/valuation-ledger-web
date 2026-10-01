@@ -242,7 +242,13 @@ function loadEnabledColumns(): Set<string> {
 // (ath_price/high_52w_price), instead of trusting its baked-in %.
 function pctFromPeak(price: number | null | undefined, peak: number | null | undefined): number | null {
   if (price == null || peak == null || peak === 0) return null;
-  return Math.round((price / peak - 1) * 1000) / 10;
+  // 2026-10-01 ("how can stock goes +ve above ATH") — the stored peak
+  // is itself only as fresh as nse750Technicals' own weekly snapshot;
+  // when today's price has since run past it, today's price simply IS
+  // the new ATH (0% off it), not a positive number above it — a stock
+  // can't trade above its own all-time high by definition. Clamped at
+  // 0 rather than showing the raw (wrong) excess.
+  return Math.min(0, Math.round((price / peak - 1) * 1000) / 10);
 }
 
 function keyBy<T extends Record<string, any>>(rows: T[] | undefined, dedupeFirst = false): Map<string, T> {

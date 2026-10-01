@@ -38,7 +38,12 @@ function keyBy<T extends Record<string, any>>(rows: T[] | undefined): Map<string
 // and the raw peak prices nse750Technicals now also pushes.
 function pctFromPeak(price: number | null | undefined, peak: number | null | undefined): number | null {
   if (price == null || peak == null || peak === 0) return null;
-  return Math.round((price / peak - 1) * 1000) / 10;
+  // 2026-10-01 ("how can stock goes +ve above ATH") — same clamp as
+  // AllTechnicals.tsx's own pctFromPeak: the stored peak is only as
+  // fresh as nse750Technicals' weekly snapshot, so a stock that's
+  // since run past it should show 0% off (today's price IS the new
+  // ATH), never a positive excess above its own high.
+  return Math.min(0, Math.round((price / peak - 1) * 1000) / 10);
 }
 
 const DENSE_COLS: Col[] = [
