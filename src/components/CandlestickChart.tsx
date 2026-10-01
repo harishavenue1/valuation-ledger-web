@@ -96,8 +96,16 @@ const QB_TRAIL_COLOR = "#f97316"; // orange-500 — quantBollinger 34W trail
 const SM_TREND_COLOR = "#0d9488"; // teal-600 — Pine's own smLineColor when dir==1, close enough as a fixed color
 const SM_FAST1_COLOR = "#a855f7"; // purple-500
 const SM_FAST2_COLOR = "#ec4899"; // pink-500
-const SM_CHANNEL_FILL = "rgba(71, 176, 39, 0.15)"; // the "lighter green curve"/"thin intense green wave" the user pointed at — a real filled band via BandSeries.ts
-const SM_CHANNEL_BORDER = "rgba(71, 176, 39, 0.6)";
+// 2026-10-01 ("why my charts not matching with trading view charts") —
+// this was literally the same RGB (71, 176, 39) as SLOW_EMA_COLOR
+// above, just lower opacity: with both the Slow EMA line and the
+// SmartMoney channel visible, they blended into what read as one
+// confusing green line/band, unlike TradingView's single unambiguous
+// EMA line. Shifted to indigo — distinct from every other line color
+// on this chart (green/teal/purple/pink/sky/orange/gold/slate already
+// taken), still reads as a "zone" rather than a line.
+const SM_CHANNEL_FILL = "rgba(99, 102, 241, 0.15)"; // indigo-500 — the "lighter green curve"/"thin intense green wave" the user pointed at — a real filled band via BandSeries.ts
+const SM_CHANNEL_BORDER = "rgba(99, 102, 241, 0.6)";
 const QB_SELL_MARKER_COLOR = "#dc2626"; // Pine hardcodes color.red for this ONE marker, independent of DOWN_COLOR (candle down-color is now tan, not red — this stays red regardless)
 
 function toUnixSeconds(dateStr: string): UTCTimestamp {
