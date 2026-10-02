@@ -2927,63 +2927,155 @@ RFX_UNIVERSE = [
 RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("6m", 182), ("1y", 365)]  # 91/182 days = a quarter / half-year, same as GCE_TIMEFRAMES' 3m/6m
 
 # 2026-10-02 ("can we add an indian NIFTYMIDSMALL and US Index S&P or
-# NASDAQ index") — Nifty MidSmallcap 400 can't come from Yahoo: its
-# NIFTYMIDSML400.NS ticker returns a single quote point and no history
+# NASDAQ index") — Nifty MidSmallcap 400 / Smallcap 250 can't come from
+# Yahoo: their .NS tickers return a single quote point and no history
 # (checked live), and niftyindices.com's own historical-data endpoint
-# answers with an HTML block page instead of data. NSE's archive
-# CSV of every index's daily close (same archives.nseindia.com host the
-# stock universe above already reads from Vercel) has it, so the D/W/M/Q/Y
-# changes are built from the closes in a handful of those daily files.
+# answers with an HTML block page instead of data. NSE's archive CSV of
+# every index's daily open/high/low/close (same archives.nseindia.com
+# host the stock universe above already reads from Vercel, files exist
+# back many years and answer in ~0.15s) has them.
+#
+# 2026-10-02 ("also add these columns % vs 200D EMA, % vs 33W EMA, % from
+# ATH, % from 52W High") — those need years of daily bars, so instead of
+# fetching a handful of files per run the daily bars are kept in their
+# own meta key (rfx_nse_history, deliberately NOT inside
+# momentum_screeners so the bundle stays small). The first run backfills
+# 5 years with a thread pool (~1,300 files, well inside the function's
+# time limit; a time budget stops it early and the next run carries on),
+# every run after that only fetches the last few days.
 # (display name, NSE's own name in the CSV, TradingView symbol, our symbol key).
 # Nifty Smallcap 250 added the same day ("also NIFTYSMLCAP250").
 RFX_NSE_INDICES = [
     ("Nifty MidSmallcap 400", "Nifty MidSmallcap 400", "NSE:NIFTYMIDSML400", "NIFTYMIDSML400"),
     ("Nifty Smallcap 250", "Nifty Smallcap 250", "NSE:NIFTYSMLCAP250", "NIFTYSMLCAP250"),
 ]
+RFX_NSE_HISTORY_KEY = "rfx_nse_history"
+RFX_HISTORY_DAYS = 1825  # 5y, same window the ETF/currency tables' "ATH" is bounded by
 
 
-def _rfx_nse_index_close(index_name, on_or_before, max_back=7):
-    """(date, close) from NSE's ind_close_all CSV for the latest trading
-    day on or before `on_or_before` (a missing file = holiday/weekend or
-    not published yet, so step back a day at a time), or None."""
-    for back in range(max_back + 1):
-        d = on_or_before - timedelta(days=back)
-        if d.weekday() >= 5:
+def _rfx_to_float(x, fallback=None):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return fallback
+
+
+class _RfxBlocked(Exception):
+    """NSE's CDN answered 403 even after backing off — rate limiting."""
+
+
+def _rfx_fetch_nse_day(d, session):
+    """(date, {NSE index name: [open, high, low, close]}) for one trading
+    day, (date, None) when NSE has no file for it (weekend/holiday/not yet
+    published). Network errors raise, so the caller doesn't mark the day as
+    checked and a later run retries it. archives.nseindia.com soft-limits
+    bursts (live: 8 parallel workers got 403s for ~1,000 of 1,300 files,
+    then recovered a few seconds later), hence the backoff on 403."""
+    url = f"https://archives.nseindia.com/content/indices/ind_close_all_{d.strftime('%d%m%Y')}.csv"
+    time.sleep(0.15)
+    r = None
+    for attempt in range(3):
+        r = session.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        if r.status_code != 403:
+            break
+        time.sleep(1.0 * (attempt + 1))
+    if r.status_code == 403:
+        raise _RfxBlocked(url)
+    if r.status_code == 404:
+        return d, None
+    r.raise_for_status()
+    wanted = {spec[1].lower(): spec[1] for spec in RFX_NSE_INDICES}
+    out = {}
+    for row in csv.DictReader(io.StringIO(r.text)):
+        name = wanted.get(row.get("Index Name", "").strip().lower())
+        if not name:
             continue
-        url = f"https://archives.nseindia.com/content/indices/ind_close_all_{d.strftime('%d%m%Y')}.csv"
-        try:
-            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        except Exception:
+        close = _rfx_to_float(row.get("Closing Index Value"))
+        if close is None:
             continue
-        if r.status_code != 200:
-            continue
-        for row in csv.DictReader(io.StringIO(r.text)):
-            if row.get("Index Name", "").strip().lower() == index_name.lower():
+        # older files can carry "-" for open/high/low — fall back to the close
+        out[name] = [
+            _rfx_to_float(row.get("Open Index Value"), close),
+            _rfx_to_float(row.get("High Index Value"), close),
+            _rfx_to_float(row.get("Low Index Value"), close),
+            close,
+        ]
+    return d, out
+
+
+def _rfx_nse_history_update(time_budget_s=200):
+    """Load the stored daily history, fetch whatever weekdays in the last
+    5y it hasn't checked yet (newest first; today and yesterday are always
+    re-checked since NSE publishes late), save it back, return it. Gentle
+    on purpose (2 workers, backoff, stops early if NSE keeps refusing) —
+    anything not reached is simply picked up by the next run."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    conn = get_conn()
+    try:
+        hist = get_meta(conn, RFX_NSE_HISTORY_KEY, None) or {}
+    finally:
+        conn.close()
+    days = hist.get("days") or {}
+    checked = set(hist.get("checked") or [])
+    today = date.today()
+    start = today - timedelta(days=RFX_HISTORY_DAYS)
+
+    always = {today, today - timedelta(days=1)}
+    todo = []
+    d = today
+    while d >= start:
+        if d.weekday() < 5 and (d in always or d.isoformat() not in checked):
+            todo.append(d)
+        d -= timedelta(days=1)
+
+    t0 = time.monotonic()
+    session = requests.Session()
+    stop = False
+    for i in range(0, len(todo), 24):
+        if stop or time.monotonic() - t0 > time_budget_s:
+            break
+        batch = todo[i:i + 24]
+        blocked = 0
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_rfx_fetch_nse_day, bd, session) for bd in batch]
+            for bd, fut in zip(batch, futures):
                 try:
-                    return d, float(row["Closing Index Value"])
-                except (KeyError, ValueError):
-                    return None
-        return None
-    return None
+                    _, vals = fut.result()
+                except _RfxBlocked:
+                    blocked += 1
+                    continue
+                except Exception:
+                    continue
+                if vals:
+                    days[bd.isoformat()] = vals
+                if bd not in always or vals:
+                    checked.add(bd.isoformat())
+        if blocked >= len(batch) // 2:
+            stop = True
+    cutoff = start.isoformat()
+    days = {k: v for k, v in days.items() if k >= cutoff}
+    checked = {k for k in checked if k >= cutoff}
+    hist = {"days": days, "checked": sorted(checked)}
+    conn = get_conn()
+    try:
+        set_meta(conn, RFX_NSE_HISTORY_KEY, hist)
+    finally:
+        conn.close()
+    return days
 
 
-def _rfx_nse_index_row(name, csv_name, tv, symbol):
-    latest = _rfx_nse_index_close(csv_name, date.today())
-    if latest is None:
+def _rfx_nse_frame(days, nse_name):
+    """The stored daily bars for one NSE index as an Open/High/Low/Close
+    DataFrame (DatetimeIndex), the same shape _gxc_fetch_history returns."""
+    items = sorted((k, v[nse_name]) for k, v in days.items() if nse_name in v)
+    if len(items) < 2:
         return None
-    latest_date, level = latest
-    row = {
-        "name": name,
-        "symbol": symbol,
-        "kind": "index",
-        "level": round(level, 2),
-        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
-    }
-    for tf, days in RFX_TIMEFRAMES:
-        anchor = latest_date - timedelta(days=days)
-        prior = _rfx_nse_index_close(csv_name, anchor if days > 1 else latest_date - timedelta(days=1))
-        row[f"chg_{tf}"] = round((level / prior[1] - 1) * 100, 2) if prior and prior[1] else None
-    return row
+    return pd.DataFrame(
+        [v for _, v in items],
+        index=pd.to_datetime([k for k, _ in items]),
+        columns=["Open", "High", "Low", "Close"],
+    )
 
 
 def _rfx_change(df, days):
@@ -2998,38 +3090,95 @@ def _rfx_change(df, days):
     else:
         cutoff = close.index[-1] - pd.Timedelta(days=days)
         prior = close[close.index <= cutoff]
-        start = prior.iloc[-1] if len(prior) else close.iloc[0]
+        # No bar near the window's start (a still-backfilling NSE history,
+        # say) means no honest answer — never fall back to the first bar
+        # and call it a 1-year change.
+        if not len(prior) or (cutoff - prior.index[-1]).days > 10:
+            return None
+        start = prior.iloc[-1]
     if pd.isna(start) or pd.isna(end) or start == 0:
         return None
     return round((end / start - 1) * 100, 2)
 
 
+def _rfx_levels(df):
+    """% vs the 20-, 50- and 200-day and 33-week EMAs and % below the all-time/52-week
+    high, for one instrument's Open/High/Low/Close frame. EMAs are on OHLC4
+    per this account's standing convention (the weekly one on weekly
+    OHLC4 resampled from the daily bars) and compared against the latest
+    close; peaks use the highs. ATH is bounded by however much history the
+    frame holds (5y). None for anything without enough bars yet."""
+    out = {"pct_20d_ema": None, "pct_50d_ema": None, "pct_200d_ema": None, "pct_33w_ema": None, "pct_from_ath": None, "pct_from_52w_high": None}
+    if df is None or len(df) < 2:
+        return out
+    df = df.dropna(subset=["Open", "High", "Low", "Close"])
+    if len(df) < 2:
+        return out
+    cur = float(df["Close"].iloc[-1])
+    daily_ohlc4 = (df["Open"] + df["High"] + df["Low"] + df["Close"]) / 4
+    # 2026-10-02 ("we can add 20DEMA% & 50DEMA% as well") — 20D/50D join the 200D
+    for period, key in ((20, "pct_20d_ema"), (50, "pct_50d_ema"), (200, "pct_200d_ema")):
+        if len(daily_ohlc4) >= period:
+            ema = float(daily_ohlc4.ewm(span=period, adjust=False).mean().iloc[-1])
+            out[key] = round((cur / ema - 1) * 100, 2) if ema else None
+    wk = df.resample("W-FRI").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+    if len(wk) >= 33:
+        wk_ohlc4 = (wk["Open"] + wk["High"] + wk["Low"] + wk["Close"]) / 4
+        ema = float(wk_ohlc4.ewm(span=33, adjust=False).mean().iloc[-1])
+        out["pct_33w_ema"] = round((cur / ema - 1) * 100, 2) if ema else None
+    # Peaks only once the history actually spans the window (ATH = the 5y
+    # window, 52W high = a year) — a half-backfilled NSE history would
+    # otherwise report its own short-window high as the ATH.
+    span_days = (df.index[-1] - df.index[0]).days
+    if span_days >= RFX_HISTORY_DAYS - 150:
+        ath = float(df["High"].max())
+        if ath:
+            out["pct_from_ath"] = round((cur / ath - 1) * 100, 2)
+    if span_days >= 360:
+        recent = df[df.index >= df.index[-1] - pd.Timedelta(days=365)]
+        high_52w = float(recent["High"].max()) if len(recent) else None
+        if high_52w:
+            out["pct_from_52w_high"] = round((cur / high_52w - 1) * 100, 2)
+    return out
+
+
+def _rfx_row(name, symbol, kind, tv, df):
+    close = df["Close"].dropna() if df is not None else None
+    if close is None or close.empty:
+        return None
+    row = {
+        "name": name,
+        "symbol": symbol,
+        "kind": kind,
+        "level": round(float(close.iloc[-1]), 2),
+        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
+    }
+    for tf, days in RFX_TIMEFRAMES:
+        row[f"chg_{tf}"] = _rfx_change(df, days)
+    row.update(_rfx_levels(df))
+    return row
+
+
 def _run_rates_fx(symbols, name_map, sector_map):
     rows, skipped = [], []
     for name, ticker, tv, kind in RFX_UNIVERSE:
-        df = _gxc_fetch_history(ticker)
-        close = df["Close"].dropna() if df is not None else None
-        if close is None or close.empty:
+        row = _rfx_row(name, ticker, kind, tv, _gxc_fetch_history(ticker, period="5y"))
+        if row is None:
             skipped.append(name)
-            continue
-        row = {
-            "name": name,
-            "symbol": ticker,
-            "kind": kind,
-            "level": round(float(close.iloc[-1]), 2),
-            "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
-        }
-        for tf, days in RFX_TIMEFRAMES:
-            row[f"chg_{tf}"] = _rfx_change(df, days)
-        rows.append(row)
+        else:
+            rows.append(row)
     # The Nifty indices go right after the currencies, before the US indices
     first_index = next((i for i, r in enumerate(rows) if r["kind"] == "index"), len(rows))
-    for offset, spec in enumerate(RFX_NSE_INDICES):
-        nse_row = _rfx_nse_index_row(*spec)
-        if nse_row is None:
-            skipped.append(spec[0])
+    try:
+        days = _rfx_nse_history_update()
+    except Exception:
+        days = {}
+    for offset, (name, csv_name, tv, symbol) in enumerate(RFX_NSE_INDICES):
+        row = _rfx_row(name, symbol, "index", tv, _rfx_nse_frame(days, csv_name))
+        if row is None:
+            skipped.append(name)
         else:
-            rows.insert(first_index + offset, nse_row)
+            rows.insert(first_index + offset, row)
     for i, r in enumerate(rows, 1):
         r["rank"] = i
     return {"label": "Currency & indices", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None

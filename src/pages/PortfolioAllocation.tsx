@@ -289,6 +289,12 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
               <th className="text-right font-medium py-1">Q</th>
               <th className="text-right font-medium py-1">6M</th>
               <th className="text-right font-medium py-1">Y</th>
+              <th className="text-right font-medium py-1 pl-3" title="% vs 20D EMA">vs 20D</th>
+              <th className="text-right font-medium py-1" title="% vs 50D EMA">vs 50D</th>
+              <th className="text-right font-medium py-1" title="% vs 200D EMA">vs 200D</th>
+              <th className="text-right font-medium py-1" title="% vs 33W EMA">vs 33W</th>
+              <th className="text-right font-medium py-1" title="% from ATH">ATH</th>
+              <th className="text-right font-medium py-1" title="% from 52W High">52W High</th>
             </tr>
           </thead>
           <tbody>
@@ -313,12 +319,18 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1q, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_6m, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y, r.kind)}</td>
+                <td className="py-1.5 pl-3 text-right tabular-nums">{cell(r.pct_20d_ema, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.pct_50d_ema, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.pct_200d_ema, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.pct_33w_ema, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.pct_from_ath, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.pct_from_52w_high, r.kind)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices and My Portfolio: green = rising. My Portfolio is what your current holdings would have returned over each window (weighted by value, not a record of your actual trades). Refreshed daily; Y fills in after the next PF update.</p>
+      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices and My Portfolio: green = rising. My Portfolio is what your current holdings would have returned over each window (weighted by value, not a record of your actual trades). vs 20D / 50D / 200D / 33W = % above (+) or below (−) that EMA (OHLC4); ATH / 52W High = % below the high (ATH is the highest point in 5 years). For My Portfolio the ATH / 52W High columns are how far your holdings sit from their own highs, value-weighted. Refreshed daily; Y and vs 20D fill in for My Portfolio after the next PF update.</p>
     </div>
   );
 }
@@ -478,6 +490,14 @@ export default function PortfolioAllocation() {
   // 13/26/52 bars back) already on this page's rows, so they line up with its
   // other columns (Y appears after the next PortfolioAllocation run, which
   // is when pct_1y starts being pushed).
+  // 2026-10-02 ("also add these columns % vs 200D EMA, % vs 33W EMA, % from
+  // ATH, % from 52W High") — the same formula over each holding's own
+  // distance. An EMA is linear, so the EMA of "today's share counts" is
+  // exactly the sum of each holding's EMA and the % vs 200D/33W EMA is exact
+  // for that composite. A composite's own peak is NOT the sum of each
+  // holding's peak (they peak on different days), so for ATH / 52W High the
+  // figure reads "how far your holdings sit from their OWN highs, value-
+  // weighted" — a stricter number than the composite's true drawdown.
   const pfRow = useMemo(() => {
     const change = (key: string) => {
       let now = 0;
@@ -504,6 +524,12 @@ export default function PortfolioAllocation() {
       chg_1q: change("pct_3m"),
       chg_6m: change("pct_6m"),
       chg_1y: change("pct_1y"),
+      pct_20d_ema: change("pct_20d_ema"),
+      pct_50d_ema: change("pct_50d_ema"),
+      pct_200d_ema: change("pct_200d_ema"),
+      pct_33w_ema: change("pct_33w_ema"),
+      pct_from_ath: change("pct_from_ath"),
+      pct_from_52w_high: change("pct_from_52w_high"),
     };
   }, [rows]);
 
