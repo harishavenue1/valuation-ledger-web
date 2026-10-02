@@ -426,16 +426,6 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
           )}
         </tbody>
       </table>
-      {(athBuckets.length > 0 || high52wBuckets.length > 0) && (
-        <p className="text-[10px] text-slate-400 mt-2 max-w-lg">
-          <b>ATH Proximity</b> and <b>52W High Proximity</b> use the same fixed % thresholds (0% to -10% / -10% to -25% / below -25%) —
-          2026-09-25, replacing an earlier equal-count tercile split whose boundary moved with wherever this portfolio's own distribution
-          happened to sit, making "31.8% near ATH" actually mean anywhere from -8% to -0.1%. Split into two separate dimensions
-          2026-09-26 ("how many are in ATH 0-10% and how many are in 52W High 0-10%") — a stock can be far below its all-time high while
-          still sitting right at its own 52-week high, so one collapsed "near a high" number was hiding that distinction.{" "}
-          <b>Unclassified</b> is a symbol Yahoo had no weekly-highs history for yet.
-        </p>
-      )}
     </div>
   );
 }
