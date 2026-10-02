@@ -254,7 +254,7 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 // only keep Currency changes") — then ("can we add an indian
 // NIFTYMIDSMALL and US Index S&P or NASDAQ"). USD/INR and the Dollar
 // Index, then Nifty MidSmallcap 400, S&P 500 and Nasdaq, each with
-// D/W/M/Q/Y % changes, refreshed daily, each name linking to its
+// D/W/M/Q/6M/Y % changes, refreshed daily, each name linking to its
 // TradingView chart. Currency pairs are colored by what a MOVE means for
 // Indian equities (red = rising: a stronger dollar or weaker rupee is a
 // headwind); indices (and the portfolio row) are the opposite, plain up = green.
@@ -287,6 +287,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
               <th className="text-right font-medium py-1">W</th>
               <th className="text-right font-medium py-1">M</th>
               <th className="text-right font-medium py-1">Q</th>
+              <th className="text-right font-medium py-1">6M</th>
               <th className="text-right font-medium py-1">Y</th>
             </tr>
           </thead>
@@ -310,6 +311,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1q, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_6m, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y, r.kind)}</td>
               </tr>
             ))}
@@ -472,8 +474,8 @@ export default function PortfolioAllocation() {
   // sum(V) / sum(V / (1 + r)) - 1 over holdings that have that window. Not
   // a money-weighted return — it ignores when you bought or sold, so it
   // judges what you hold now, not the timing of your trades. Day is Kite's
-  // own day change; W/M/Q/Y are the per-holding weekly-bar changes (1/4/
-  // 13/52 bars back) already on this page's rows, so they line up with its
+  // own day change; W/M/Q/6M/Y are the per-holding weekly-bar changes (1/4/
+  // 13/26/52 bars back) already on this page's rows, so they line up with its
   // other columns (Y appears after the next PortfolioAllocation run, which
   // is when pct_1y starts being pushed).
   const pfRow = useMemo(() => {
@@ -500,6 +502,7 @@ export default function PortfolioAllocation() {
       chg_1w: change("pct_1w"),
       chg_1m: change("pct_1m"),
       chg_1q: change("pct_3m"),
+      chg_6m: change("pct_6m"),
       chg_1y: change("pct_1y"),
     };
   }, [rows]);

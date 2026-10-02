@@ -2924,7 +2924,7 @@ RFX_UNIVERSE = [
     ("S&P 500", "^GSPC", "SP:SPX", "index"),
     ("Nasdaq Composite", "^IXIC", "NASDAQ:IXIC", "index"),
 ]
-RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("1y", 365)]  # 91 days = a quarter, same as GCE_TIMEFRAMES' 3m
+RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("6m", 182), ("1y", 365)]  # 91/182 days = a quarter / half-year, same as GCE_TIMEFRAMES' 3m/6m
 
 # 2026-10-02 ("can we add an indian NIFTYMIDSMALL and US Index S&P or
 # NASDAQ index") — Nifty MidSmallcap 400 can't come from Yahoo: its
