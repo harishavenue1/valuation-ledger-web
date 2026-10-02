@@ -725,28 +725,30 @@ def verify(rows, ms):
     return all(checks), stats
 
 
-def _market_cap(sym):
-    """(symbol, market cap in Cr or None). NSE's files carry no share counts, so
-    this is the one thing here that comes from Yahoo (fast_info; ETFs and a few
-    unlisted/odd symbols have none)."""
+def _shares(sym):
+    """(symbol, shares outstanding or None). NSE's daily files carry no share
+    counts, so this is the one thing here that comes from Yahoo (fast_info; ETFs
+    and a few odd symbols have none). The SHARE COUNT is stored, not Yahoo's market
+    cap, because Yahoo's price lags for some small stocks (ANLON: its 506 vs NSE's
+    758.55 close) — market cap = NSE's exact close x shares."""
     import yfinance as yf
 
     try:
-        mc = yf.Ticker(f"{sym}.NS").fast_info["market_cap"]
-        return sym, (round(float(mc) / 1e7) if mc else None)
+        n = yf.Ticker(f"{sym}.NS").fast_info["shares"]
+        return sym, (float(n) if n else None)
     except Exception:
         return sym, None
 
 
-def refresh_market_caps(symbols, budget_s):
-    """Fill/refresh market caps within a time budget — symbols never fetched first,
-    then the stalest — so the ~3,300 get covered over a few runs and then re-cycle
-    about every MCAP_REFRESH_DAYS days. {symbol: Cr or None} for everything known."""
+def refresh_shares(symbols, budget_s):
+    """Fill/refresh share counts within a time budget — symbols never fetched
+    first, then the stalest — so the ~3,300 get covered over a few runs and then
+    re-cycle about every MCAP_REFRESH_DAYS days. {symbol: shares or None}."""
     from concurrent.futures import ThreadPoolExecutor
 
     conn = get_conn()
     try:
-        store = (get_meta(conn, MCAP_KEY, None) or {}).get("d") or {}
+        store = (get_meta(conn, MCAP_KEY, None) or {}).get("shares") or {}
     finally:
         conn.close()
     today = date.today().isoformat()
@@ -761,16 +763,16 @@ def refresh_market_caps(symbols, budget_s):
         if time.monotonic() - t0 > budget_s:
             break
         with ThreadPoolExecutor(max_workers=4) as pool:
-            for sym, mc in pool.map(_market_cap, order[i:i + 40]):
-                store[sym] = [mc, today]
+            for sym, n in pool.map(_shares, order[i:i + 40]):
+                store[sym] = [n, today]
                 fetched += 1
     if fetched:
         conn = get_conn()
         try:
-            set_meta(conn, MCAP_KEY, {"d": store})
+            set_meta(conn, MCAP_KEY, {"shares": store})
         finally:
             conn.close()
-    return {s: (store[s][0] if s in store else None) for s in symbols}, {"market_caps_fetched": fetched, "market_caps_known": sum(1 for s in symbols if s in store and store[s][0]), "market_caps_waiting": max(0, len(order) - fetched)}
+    return {s: (store[s][0] if s in store else None) for s in symbols}, {"share_counts_fetched": fetched, "share_counts_known": sum(1 for s in symbols if s in store and store[s][0]), "share_counts_waiting": max(0, len(order) - fetched)}
 
 
 def publish(budget_s=240):
@@ -808,9 +810,10 @@ def publish(budget_s=240):
         conn.close()
     df = adjust_frame(df, actions, jumps)
     rows = compute_technicals(df, state.get("names") or {})
-    caps, cap_stats = refresh_market_caps([r["symbol"] for r in rows], budget_s=max(0, min(150, budget_s - (time.monotonic() - t0) - 40)))
+    shares, cap_stats = refresh_shares([r["symbol"] for r in rows], budget_s=max(0, min(150, budget_s - (time.monotonic() - t0) - 40)))
     for r in rows:
-        r["market_cap_cr"] = caps.get(r["symbol"])
+        n = shares.get(r["symbol"])
+        r["market_cap_cr"] = round(r["price"] * n / 1e7) if n else None
     action_stats.update(cap_stats)
     ok, stats = verify(rows, ms)
     payload = {
