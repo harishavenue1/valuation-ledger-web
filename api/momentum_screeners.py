@@ -3876,22 +3876,24 @@ def _run_db_vacuum(symbols, name_map, sector_map):
     conn = get_conn()
     try:
         conn.autocommit = True
+        rows = []
         with conn.cursor() as cur:
-            cur.execute("SELECT pg_total_relation_size('meta')")
-            before = cur.fetchone()[0]
-            cur.execute("VACUUM FULL meta")
-            cur.execute("SELECT pg_total_relation_size('meta')")
-            after = cur.fetchone()[0]
+            # bhav_chunks added 2026-10-02: the 2-year backfill rewrites each quarter's
+            # rows more than once, so it ends up well above its live size
+            for table in ("meta", "bhav_chunks"):
+                cur.execute("SELECT pg_total_relation_size(to_regclass(%s))", (table,))
+                before = cur.fetchone()[0]
+                if before is None:
+                    continue
+                cur.execute(f"VACUUM FULL {table}")
+                cur.execute("SELECT pg_total_relation_size(to_regclass(%s))", (table,))
+                after = cur.fetchone()[0]
+                rows.append({"item": f"{table} before -> after VACUUM FULL", "mb": f"{before / 1024 / 1024:.2f} -> {after / 1024 / 1024:.2f}"})
             cur.execute("SELECT pg_database_size(current_database())")
             db_after = cur.fetchone()[0]
     finally:
         conn.close()
-    rows = [
-        {"item": "meta table before VACUUM FULL", "mb": round(before / 1024 / 1024, 2)},
-        {"item": "meta table after VACUUM FULL", "mb": round(after / 1024 / 1024, 2)},
-        {"item": "reclaimed", "mb": round((before - after) / 1024 / 1024, 2)},
-        {"item": "TOTAL DATABASE after", "mb": round(db_after / 1024 / 1024, 2)},
-    ]
+    rows.append({"item": "TOTAL DATABASE after", "mb": round(db_after / 1024 / 1024, 2)})
     return {"label": "DB Vacuum", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 

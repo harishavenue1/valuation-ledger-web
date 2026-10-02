@@ -46,6 +46,7 @@ from _db import get_conn, get_meta, set_meta
 
 BHAV_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{d}.csv"
 NAMES_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
+SME_NAMES_URL = "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv"
 SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
 STATE_KEY = "bhav_state"
@@ -138,15 +139,19 @@ def parse_day(text):
 
 
 def fetch_names(session):
-    """{symbol: company name} from NSE's listed-equities file."""
-    r = session.get(NAMES_URL, headers=HEADERS, timeout=25)
-    if r.status_code != 200:
-        return {}
+    """{symbol: company name} from NSE's listed-equities file plus its SME list."""
     out = {}
-    for raw in csv.DictReader(io.StringIO(r.text)):
-        x = {k.strip(): (v or "").strip() for k, v in raw.items() if k}
-        if x.get("SYMBOL"):
-            out[x["SYMBOL"]] = x.get("NAME OF COMPANY", "")
+    for url, key in ((NAMES_URL, "NAME OF COMPANY"), (SME_NAMES_URL, "NAME_OF_COMPANY")):
+        try:
+            r = session.get(url, headers=HEADERS, timeout=25)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        for raw in csv.DictReader(io.StringIO(r.text)):
+            x = {k.strip(): (v or "").strip() for k, v in raw.items() if k}
+            if x.get("SYMBOL") and x.get(key):
+                out.setdefault(x["SYMBOL"], x[key])
     return out
 
 
@@ -323,10 +328,10 @@ def run_store(budget_s=200):
         cutoff = start.isoformat()
         state["checked"] = sorted(c for c in checked if c >= cutoff)
         # names refresh weekly
-        if (state.get("names_as_of") or "") < (today - timedelta(days=7)).isoformat():
+        if (state.get("names_as_of") or "") < (today - timedelta(days=7)).isoformat() or not state.get("names_has_sme"):
             names = fetch_names(session)
             if names:
-                state["names"], state["names_as_of"] = names, today.isoformat()
+                state["names"], state["names_as_of"], state["names_has_sme"] = names, today.isoformat(), True
         set_meta(conn, STATE_KEY, state)
         size = db_size_mb(conn)
     finally:
@@ -426,12 +431,32 @@ def decide_factor(ratio, near_splits):
     return None, None
 
 
+def _lookup_symbol(sym):
+    """(sym, split_list | None on a lookup error, whether Yahoo knows the symbol)."""
+    import yfinance as yf
+
+    try:
+        tk = yf.Ticker(f"{sym}.NS")
+        sp = tk.splits
+        split_list = [(ts.date(), float(r)) for ts, r in sp.items()] if sp is not None else []
+    except Exception:
+        return sym, None, False
+    known = bool(split_list)
+    if not known:
+        try:
+            known = not tk.history(period="1mo").empty
+        except Exception:
+            known = False
+    return sym, split_list, known
+
+
 def confirm_jumps(jumps, actions, budget_s=90):
     """For flagged jumps nobody has resolved, ask Yahoo for that symbol's split
-    history (the only per-stock Yahoo call in this pipeline), decide a factor
-    with decide_factor, and record it — or a 'rejected' (a genuine move) so it
-    isn't asked again. A symbol Yahoo knows nothing about stays pending."""
-    import yfinance as yf
+    history (the only per-stock Yahoo call in this pipeline; 4 at a time),
+    decide a factor with decide_factor, and record it — or 'rejected' (a
+    genuine move) or 'nodata' (Yahoo doesn't carry the symbol: the history stays
+    cut at the jump, and it isn't asked again every day)."""
+    from concurrent.futures import ThreadPoolExecutor
 
     known = {(s, ex) for s, rows in actions.items() for ex, _f_, _src in rows}
     pending = [j for j in jumps if (j[0], j[1]) not in known]
@@ -440,38 +465,26 @@ def confirm_jumps(jumps, actions, budget_s=90):
     for sym, ex, ratio in pending:
         by_symbol[sym].append((ex, ratio))
     stats = collections.Counter()
-    for sym, events in by_symbol.items():
+    syms = list(by_symbol)
+    for i in range(0, len(syms), 24):
         if time.monotonic() - t0 > budget_s:
             break
-        try:
-            tk = yf.Ticker(f"{sym}.NS")
-            sp = tk.splits
-            split_list = [(ts.date(), float(r)) for ts, r in sp.items()] if sp is not None else []
-        except Exception:
-            stats["yahoo_failed"] += 1
-            continue
+        batch = syms[i:i + 24]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            looked = list(pool.map(_lookup_symbol, batch))
         rows = []
-        unknown_symbol = False
-        for ex, ratio in events:
-            ex_d = date.fromisoformat(ex)
-            near = [sr for sd, sr in split_list if abs((sd - ex_d).days) <= 4]
-            factor, source = decide_factor(ratio, near)
-            if factor is not None:
+        for sym, split_list, known_to_yahoo in looked:
+            if split_list is None:
+                stats["yahoo_failed"] += 1
+                continue
+            for ex, ratio in by_symbol[sym]:
+                ex_d = date.fromisoformat(ex)
+                near = [sr for sd, sr in split_list if abs((sd - ex_d).days) <= 4]
+                factor, source = decide_factor(ratio, near)
+                if factor is None:
+                    factor, source = (1.0, "rejected") if known_to_yahoo else (1.0, "nodata")
                 rows.append((sym, ex, float(factor), source))
                 stats[source] += 1
-                continue
-            if not split_list:
-                try:
-                    known_to_yahoo = not tk.history(period="1mo").empty
-                except Exception:
-                    known_to_yahoo = False
-                if not known_to_yahoo:
-                    unknown_symbol = True
-                    continue
-            rows.append((sym, ex, 1.0, "rejected"))
-            stats["rejected_genuine"] += 1
-        if unknown_symbol and not rows:
-            stats["yahoo_no_data"] += 1
         if rows:
             # a fresh short-lived connection per write: the Yahoo calls between
             # writes are slow enough for a pooler to drop an idle one
@@ -496,14 +509,14 @@ def adjust_frame(df, actions, jumps):
         return df
     df = df.sort_values(["symbol", "date"]).reset_index(drop=True)
     idx = df.groupby("symbol", sort=False).indices
-    known = {(s, ex) for s, rows in actions.items() for ex, _f_, _src in rows}
+    known = {(s, ex) for s, rows in actions.items() for ex, _f_, src in rows if src != "nodata"}
     for sym, rows in actions.items():
         pos = idx.get(sym)
         if pos is None:
             continue
         dates = df["date"].to_numpy()[pos]
         for ex, factor, source in rows:
-            if source == "rejected" or abs(factor - 1) < 1e-9:
+            if source in ("rejected", "nodata") or abs(factor - 1) < 1e-9:
                 continue
             before = pos[dates < np.datetime64(ex)]
             if len(before):
@@ -705,7 +718,7 @@ def verify(rows, ms):
     return all(checks), stats
 
 
-def publish(budget_s=150):
+def publish(budget_s=240):
     """Load the store, confirm/adjust corporate actions, compute technicals for
     every stock, verify against Yahoo, publish (ok flag + rows) to bhav_technicals.
     A failure leaves ok=False (or the previous payload) so the page falls back to
