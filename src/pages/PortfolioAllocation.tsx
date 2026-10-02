@@ -332,7 +332,6 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
         </table>
         </div>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices and My Portfolio: green = rising. My Portfolio is what your current holdings would have returned over each window (weighted by value, not a record of your actual trades). vs 20D / 50D / 200D / 33W = % above (+) or below (−) that EMA (OHLC4); ATH / 52W High = % below the high (ATH is the highest point in 5 years). For My Portfolio the ATH / 52W High columns are how far your holdings sit from their own highs, value-weighted. Refreshed daily; Y and vs 20D fill in for My Portfolio after the next PF update.</p>
     </div>
   );
 }
