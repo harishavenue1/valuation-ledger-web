@@ -45,7 +45,7 @@ interface ColumnDef extends Col {
 // 2026-10-02 ("if successful then only populate all technicals page for all
 // stocks pulled from nse") — columns only meaningful once the NSE bhavcopy
 // store has published (see api/_bhav.py); hidden from the picker otherwise.
-const BHAV_GROUP = "NSE Bhavcopy (all stocks)";
+const DENSE_GROUP = "Technicals (Dense)"; // one group for the dense block; its bh_* columns only exist once the NSE bhavcopy store has published
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "rank", label: "#", group: "Core", mandatory: true },
@@ -191,29 +191,33 @@ const ALL_COLUMNS: ColumnDef[] = [
   // ~750 stocks every run, not aliased off the sparse detectors above.
   // Deliberately excludes Buy %/Avg Price/P&L %/Current % — those only
   // make sense for an actual holding, not a market-wide screener.
-  { key: "nt_market_cap", label: "Market Cap (Cr)", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => fmtNum(r.nt_market_cap, 0) },
-  { key: "nt_1w_pct", label: "1W %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_1w_pct} digits={1} /> },
-  { key: "nt_1m_pct", label: "1M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_1m_pct} digits={1} /> },
-  { key: "nt_3m_pct", label: "3M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_3m_pct} digits={1} /> },
-  { key: "nt_6m_pct", label: "6M %", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_6m_pct} digits={1} /> },
-  { key: "nt_pct_200d_ema", label: "% vs 200D EMA", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_200d_ema} digits={1} /> },
-  { key: "nt_pct_33w_ema", label: "% vs 33W EMA", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_33w_ema} digits={1} /> },
-  { key: "nt_pct_from_ath", label: "% from ATH", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
-  { key: "nt_pct_from_52w_high", label: "% from 52W High", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
+  { key: "nt_market_cap", label: "Market Cap (Cr)", group: DENSE_GROUP, source: "nt", render: (r) => fmtNum(r.nt_market_cap, 0) },
+  { key: "nt_1w_pct", label: "1W %", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_1w_pct} digits={1} /> },
+  { key: "nt_1m_pct", label: "1M %", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_1m_pct} digits={1} /> },
+  { key: "nt_3m_pct", label: "3M %", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_3m_pct} digits={1} /> },
+  { key: "nt_6m_pct", label: "6M %", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_6m_pct} digits={1} /> },
+  { key: "nt_pct_200d_ema", label: "% vs 200D EMA", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_200d_ema} digits={1} /> },
+  { key: "nt_pct_33w_ema", label: "% vs 33W EMA", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_33w_ema} digits={1} /> },
+  { key: "nt_pct_from_ath", label: "% from ATH", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
+  { key: "nt_pct_from_52w_high", label: "% from 52W High", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
 
-  { key: "bh_deliv", label: "Delivery %", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv, 1) },
-  { key: "bh_deliv_avg20", label: "Delivery % (20D avg)", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv_avg20, 1) },
-  { key: "bh_turnover", label: "Turnover ₹Cr", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_turnover, 1) },
-  { key: "bh_vol_x", label: "Volume vs 20D avg ×", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_vol_x, 1) },
-  { key: "bh_20d", label: "% vs 20D EMA", group: BHAV_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_20d} digits={1} /> },
-  { key: "bh_50d", label: "% vs 50D EMA", group: BHAV_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_50d} digits={1} /> },
+  { key: "bh_deliv", label: "Delivery %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv, 1) },
+  { key: "bh_deliv_avg20", label: "Delivery % (20D avg)", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv_avg20, 1) },
+  { key: "bh_turnover", label: "Turnover ₹Cr", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_turnover, 1) },
+  { key: "bh_vol_x", label: "Volume vs 20D avg ×", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_vol_x, 1) },
+  { key: "bh_20d", label: "% vs 20D EMA", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_20d} digits={1} /> },
+  { key: "bh_50d", label: "% vs 50D EMA", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_50d} digits={1} /> },
 ];
 
 const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
 const OPTIONAL_COLUMNS = ALL_COLUMNS.filter((c) => !c.mandatory);
 const MANDATORY_COLUMNS = ALL_COLUMNS.filter((c) => c.mandatory);
 
-const STORAGE_KEY = "allTechnicalsColumns";
+// _v2 (2026-10-02, "I wanted the stocks list to reflect the technical dense
+// format") — the Dense group (now also holding delivery %/turnover/20D-50D EMA)
+// is on by default, but a column pick saved before that had it switched off;
+// a new key makes the default apply once instead of leaving it unchecked.
+const STORAGE_KEY = "allTechnicalsColumns_v2";
 // A lean default — a handful of Core columns plus the single headline
 // number from each of the two full-coverage screeners (RS Score,
 // Alpha Score), not whole groups. "too many columns but lesser page
@@ -231,7 +235,7 @@ const DEFAULT_ENABLED = [
   "rs_score",
   "alpha_score",
   "roce_1y_chg",
-  ...ALL_COLUMNS.filter((c) => c.group === "Technicals (Dense, NSE750)").map((c) => c.key),
+  ...ALL_COLUMNS.filter((c) => c.group === DENSE_GROUP).map((c) => c.key),
 ];
 
 function loadEnabledColumns(): Set<string> {
@@ -325,8 +329,8 @@ export default function AllTechnicals() {
     (bhav.rows?.length ?? 0) > 1000 &&
     !!bhav.as_of &&
     (!nseAsOfForBhav || new Date(nseAsOfForBhav).getTime() - new Date(bhav.as_of).getTime() <= 5 * 86400000);
-  const optionalCols = useMemo(() => OPTIONAL_COLUMNS.filter((c) => bhavOk || c.group !== BHAV_GROUP), [bhavOk]);
-  const groupOrder = useMemo(() => COLUMN_GROUP_ORDER.filter((g) => bhavOk || g !== BHAV_GROUP), [bhavOk]);
+  const optionalCols = useMemo(() => OPTIONAL_COLUMNS.filter((c) => bhavOk || !c.key.startsWith("bh_")), [bhavOk]);
+  const groupOrder = COLUMN_GROUP_ORDER;
 
   const [enabledCols, setEnabledCols] = useState<Set<string>>(() => loadEnabledColumns());
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -627,7 +631,7 @@ export default function AllTechnicals() {
         {ntAsOf && (
           <>
             {" "}
-            <b>Technicals (Dense, NSE750)</b> columns also refresh weekly — as of {ntAsOf}.
+            <b>Technicals (Dense)</b> columns for the NSE-750 refresh weekly — as of {ntAsOf}.
           </>
         )}
       </p>
@@ -650,7 +654,7 @@ export default function AllTechnicals() {
         strong factor. Sourced from <b>nse750Fundamentals</b>, which refreshes weekly rather than daily.
         <br />
         <br />
-        <b>Technicals (Dense, NSE750)</b> — added 2026-09-26, replicating the Portfolio Allocation page's per-stock technical block across
+        <b>Technicals (Dense)</b> — added 2026-09-26, replicating the Portfolio Allocation page's per-stock technical block across
         the full universe rather than just current holdings (excludes Buy %/Avg Price/P&L %/Current %, which only make sense for an actual
         position). Unlike every other optional column on this page, this group is <b>dense</b>: computed for all ~750 stocks every run, not
         just the ones with a signal event this week. Sourced from a new weekly-batched screener (<b>nse750Technicals</b>) — 1W/1M/3M/6M %
@@ -660,7 +664,7 @@ export default function AllTechnicals() {
           <>
             <br />
             <br />
-            <b>NSE Bhavcopy (all stocks)</b> — added 2026-10-02. The rows beyond the NSE-750 (and these extra columns) come from NSE's own
+            <b>All NSE stocks</b> — added 2026-10-02. The rows beyond the NSE-750 (and the Delivery %, Turnover, Volume-vs-average and 20D/50D EMA columns in the Dense group) come from NSE's own
             daily bulk file, kept in a store on our side: price, returns, RSI, % vs 20D/50D/200D/33W EMA and distance from the high are
             computed from it, plus delivery % and turnover that nothing else here has. Splits and bonuses are corrected using Yahoo's split
             record for just the affected stock (a price jump nobody could confirm cuts that stock's history instead of being shown across).
