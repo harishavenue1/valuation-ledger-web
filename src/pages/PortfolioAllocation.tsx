@@ -257,12 +257,13 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 // D/W/M/Q/Y % changes, refreshed daily, each name linking to its
 // TradingView chart. Currency pairs are colored by what a MOVE means for
 // Indian equities (red = rising: a stronger dollar or weaker rupee is a
-// headwind); indices are the opposite, plain up = green.
+// headwind); indices (and the portfolio row) are the opposite, plain up = green.
 function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
   const cell = (v: number | null | undefined, kind: string) => {
     if (v === null || v === undefined) return <span className="text-slate-300">—</span>;
-    const up = kind === "index" ? "text-emerald-600" : "text-red-600";
-    const down = kind === "index" ? "text-red-600" : "text-emerald-600";
+    const upIsGood = kind === "index" || kind === "portfolio";
+    const up = upIsGood ? "text-emerald-600" : "text-red-600";
+    const down = upIsGood ? "text-red-600" : "text-emerald-600";
     return <span className={v > 0 ? up : v < 0 ? down : "text-slate-500"}>{`${v > 0 ? "+" : ""}${v.toFixed(2)}%`}</span>;
   };
   return (
@@ -291,13 +292,20 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.symbol} className={`border-t ${i > 0 && rows[i - 1].kind !== r.kind ? "border-slate-300" : "border-slate-100"}`}>
+              <tr
+                key={r.symbol}
+                className={`border-t ${i > 0 && rows[i - 1].kind !== r.kind ? "border-slate-300" : "border-slate-100"} ${r.kind === "portfolio" ? "bg-indigo-50/60 font-semibold" : ""}`}
+              >
                 <td className="py-1.5 font-medium">
-                  <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                    {r.name}
-                  </a>
+                  {r.tradingview_url ? (
+                    <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                      {r.name}
+                    </a>
+                  ) : (
+                    <span className="text-slate-800">{r.name}</span>
+                  )}
                 </td>
-                <td className="py-1.5 text-right tabular-nums">{r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="py-1.5 text-right tabular-nums">{r.level == null ? <span className="text-slate-300">—</span> : r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m, r.kind)}</td>
@@ -308,7 +316,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
           </tbody>
         </table>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices: green = rising. Refreshed daily.</p>
+      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices and My Portfolio: green = rising. My Portfolio is what your current holdings would have returned over each window (weighted by value, not a record of your actual trades). Refreshed daily; Y fills in after the next PF update.</p>
     </div>
   );
 }
@@ -455,6 +463,46 @@ export default function PortfolioAllocation() {
   // Sales/EPS Growth — see compute_portfolio_allocation.py's
   // fetch_sector_and_fundamentals), which has no such universe limit.
   const rows = entry?.rows ?? [];
+  // 2026-10-02 ("also my PF changes at same table, which validates my
+  // progress") — the portfolio's own D/W/M/Q/Y change, shown as the first
+  // row of the Currency & Indices card so it reads against the indices.
+  // It's the return the CURRENT holdings (today's share counts) would have
+  // made over each window: with V = a holding's current value weight and r
+  // its own change, start value = V / (1 + r), so the portfolio change is
+  // sum(V) / sum(V / (1 + r)) - 1 over holdings that have that window. Not
+  // a money-weighted return — it ignores when you bought or sold, so it
+  // judges what you hold now, not the timing of your trades. Day is Kite's
+  // own day change; W/M/Q/Y are the per-holding weekly-bar changes (1/4/
+  // 13/52 bars back) already on this page's rows, so they line up with its
+  // other columns (Y appears after the next PortfolioAllocation run, which
+  // is when pct_1y starts being pushed).
+  const pfRow = useMemo(() => {
+    const change = (key: string) => {
+      let now = 0;
+      let start = 0;
+      for (const r of rows) {
+        const v = r.pct_of_portfolio;
+        const c = r[key];
+        if (v == null || c == null || c <= -100) continue;
+        now += v;
+        start += v / (1 + c / 100);
+      }
+      return start > 0 ? Math.round((now / start - 1) * 10000) / 100 : null;
+    };
+    if (rows.length === 0) return null;
+    return {
+      name: "My Portfolio",
+      symbol: "PF",
+      kind: "portfolio",
+      level: null,
+      tradingview_url: null,
+      chg_1d: change("day_change_pct"),
+      chg_1w: change("pct_1w"),
+      chg_1m: change("pct_1m"),
+      chg_1q: change("pct_3m"),
+      chg_1y: change("pct_1y"),
+    };
+  }, [rows]);
 
   // 2026-09-22 ("distribution of large/mid/small/micro cap allocation")
   // — Large/Mid cutoffs are the 100th/250th company's own market cap in
@@ -795,7 +843,7 @@ export default function PortfolioAllocation() {
                 <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
               </div>
             </div>
-            <RatesFxCard rows={bundle.momentum_screeners["ratesFx"]?.rows ?? []} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
+            <RatesFxCard rows={[...(pfRow ? [pfRow] : []), ...(bundle.momentum_screeners["ratesFx"]?.rows ?? [])]} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
           </div>
         </div>
       )}
