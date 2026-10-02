@@ -297,6 +297,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
                   ) : (
                     r.name
                   )}
+                  {r.stale_note && <div className="text-[10px] font-normal text-amber-600">{r.stale_note}</div>}
                 </td>
                 <td className="py-1.5 text-right tabular-nums">{r.kind === "yield" ? `${r.level.toFixed(2)}%` : r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d, r.unit)}</td>
@@ -309,7 +310,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
         </table>
       )}
       <p className="text-[10px] text-slate-400 mt-2">
-        Yields in basis points, FX in %. Red = rising (a headwind for equities: higher yields, stronger dollar, weaker rupee). US only — India's yield has no free source yet.
+        Yields in basis points, FX in %. Red = rising (a headwind for equities: higher yields, stronger dollar, weaker rupee). India's 10Y is monthly OECD data from Strategic Alpha (refreshed manually), so it only has a level and a 1Y change — no daily Indian yield source is free yet.
       </p>
     </div>
   );
@@ -456,8 +457,32 @@ export default function PortfolioAllocation() {
   // matching AMFI's own rank-based Large/Mid/Small definition instead
   // of a hardcoded ₹ Cr threshold that would go stale as the market
   // grows. Not used for anything else on this page.
-  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals", "ratesFx"]);
+  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals", "ratesFx", "countryYields"]);
   const entry = bundle.momentum_screeners["portfolioAllocation"];
+  // 2026-10-02 ("seems we have in strategic alpha") — India's 10Y comes
+  // from Strategic Alpha's countryYields (monthly OECD series via FRED,
+  // refreshed manually): a level and a 1Y change only, no D/W/M, and its
+  // own as_of (months old) shown on the row so it can't pass for a live
+  // quote next to the daily US rows.
+  const ratesFxRows = useMemo(() => {
+    const live: any[] = bundle.momentum_screeners["ratesFx"]?.rows ?? [];
+    const india = (bundle.momentum_screeners["countryYields"]?.rows ?? []).find((r: any) => r.country === "India");
+    if (!india || india.latest_yield_pct == null) return live;
+    const indiaRow = {
+      name: "India 10Y",
+      symbol: "IN10Y-OECD",
+      kind: "yield",
+      unit: "bp",
+      level: india.latest_yield_pct,
+      chg_1d: null,
+      chg_1w: null,
+      chg_1m: null,
+      chg_1y: india.chg_vs_1y_ago_bps ?? null,
+      stale_note: `monthly, as of ${india.as_of}`,
+    };
+    const lastYield = live.map((r) => r.kind).lastIndexOf("yield");
+    return lastYield === -1 ? [...live, indiaRow] : [...live.slice(0, lastYield + 1), indiaRow, ...live.slice(lastYield + 1)];
+  }, [bundle.momentum_screeners]);
   // ROCE/ROE 1Y change — 2026-09-20. First tried joining against the
   // shared nse750Fundamentals cache (zero new requests), but that only
   // covers the Nifty Total Market universe and left most of this
@@ -807,7 +832,10 @@ export default function PortfolioAllocation() {
                 <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
               </div>
             </div>
-            <RatesFxCard rows={bundle.momentum_screeners["ratesFx"]?.rows ?? []} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
+            <RatesFxCard
+              rows={ratesFxRows}
+              asOf={bundle.momentum_screeners["ratesFx"]?.as_of}
+            />
           </div>
         </div>
       )}
