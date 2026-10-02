@@ -20,6 +20,7 @@
     { "path": "/api/momentum_screeners?screener=technicalBatchDaily", "schedule": "20 10 * * *" },
     { "path": "/api/momentum_screeners?screener=globalCountryEtfs", "schedule": "37 10 * * *" },
     { "path": "/api/momentum_screeners?screener=globalCurrencies", "schedule": "38 10 * * *" },
+    { "path": "/api/momentum_screeners?screener=ratesFx", "schedule": "40 10 * * *" },
     { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
     { "path": "/api/momentum_screeners?screener=top100UsStocks", "schedule": "41 10 * * *" },
     { "path": "/api/momentum_screeners?screener=nse750WeeklyMaxSummary", "schedule": "45 10 * * *" },

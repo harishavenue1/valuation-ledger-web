@@ -42,6 +42,7 @@ const CLOUD_SCREENERS = new Set([
   "technicalSummary",
   "globalCountryEtfs",
   "globalCurrencies",
+  "ratesFx",
   "strategicAlpha",
   // 2026-09-14 — Top 100 US Stocks (api/momentum_screeners.py's
   // top100UsStocks) runs the same way strategicAlpha does (one bulk
