@@ -2915,7 +2915,7 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # were removed the same day ("remove all this and only keep Currency
 # changes") — what's left is USD/INR and the Dollar Index with D/W/M/Q/Y
 # % changes and a TradingView link per row, plus (same day) the S&P 500,
-# Nasdaq and Nifty MidSmallcap 400. The key stays
+# Nasdaq, Nifty MidSmallcap 400 and Nifty Smallcap 250. The key stays
 # "ratesFx" (cron, Run now button and the pushed rows all hang off it)
 # rather than renaming and orphaning the stored data.
 RFX_UNIVERSE = [
@@ -2934,7 +2934,12 @@ RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("1y", 365)]  # 
 # CSV of every index's daily close (same archives.nseindia.com host the
 # stock universe above already reads from Vercel) has it, so the D/W/M/Q/Y
 # changes are built from the closes in a handful of those daily files.
-RFX_NSE_INDEX = ("Nifty MidSmallcap 400", "Nifty MidSmallcap 400", "NSE:NIFTYMIDSML400")
+# (display name, NSE's own name in the CSV, TradingView symbol, our symbol key).
+# Nifty Smallcap 250 added the same day ("also NIFTYSMLCAP250").
+RFX_NSE_INDICES = [
+    ("Nifty MidSmallcap 400", "Nifty MidSmallcap 400", "NSE:NIFTYMIDSML400", "NIFTYMIDSML400"),
+    ("Nifty Smallcap 250", "Nifty Smallcap 250", "NSE:NIFTYSMLCAP250", "NIFTYSMLCAP250"),
+]
 
 
 def _rfx_nse_index_close(index_name, on_or_before, max_back=7):
@@ -2962,15 +2967,14 @@ def _rfx_nse_index_close(index_name, on_or_before, max_back=7):
     return None
 
 
-def _rfx_nse_index_row():
-    name, csv_name, tv = RFX_NSE_INDEX
+def _rfx_nse_index_row(name, csv_name, tv, symbol):
     latest = _rfx_nse_index_close(csv_name, date.today())
     if latest is None:
         return None
     latest_date, level = latest
     row = {
         "name": name,
-        "symbol": "NIFTYMIDSML400",
+        "symbol": symbol,
         "kind": "index",
         "level": round(level, 2),
         "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
@@ -3018,13 +3022,14 @@ def _run_rates_fx(symbols, name_map, sector_map):
         for tf, days in RFX_TIMEFRAMES:
             row[f"chg_{tf}"] = _rfx_change(df, days)
         rows.append(row)
-    # Nifty MidSmallcap 400 goes right after the currencies, before the US indices
-    nse_row = _rfx_nse_index_row()
-    if nse_row is None:
-        skipped.append(RFX_NSE_INDEX[0])
-    else:
-        first_index = next((i for i, r in enumerate(rows) if r["kind"] == "index"), len(rows))
-        rows.insert(first_index, nse_row)
+    # The Nifty indices go right after the currencies, before the US indices
+    first_index = next((i for i, r in enumerate(rows) if r["kind"] == "index"), len(rows))
+    for offset, spec in enumerate(RFX_NSE_INDICES):
+        nse_row = _rfx_nse_index_row(*spec)
+        if nse_row is None:
+            skipped.append(spec[0])
+        else:
+            rows.insert(first_index + offset, nse_row)
     for i, r in enumerate(rows, 1):
         r["rank"] = i
     return {"label": "Currency & indices", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
