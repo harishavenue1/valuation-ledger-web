@@ -322,6 +322,11 @@ export const api = {
   // Fetches only the named momentum_screeners entries — see App.tsx's
   // useScreeners hook, which is what every screener page calls instead
   // of assuming bundle.momentum_screeners is already fully populated.
+  // 2026-10-02 — all-stocks technicals from the NSE bhavcopy store (see
+  // api/_bhav.py). {ok, as_of, rows}; ok=false (or rows empty) means "use the
+  // existing Yahoo-based NSE-750 universe" — All Technicals falls back on it.
+  getBhavTechnicals: (): Promise<{ ok: boolean; as_of?: string; reason?: string; rows: any[] }> => req("/api/momentum_screeners?bhav_technicals=1"),
+
   getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
     req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),
 

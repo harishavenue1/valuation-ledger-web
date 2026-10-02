@@ -3184,100 +3184,30 @@ def _run_rates_fx(symbols, name_map, sector_map):
     return {"label": "Currency & indices", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
-# ── bhavSpike (temporary diagnostic) ─────────────────────────────────────────
+# ── bhavStore / bhavTechnicals ───────────────────────────────────────────────
 #
-# 2026-10-02 — step 1 of the daily-bhavcopy-store plan ("start with the
-# Vercel fetch spike"): can NSE's full bhavcopy (one ~400KB CSV with every
-# listed stock's OHLC, volume, trades and delivery %) be fetched from
-# Vercel's network, not just a laptop? Reports status/size/timing per
-# attempt, the row counts by series, and — using the previous trading day's
-# file too — how many stocks' PREV_CLOSE differs from yesterday's actual
-# close (NSE's own corporate-action adjustment, the signal the planned
-# split/bonus back-adjustment would key off). Writes nothing but its own
-# result rows; no UI reads it. Delete once the store replaces it.
-BHAV_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{d}.csv"
+# 2026-10-02 — the daily NSE-bhavcopy store (see api/_bhav.py's module
+# comment for the why and the design). bhavStore ingests every new trading
+# day; bhavTechnicals reads the store, confirms split/bonus events, computes
+# technicals for ALL listed stocks, verifies them against the Yahoo-based
+# numbers the app already shows, and publishes the result (with an ok flag)
+# to its own meta key — served via ?bhav_technicals=1 below, not through the
+# shared momentum_screeners blob. The page only uses it when ok is true, so
+# any failure leaves the existing Yahoo-based All Technicals untouched.
+# The step-1 fetch spike (bhavSpike) that proved Vercel can reach NSE's
+# archive was removed once this replaced it.
+def _run_bhav_store(symbols, name_map, sector_map):
+    from _bhav import run_store
+
+    rows = run_store()
+    return {"label": "Bhavcopy store", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
-def _bhav_get(d, session):
-    """(date, status, seconds, text|None) — three tries with backoff on 403."""
-    url = BHAV_URL.format(d=d.strftime("%d%m%Y"))
-    t0 = time.monotonic()
-    status, text = None, None
-    for attempt in range(3):
-        r = session.get(
-            url,
-            headers={"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*", "Accept-Language": "en-US,en;q=0.9"},
-            timeout=25,
-        )
-        status = r.status_code
-        if status != 403:
-            text = r.text if status == 200 else None
-            break
-        time.sleep(1.0 * (attempt + 1))
-    return d, status, round(time.monotonic() - t0, 2), text
+def _run_bhav_technicals(symbols, name_map, sector_map):
+    from _bhav import publish
 
-
-def _bhav_parse(text):
-    rows = {}
-    for raw in csv.DictReader(io.StringIO(text)):
-        row = {k.strip(): (v or "").strip() for k, v in raw.items() if k}
-        if row.get("SYMBOL"):
-            rows[(row["SYMBOL"], row.get("SERIES", ""))] = row
-    return rows
-
-
-def _run_bhav_spike(symbols, name_map, sector_map):
-    session = requests.Session()
-    attempts, files = [], []
-    d = date.today()
-    while len(files) < 2 and (date.today() - d).days <= 10:
-        if d.weekday() < 5:
-            day, status, secs, text = _bhav_get(d, session)
-            attempts.append({"item": f"fetch {day.isoformat()}", "status": status, "seconds": secs, "bytes": len(text) if text else 0})
-            if text:
-                files.append((day, _bhav_parse(text)))
-        d -= timedelta(days=1)
-
-    rows = list(attempts)
-    if not files:
-        rows.append({"item": "RESULT", "value": "no bhavcopy file could be fetched from Vercel"})
-        return {"label": "Bhavcopy spike", "push_rows": rows, "scanned": 0, "skipped": 0}, None
-
-    latest_day, latest = files[0]
-    by_series = {}
-    for (_, series) in latest:
-        by_series[series] = by_series.get(series, 0) + 1
-    rows.append({"item": "latest file date", "value": latest_day.isoformat()})
-    rows.append({"item": "rows total", "value": len(latest)})
-    rows.append({"item": "rows by series", "value": ", ".join(f"{k}:{v}" for k, v in sorted(by_series.items(), key=lambda x: -x[1])[:8])})
-    deliv = sum(1 for r in latest.values() if r.get("DELIV_PER") not in ("", "-"))
-    rows.append({"item": "rows with delivery %", "value": deliv})
-    for sym in ("ACE", "SIGMAADV", "WELCORP", "GOLDCASE", "OMNI"):
-        r = latest.get((sym, "EQ"))
-        rows.append({"item": f"sample {sym}", "value": f"close {r['CLOSE_PRICE']} prev {r['PREV_CLOSE']} vol {r['TTL_TRD_QNTY']} deliv% {r['DELIV_PER']}" if r else "not in EQ series"})
-
-    if len(files) == 2:
-        prev_day, prev = files[1]
-        mismatches = []
-        matched = 0
-        for (sym, series), r in latest.items():
-            if series != "EQ" or (sym, "EQ") not in prev:
-                continue
-            try:
-                prev_close_today = float(r["PREV_CLOSE"])
-                close_yday = float(prev[(sym, "EQ")]["CLOSE_PRICE"])
-            except (KeyError, ValueError):
-                continue
-            matched += 1
-            ratio = prev_close_today / close_yday if close_yday else 1
-            if abs(ratio - 1) > 0.001:
-                mismatches.append((abs(ratio - 1), sym, round(ratio, 4), close_yday, prev_close_today))
-        mismatches.sort(reverse=True)
-        rows.append({"item": f"PREV_CLOSE({latest_day}) vs CLOSE({prev_day}), EQ stocks compared", "value": matched})
-        rows.append({"item": "stocks where they differ by >0.1%", "value": len(mismatches)})
-        for _, sym, ratio, c_y, pc in mismatches[:12]:
-            rows.append({"item": f"  differs: {sym}", "value": f"ratio {ratio} (yesterday close {c_y} -> today's prev close {pc})"})
-    return {"label": "Bhavcopy spike", "push_rows": rows, "scanned": len(latest), "skipped": 0}, None
+    rows = publish()
+    return {"label": "Bhavcopy technicals", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
 # ── strategicAlpha ───────────────────────────────────────────────────────────
@@ -5943,7 +5873,8 @@ SCREENER_RUNNERS = {
     "globalCountryEtfs": _run_global_country_etfs,
     "globalCurrencies": _run_global_currencies,
     "ratesFx": _run_rates_fx,
-    "bhavSpike": _run_bhav_spike,
+    "bhavStore": _run_bhav_store,
+    "bhavTechnicals": _run_bhav_technicals,
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
@@ -6005,6 +5936,18 @@ class handler(BaseHTTPRequestHandler):
                 send_json(self, 502, {"error": f"chart data fetch failed for {chart_symbol}"})
             else:
                 send_json(self, 200, {"symbol": chart_symbol.upper(), "range": range_param, "bars": bars})
+            return
+
+        # ?bhav_technicals=1 — the all-stocks technicals published by
+        # bhavTechnicals, kept out of the shared momentum_screeners blob
+        # (every cron rewrites that whole blob; ~3,000 rows would double it).
+        if (query.get("bhav_technicals") or [None])[0]:
+            conn = get_conn()
+            try:
+                payload = get_meta(conn, "bhav_technicals", None)
+            finally:
+                conn.close()
+            send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []})
             return
 
         screener = (query.get("screener") or [None])[0]

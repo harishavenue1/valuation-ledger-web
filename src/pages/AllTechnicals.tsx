@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
+import { api } from "../lib/api";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
@@ -40,6 +41,11 @@ interface ColumnDef extends Col {
   source?: string; // maps to the row's _has_${source} flag for "only show rows with data"; omitted = mandatory/always-relevant, never filtered
   mandatory?: boolean; // always shown, not in the picker at all
 }
+
+// 2026-10-02 ("if successful then only populate all technicals page for all
+// stocks pulled from nse") — columns only meaningful once the NSE bhavcopy
+// store has published (see api/_bhav.py); hidden from the picker otherwise.
+const BHAV_GROUP = "NSE Bhavcopy (all stocks)";
 
 const ALL_COLUMNS: ColumnDef[] = [
   { key: "rank", label: "#", group: "Core", mandatory: true },
@@ -194,6 +200,13 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "nt_pct_33w_ema", label: "% vs 33W EMA", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_33w_ema} digits={1} /> },
   { key: "nt_pct_from_ath", label: "% from ATH", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
   { key: "nt_pct_from_52w_high", label: "% from 52W High", group: "Technicals (Dense, NSE750)", source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
+
+  { key: "bh_deliv", label: "Delivery %", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv, 1) },
+  { key: "bh_deliv_avg20", label: "Delivery % (20D avg)", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv_avg20, 1) },
+  { key: "bh_turnover", label: "Turnover ₹Cr", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_turnover, 1) },
+  { key: "bh_vol_x", label: "Volume vs 20D avg ×", group: BHAV_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_vol_x, 1) },
+  { key: "bh_20d", label: "% vs 20D EMA", group: BHAV_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_20d} digits={1} /> },
+  { key: "bh_50d", label: "% vs 50D EMA", group: BHAV_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_50d} digits={1} /> },
 ];
 
 const COLUMN_GROUP_ORDER = Array.from(new Set(ALL_COLUMNS.map((c) => c.group)));
@@ -288,6 +301,33 @@ export default function AllTechnicals() {
   ]);
   const ms = bundle.momentum_screeners;
 
+  // 2026-10-02 — the NSE bhavcopy store's all-stocks technicals. Used ONLY
+  // when it says ok (it verified itself against the Yahoo-based numbers) and
+  // is reasonably fresh; otherwise this page behaves exactly as before.
+  const [bhav, setBhav] = useState<{ ok: boolean; as_of?: string; rows: any[] } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getBhavTechnicals()
+      .then((r) => {
+        if (!cancelled) setBhav(r);
+      })
+      .catch(() => {
+        if (!cancelled) setBhav(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const nseAsOfForBhav = ms?.nseScreener?.as_of;
+  const bhavOk =
+    !!bhav?.ok &&
+    (bhav.rows?.length ?? 0) > 1000 &&
+    !!bhav.as_of &&
+    (!nseAsOfForBhav || new Date(nseAsOfForBhav).getTime() - new Date(bhav.as_of).getTime() <= 5 * 86400000);
+  const optionalCols = useMemo(() => OPTIONAL_COLUMNS.filter((c) => bhavOk || c.group !== BHAV_GROUP), [bhavOk]);
+  const groupOrder = useMemo(() => COLUMN_GROUP_ORDER.filter((g) => bhavOk || g !== BHAV_GROUP), [bhavOk]);
+
   const [enabledCols, setEnabledCols] = useState<Set<string>>(() => loadEnabledColumns());
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -322,7 +362,31 @@ export default function AllTechnicals() {
   }
 
   const rows = useMemo(() => {
-    const base = ms?.nseScreener?.rows ?? [];
+    const baseNse: any[] = ms?.nseScreener?.rows ?? [];
+    const bhavMap = bhavOk ? keyBy(bhav!.rows) : new Map<string, any>();
+    // Every other NSE-listed stock the bhavcopy store has (the NSE-750 keep
+    // nseScreener's own row): price/returns/RSI from the store, no sector.
+    const nseSyms = new Set(baseNse.map((b: any) => b.symbol));
+    const extras = bhavOk
+      ? bhav!.rows
+          .filter((r: any) => !nseSyms.has(r.symbol))
+          .map((r: any) => ({
+            symbol: r.symbol,
+            name: r.name,
+            sector: null,
+            price: r.price,
+            change_pct: r.change_pct,
+            weekly_pct: r.weekly_pct,
+            monthly_pct: r.monthly_pct,
+            three_month_pct: r.three_month_pct,
+            yearly_pct: r.yearly_pct,
+            rsi_d: r.rsi_d,
+            rsi_w: r.rsi_w,
+            rsi_m: null,
+            three_week_green: null,
+          }))
+      : [];
+    const base: any[] = [...baseNse, ...extras];
     const rsMap = keyBy(ms?.Nifty500RelativeStrength?.rows);
     const alphaMap = keyBy(ms?.sectorStockAlpha?.rows, true); // a stock can appear twice (industry + theme) — sorted best-alpha-first at the push, keep the first
     const high52wMap = keyBy(ms?.["52wHigh"]?.rows);
@@ -364,6 +428,7 @@ export default function AllTechnicals() {
       const sm = smMap.get(sym);
       const fund = fundMap.get(sym);
       const nt = ntMap.get(sym);
+      const bh = bhavMap.get(sym);
 
       return {
         symbol: sym,
@@ -472,14 +537,14 @@ export default function AllTechnicals() {
         // Directory: this column silently showed "—" for all 750 rows
         // in production before the mismatch was found.
         nt_market_cap: fund?.marketcap ?? null,
-        nt_1w_pct: nt?.pct_1w ?? null,
-        nt_1m_pct: nt?.pct_1m ?? null,
-        nt_3m_pct: nt?.pct_3m ?? null,
-        nt_6m_pct: nt?.pct_6m ?? null,
-        nt_pct_200d_ema: nt?.pct_200d_ema ?? null,
-        nt_pct_33w_ema: nt?.pct_33w_ema ?? null,
-        nt_pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? null),
-        nt_pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? null),
+        nt_1w_pct: nt?.pct_1w ?? bh?.w_pct_1w ?? null,
+        nt_1m_pct: nt?.pct_1m ?? bh?.w_pct_1m ?? null,
+        nt_3m_pct: nt?.pct_3m ?? bh?.w_pct_3m ?? null,
+        nt_6m_pct: nt?.pct_6m ?? bh?.w_pct_6m ?? null,
+        nt_pct_200d_ema: nt?.pct_200d_ema ?? bh?.pct_200d_ema ?? null,
+        nt_pct_33w_ema: nt?.pct_33w_ema ?? bh?.pct_33w_ema ?? null,
+        nt_pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? bh?.pct_from_ath ?? null),
+        nt_pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? bh?.pct_from_52w_high ?? null),
 
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per
@@ -507,17 +572,24 @@ export default function AllTechnicals() {
         _has_bollinger: !!qb,
         _has_smartmoney: !!sm,
         _has_quality: fund?.roce_1y_chg != null,
-        _has_nt: !!nt,
+        _has_nt: !!nt || !!bh,
+        bh_deliv: bh?.deliv_pct ?? null,
+        bh_deliv_avg20: bh?.deliv_pct_avg20 ?? null,
+        bh_turnover: bh?.turnover_cr ?? null,
+        bh_vol_x: bh?.vol_x ?? null,
+        bh_20d: bh?.pct_20d_ema ?? null,
+        bh_50d: bh?.pct_50d_ema ?? null,
+        _has_bhav: !!bh,
       };
     });
-  }, [ms]);
+  }, [ms, bhavOk, bhav]);
 
   const cols: Col[] = useMemo(() => {
-    const optional = OPTIONAL_COLUMNS.filter((c) => enabledCols.has(c.key));
+    const optional = optionalCols.filter((c) => enabledCols.has(c.key));
     return [...MANDATORY_COLUMNS, ...optional];
-  }, [enabledCols]);
+  }, [enabledCols, optionalCols]);
 
-  const activeSources = useMemo(() => new Set(OPTIONAL_COLUMNS.filter((c) => enabledCols.has(c.key) && c.source).map((c) => c.source!)), [enabledCols]);
+  const activeSources = useMemo(() => new Set(optionalCols.filter((c) => enabledCols.has(c.key) && c.source).map((c) => c.source!)), [enabledCols, optionalCols]);
 
   const [onlyMatches, setOnlyMatches] = useState(true);
   const displayedRows = useMemo(() => {
@@ -539,7 +611,9 @@ export default function AllTechnicals() {
     <div>
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">🔬 All Technicals</h1>
-        <span className="text-slate-500 text-sm">Every NSE750 stock, every technical screener, one table</span>
+        <span className="text-slate-500 text-sm">
+          {bhavOk ? `Every NSE-listed stock (${rows.length}), every technical screener, one table` : "Every NSE750 stock, every technical screener, one table"}
+        </span>
       </div>
       <p className="text-xs text-slate-500 mb-3">
         Refreshed by the existing per-screener crons (Momentum Screeners tabs) — this page just joins what's already fetched, client-side.
@@ -582,6 +656,19 @@ export default function AllTechnicals() {
         just the ones with a signal event this week. Sourced from a new weekly-batched screener (<b>nse750Technicals</b>) — 1W/1M/3M/6M %
         are bar-count price changes, % vs 200D/33W EMA use OHLC4 (not close alone), and % from ATH/52W High are measured off weekly highs
         (not closes), so an intraweek spike that pulled back before the week's close still counts as touching a new high.
+        {bhavOk && (
+          <>
+            <br />
+            <br />
+            <b>NSE Bhavcopy (all stocks)</b> — added 2026-10-02. The rows beyond the NSE-750 (and these extra columns) come from NSE's own
+            daily bulk file, kept in a store on our side: price, returns, RSI, % vs 20D/50D/200D/33W EMA and distance from the high are
+            computed from it, plus delivery % and turnover that nothing else here has. Splits and bonuses are corrected using Yahoo's split
+            record for just the affected stock (a price jump nobody could confirm cuts that stock's history instead of being shown across).
+            "ATH" there is the highest point in the last ~2 years (the store's depth), and these stocks have no sector, RS, Alpha or
+            fundamentals columns — those screeners only cover the NSE-750, so they read "—". The store checks itself against the Yahoo-based
+            numbers for the NSE-750 every day; if it ever disagrees, this page quietly goes back to the NSE-750 universe.
+          </>
+        )}
       </MethodologyNote>
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -589,7 +676,7 @@ export default function AllTechnicals() {
           onClick={() => setPickerOpen((v) => !v)}
           className="text-sm px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 font-medium"
         >
-          🎛️ Columns ({enabledCols.size} of {OPTIONAL_COLUMNS.length} shown) {pickerOpen ? "▲" : "▼"}
+          🎛️ Columns ({optionalCols.filter((c) => enabledCols.has(c.key)).length} of {optionalCols.length} shown) {pickerOpen ? "▲" : "▼"}
         </button>
         {activeSources.size > 0 && (
           <label
@@ -603,8 +690,8 @@ export default function AllTechnicals() {
       </div>
       {pickerOpen && (
         <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 space-y-3">
-          {COLUMN_GROUP_ORDER.map((group) => {
-            const groupCols = OPTIONAL_COLUMNS.filter((c) => c.group === group);
+          {groupOrder.map((group) => {
+            const groupCols = optionalCols.filter((c) => c.group === group);
             if (groupCols.length === 0) return null;
             const groupKeys = groupCols.map((c) => c.key);
             const enabledCount = groupKeys.filter((k) => enabledCols.has(k)).length;
