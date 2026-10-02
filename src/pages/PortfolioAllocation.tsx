@@ -782,7 +782,12 @@ export default function PortfolioAllocation() {
         // "ATH" is honestly only within Yahoo's ~5y fetch window, not
         // the stock's literal full listing history.
         key: "pct_from_ath",
-        label: "% from ATH",
+        // 2026-10-02 ("do we need scroll bar on pf page?") — "% from 52W High"
+        // is 106px of nowrap text in a 78px last column: it spilled ~37px past
+        // the table edge and forced a horizontal scrollbar on both stock
+        // tables even though every column otherwise fits exactly. Shorter
+        // labels (the user's own "ATH%"/"52WH%" shorthand) keep it inside.
+        label: "ATH %",
         width: 5.33,
         render: (r) => (r.pct_from_ath === null || r.pct_from_ath === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_ath} digits={1} />),
       },
@@ -795,7 +800,7 @@ export default function PortfolioAllocation() {
         // 52W high). Same weekly-HIGHS source as % from ATH, just
         // capped to the trailing 52 bars.
         key: "pct_from_52w_high",
-        label: "% from 52W High",
+        label: "52WH %",
         width: 5.33,
         render: (r) => (r.pct_from_52w_high === null || r.pct_from_52w_high === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_52w_high} digits={1} />),
       },
