@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
@@ -300,11 +300,19 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
           </thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr
-                key={r.symbol}
-                className={`border-t ${i > 0 && rows[i - 1].kind !== r.kind ? "border-slate-300" : "border-slate-100"} ${r.kind === "portfolio" ? "bg-indigo-50/60 font-semibold" : ""}`}
-              >
-                <td className="py-1.5 font-medium">
+              <Fragment key={r.symbol}>
+                {/* 2026-10-02 ("lets give a space between currency related
+                    rows, then index related and bottom show the PF in
+                    bolded ... or keep pf at top row") — an empty spacer
+                    row wherever the kind changes: My Portfolio (bold, top)
+                    / currency / indices. */}
+                {i > 0 && rows[i - 1].kind !== r.kind && (
+                  <tr aria-hidden="true">
+                    <td colSpan={14} className="h-4" />
+                  </tr>
+                )}
+              <tr className={`border-t ${r.kind === "portfolio" ? "border-indigo-200 bg-indigo-50/60 font-bold text-slate-900" : "border-slate-100"}`}>
+                <td className={`py-1.5 ${r.kind === "portfolio" ? "font-bold" : "font-medium"}`}>
                   {r.tradingview_url ? (
                     <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
                       {r.name}
@@ -327,6 +335,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
                 <td className="py-1.5 text-right tabular-nums">{cell(r.pct_from_ath, r.kind)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.pct_from_52w_high, r.kind)}</td>
               </tr>
+              </Fragment>
             ))}
           </tbody>
         </table>
