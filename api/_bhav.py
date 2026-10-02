@@ -575,6 +575,11 @@ def compute_technicals(df, names):
 
     last = df.groupby("symbol", sort=False).tail(1).set_index("symbol")
     last_date = df["date"].max()
+    # Only what trades now: the store keeps two years of bars, so delisted names
+    # and finished rights-entitlement tickers (SYMBOL-RE, SYMBOL-RE1...) still
+    # have rows with months-old last bars.
+    live = (last["date"] >= last_date - pd.Timedelta(days=5)) & ~last.index.to_series().str.contains(r"-(?:RE|W)\d*$", regex=True)
+    last = last[live]
 
     df["wk"] = df["date"].dt.to_period("W-FRI")
     wk = df.groupby(["symbol", "wk"], sort=True).agg(o=("o", "first"), h=("h", "max"), l=("l", "min"), c=("c", "last")).reset_index()
