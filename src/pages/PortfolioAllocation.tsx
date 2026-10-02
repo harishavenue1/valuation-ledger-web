@@ -251,20 +251,24 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 
 // 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
 // also currency for same USD and INR") — then ("remove all this ... and
-// only keep Currency changes") — the yield rows are gone; this is just
-// USD/INR and the Dollar Index with D/W/M/Q/Y % changes, refreshed
-// daily, each name linking to its TradingView chart. Colored by what a
-// MOVE means for Indian equities, not by sign: red = rising (a stronger
-// dollar or a weaker rupee is a headwind), green = falling.
+// only keep Currency changes") — then ("can we add an indian
+// NIFTYMIDSMALL and US Index S&P or NASDAQ"). USD/INR and the Dollar
+// Index, then Nifty MidSmallcap 400, S&P 500 and Nasdaq, each with
+// D/W/M/Q/Y % changes, refreshed daily, each name linking to its
+// TradingView chart. Currency pairs are colored by what a MOVE means for
+// Indian equities (red = rising: a stronger dollar or weaker rupee is a
+// headwind); indices are the opposite, plain up = green.
 function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
-  const cell = (v: number | null | undefined) => {
+  const cell = (v: number | null | undefined, kind: string) => {
     if (v === null || v === undefined) return <span className="text-slate-300">—</span>;
-    return <span className={v > 0 ? "text-red-600" : v < 0 ? "text-emerald-600" : "text-slate-500"}>{`${v > 0 ? "+" : ""}${v.toFixed(2)}%`}</span>;
+    const up = kind === "index" ? "text-emerald-600" : "text-red-600";
+    const down = kind === "index" ? "text-red-600" : "text-emerald-600";
+    return <span className={v > 0 ? up : v < 0 ? down : "text-slate-500"}>{`${v > 0 ? "+" : ""}${v.toFixed(2)}%`}</span>;
   };
   return (
     <div className="p-4 border border-slate-200 rounded-lg">
       <div className="flex items-center gap-2 mb-2">
-        <h2 className="text-sm font-medium text-slate-700">Currency</h2>
+        <h2 className="text-sm font-medium text-slate-700">Currency &amp; Indices</h2>
         {asOf && <span className="text-[11px] text-slate-400">as of {asOf}</span>}
         <span className="ml-auto">
           <RunButton screener="ratesFx" />
@@ -276,7 +280,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 text-[11px]">
-              <th className="text-left font-medium py-1">Pair</th>
+              <th className="text-left font-medium py-1">Instrument</th>
               <th className="text-right font-medium py-1">Level</th>
               <th className="text-right font-medium py-1">D</th>
               <th className="text-right font-medium py-1">W</th>
@@ -286,25 +290,25 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.symbol} className="border-t border-slate-100">
+            {rows.map((r, i) => (
+              <tr key={r.symbol} className={`border-t ${i > 0 && rows[i - 1].kind !== r.kind ? "border-slate-300" : "border-slate-100"}`}>
                 <td className="py-1.5 font-medium">
                   <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
                     {r.name}
                   </a>
                 </td>
                 <td className="py-1.5 text-right tabular-nums">{r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1q)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1q, r.kind)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y, r.kind)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">Red = rising (a stronger dollar or a weaker rupee is a headwind for Indian equities). Refreshed daily.</p>
+      <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices: green = rising. Refreshed daily.</p>
     </div>
   );
 }

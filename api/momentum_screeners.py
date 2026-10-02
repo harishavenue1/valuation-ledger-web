@@ -2914,14 +2914,72 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # Portfolio page. Started as US yields + USD/INR + DXY; the yield rows
 # were removed the same day ("remove all this and only keep Currency
 # changes") — what's left is USD/INR and the Dollar Index with D/W/M/Q/Y
-# % changes and a TradingView link per row. The key stays
+# % changes and a TradingView link per row, plus (same day) the S&P 500,
+# Nasdaq and Nifty MidSmallcap 400. The key stays
 # "ratesFx" (cron, Run now button and the pushed rows all hang off it)
 # rather than renaming and orphaning the stored data.
 RFX_UNIVERSE = [
-    ("USD/INR", "USDINR=X", "FX_IDC:USDINR"),
-    ("Dollar Index", "DX-Y.NYB", "TVC:DXY"),
+    ("USD/INR", "USDINR=X", "FX_IDC:USDINR", "fx"),
+    ("Dollar Index", "DX-Y.NYB", "TVC:DXY", "fx"),
+    ("S&P 500", "^GSPC", "SP:SPX", "index"),
+    ("Nasdaq Composite", "^IXIC", "NASDAQ:IXIC", "index"),
 ]
 RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("1y", 365)]  # 91 days = a quarter, same as GCE_TIMEFRAMES' 3m
+
+# 2026-10-02 ("can we add an indian NIFTYMIDSMALL and US Index S&P or
+# NASDAQ index") — Nifty MidSmallcap 400 can't come from Yahoo: its
+# NIFTYMIDSML400.NS ticker returns a single quote point and no history
+# (checked live), and niftyindices.com's own historical-data endpoint
+# answers with an HTML block page instead of data. NSE's archive
+# CSV of every index's daily close (same archives.nseindia.com host the
+# stock universe above already reads from Vercel) has it, so the D/W/M/Q/Y
+# changes are built from the closes in a handful of those daily files.
+RFX_NSE_INDEX = ("Nifty MidSmallcap 400", "Nifty MidSmallcap 400", "NSE:NIFTYMIDSML400")
+
+
+def _rfx_nse_index_close(index_name, on_or_before, max_back=7):
+    """(date, close) from NSE's ind_close_all CSV for the latest trading
+    day on or before `on_or_before` (a missing file = holiday/weekend or
+    not published yet, so step back a day at a time), or None."""
+    for back in range(max_back + 1):
+        d = on_or_before - timedelta(days=back)
+        if d.weekday() >= 5:
+            continue
+        url = f"https://archives.nseindia.com/content/indices/ind_close_all_{d.strftime('%d%m%Y')}.csv"
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        except Exception:
+            continue
+        if r.status_code != 200:
+            continue
+        for row in csv.DictReader(io.StringIO(r.text)):
+            if row.get("Index Name", "").strip().lower() == index_name.lower():
+                try:
+                    return d, float(row["Closing Index Value"])
+                except (KeyError, ValueError):
+                    return None
+        return None
+    return None
+
+
+def _rfx_nse_index_row():
+    name, csv_name, tv = RFX_NSE_INDEX
+    latest = _rfx_nse_index_close(csv_name, date.today())
+    if latest is None:
+        return None
+    latest_date, level = latest
+    row = {
+        "name": name,
+        "symbol": "NIFTYMIDSML400",
+        "kind": "index",
+        "level": round(level, 2),
+        "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
+    }
+    for tf, days in RFX_TIMEFRAMES:
+        anchor = latest_date - timedelta(days=days)
+        prior = _rfx_nse_index_close(csv_name, anchor if days > 1 else latest_date - timedelta(days=1))
+        row[f"chg_{tf}"] = round((level / prior[1] - 1) * 100, 2) if prior and prior[1] else None
+    return row
 
 
 def _rfx_change(df, days):
@@ -2944,7 +3002,7 @@ def _rfx_change(df, days):
 
 def _run_rates_fx(symbols, name_map, sector_map):
     rows, skipped = [], []
-    for name, ticker, tv in RFX_UNIVERSE:
+    for name, ticker, tv, kind in RFX_UNIVERSE:
         df = _gxc_fetch_history(ticker)
         close = df["Close"].dropna() if df is not None else None
         if close is None or close.empty:
@@ -2953,15 +3011,23 @@ def _run_rates_fx(symbols, name_map, sector_map):
         row = {
             "name": name,
             "symbol": ticker,
+            "kind": kind,
             "level": round(float(close.iloc[-1]), 2),
             "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
         }
         for tf, days in RFX_TIMEFRAMES:
             row[f"chg_{tf}"] = _rfx_change(df, days)
         rows.append(row)
+    # Nifty MidSmallcap 400 goes right after the currencies, before the US indices
+    nse_row = _rfx_nse_index_row()
+    if nse_row is None:
+        skipped.append(RFX_NSE_INDEX[0])
+    else:
+        first_index = next((i for i, r in enumerate(rows) if r["kind"] == "index"), len(rows))
+        rows.insert(first_index, nse_row)
     for i, r in enumerate(rows, 1):
         r["rank"] = i
-    return {"label": "Currency (USD/INR, DXY)", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+    return {"label": "Currency & indices", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 # ── strategicAlpha ───────────────────────────────────────────────────────────
