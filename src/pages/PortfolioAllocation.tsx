@@ -250,23 +250,21 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 }
 
 // 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
-// also currency for same USD and INR, as stock market is majorly
-// impacted by bond movements") — US yields + USD/INR + DXY; India's own
-// yield is deliberately absent ("skip India for now" — no free source,
-// see api/momentum_screeners.py's ratesFx module comment). Colored by
-// what a MOVE means for equities, not by sign: red = rising (higher
-// yields / a stronger dollar / a weaker rupee are headwinds for Indian
-// equities), green = falling. Yields are in basis points, FX in %.
+// also currency for same USD and INR") — then ("remove all this ... and
+// only keep Currency changes") — the yield rows are gone; this is just
+// USD/INR and the Dollar Index with 1D/1W/1M/1Y % changes, refreshed
+// daily, each name linking to its TradingView chart. Colored by what a
+// MOVE means for Indian equities, not by sign: red = rising (a stronger
+// dollar or a weaker rupee is a headwind), green = falling.
 function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
-  const cell = (v: number | null | undefined, unit: string) => {
+  const cell = (v: number | null | undefined) => {
     if (v === null || v === undefined) return <span className="text-slate-300">—</span>;
-    const txt = unit === "bp" ? `${v > 0 ? "+" : ""}${v.toFixed(0)}bp` : `${v > 0 ? "+" : ""}${v.toFixed(2)}%`;
-    return <span className={v > 0 ? "text-red-600" : v < 0 ? "text-emerald-600" : "text-slate-500"}>{txt}</span>;
+    return <span className={v > 0 ? "text-red-600" : v < 0 ? "text-emerald-600" : "text-slate-500"}>{`${v > 0 ? "+" : ""}${v.toFixed(2)}%`}</span>;
   };
   return (
     <div className="p-4 border border-slate-200 rounded-lg">
       <div className="flex items-center gap-2 mb-2">
-        <h2 className="text-sm font-medium text-slate-700">Rates &amp; FX</h2>
+        <h2 className="text-sm font-medium text-slate-700">Currency</h2>
         {asOf && <span className="text-[11px] text-slate-400">as of {asOf}</span>}
         <span className="ml-auto">
           <RunButton screener="ratesFx" />
@@ -278,7 +276,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 text-[11px]">
-              <th className="text-left font-medium py-1">Instrument</th>
+              <th className="text-left font-medium py-1">Pair</th>
               <th className="text-right font-medium py-1">Level</th>
               <th className="text-right font-medium py-1">1D</th>
               <th className="text-right font-medium py-1">1W</th>
@@ -287,31 +285,24 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
-              <tr key={r.symbol} className={`border-t border-slate-100 ${i > 0 && rows[i - 1].kind !== r.kind ? "border-t-slate-300" : ""}`}>
-                <td className="py-1.5 font-medium text-slate-700">
-                  {r.tradingview_url ? (
-                    <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                      {r.name}
-                    </a>
-                  ) : (
-                    r.name
-                  )}
-                  {r.stale_note && <div className="text-[10px] font-normal text-amber-600">{r.stale_note}</div>}
+            {rows.map((r) => (
+              <tr key={r.symbol} className="border-t border-slate-100">
+                <td className="py-1.5 font-medium">
+                  <a href={r.tradingview_url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+                    {r.name}
+                  </a>
                 </td>
-                <td className="py-1.5 text-right tabular-nums">{r.kind === "yield" ? `${r.level.toFixed(2)}%` : r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d, r.unit)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w, r.unit)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m, r.unit)}</td>
-                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y, r.unit)}</td>
+                <td className="py-1.5 text-right tabular-nums">{r.level.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
-      <p className="text-[10px] text-slate-400 mt-2">
-        Yields in basis points, FX in %. Red = rising (a headwind for equities: higher yields, stronger dollar, weaker rupee). India's 10Y is monthly OECD data from Strategic Alpha (refreshed manually), so it only has a level and a 1Y change — no daily Indian yield source is free yet.
-      </p>
+      <p className="text-[10px] text-slate-400 mt-2">Red = rising (a stronger dollar or a weaker rupee is a headwind for Indian equities). Refreshed daily.</p>
     </div>
   );
 }
@@ -457,32 +448,8 @@ export default function PortfolioAllocation() {
   // matching AMFI's own rank-based Large/Mid/Small definition instead
   // of a hardcoded ₹ Cr threshold that would go stale as the market
   // grows. Not used for anything else on this page.
-  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals", "ratesFx", "countryYields"]);
+  const { ready } = useScreeners(["portfolioAllocation", "nse750Fundamentals", "ratesFx"]);
   const entry = bundle.momentum_screeners["portfolioAllocation"];
-  // 2026-10-02 ("seems we have in strategic alpha") — India's 10Y comes
-  // from Strategic Alpha's countryYields (monthly OECD series via FRED,
-  // refreshed manually): a level and a 1Y change only, no D/W/M, and its
-  // own as_of (months old) shown on the row so it can't pass for a live
-  // quote next to the daily US rows.
-  const ratesFxRows = useMemo(() => {
-    const live: any[] = bundle.momentum_screeners["ratesFx"]?.rows ?? [];
-    const india = (bundle.momentum_screeners["countryYields"]?.rows ?? []).find((r: any) => r.country === "India");
-    if (!india || india.latest_yield_pct == null) return live;
-    const indiaRow = {
-      name: "India 10Y",
-      symbol: "IN10Y-OECD",
-      kind: "yield",
-      unit: "bp",
-      level: india.latest_yield_pct,
-      chg_1d: null,
-      chg_1w: null,
-      chg_1m: null,
-      chg_1y: india.chg_vs_1y_ago_bps ?? null,
-      stale_note: `monthly, as of ${india.as_of}`,
-    };
-    const lastYield = live.map((r) => r.kind).lastIndexOf("yield");
-    return lastYield === -1 ? [...live, indiaRow] : [...live.slice(0, lastYield + 1), indiaRow, ...live.slice(lastYield + 1)];
-  }, [bundle.momentum_screeners]);
   // ROCE/ROE 1Y change — 2026-09-20. First tried joining against the
   // shared nse750Fundamentals cache (zero new requests), but that only
   // covers the Nifty Total Market universe and left most of this
@@ -821,7 +788,7 @@ export default function PortfolioAllocation() {
               strip at the bottom whenever the table's taller. flex +
               h-full + a centered inner wrapper puts the content in the
               middle of whatever height the row ends up being instead. */}
-          {/* 2026-10-02 — Rates & FX stacked under the donut: the donut's
+          {/* 2026-10-02 — Currency card stacked under the donut: the donut's
               own flex-1 centering absorbs whatever height is left after
               the new card, so the column still matches Portfolio
               Breakdown's height. */}
@@ -832,10 +799,7 @@ export default function PortfolioAllocation() {
                 <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
               </div>
             </div>
-            <RatesFxCard
-              rows={ratesFxRows}
-              asOf={bundle.momentum_screeners["ratesFx"]?.as_of}
-            />
+            <RatesFxCard rows={bundle.momentum_screeners["ratesFx"]?.rows ?? []} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
           </div>
         </div>
       )}

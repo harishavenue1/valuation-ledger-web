@@ -2910,29 +2910,21 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # ── ratesFx ──────────────────────────────────────────────────────────────────
 #
 # 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
-# also currency for same USD and INR, as stock market is majorly
-# impacted by bond movements") — shown as a compact panel on the
-# Portfolio page. US side only for now ("skip India for now"): Yahoo has
-# no India 10Y ticker (checked live: ^IN10Y, IN10Y.NS, INR10Y=RR and
-# others all return nothing), Investing.com 403s, and
-# worldgovernmentbonds.com renders its numbers client-side.
-#
-# Yahoo's ^IRX/^FVX/^TNX/^TYX Close is already the yield in percent
-# (e.g. 5.237), so a yield change is a plain difference shown in basis
-# points, not a percent change of a percent. FX and DXY are ordinary
-# percent changes. No 2Y ticker exists on Yahoo, so no 2s10s spread.
+# also currency for same USD and INR") — shown as a compact panel on the
+# Portfolio page. Started as US yields + USD/INR + DXY; the yield rows
+# were removed the same day ("remove all this and only keep Currency
+# changes") — what's left is USD/INR and the Dollar Index with 1D/1W/
+# 1M/1Y % changes and a TradingView link per row. The key stays
+# "ratesFx" (cron, Run now button and the pushed rows all hang off it)
+# rather than renaming and orphaning the stored data.
 RFX_UNIVERSE = [
-    ("US 13W", "^IRX", "yield", "TVC:US03MY"),
-    ("US 5Y", "^FVX", "yield", "TVC:US05Y"),
-    ("US 10Y", "^TNX", "yield", "TVC:US10Y"),
-    ("US 30Y", "^TYX", "yield", "TVC:US30Y"),
-    ("USD/INR", "USDINR=X", "fx", "FX_IDC:USDINR"),
-    ("Dollar Index", "DX-Y.NYB", "fx", "TVC:DXY"),
+    ("USD/INR", "USDINR=X", "FX_IDC:USDINR"),
+    ("Dollar Index", "DX-Y.NYB", "TVC:DXY"),
 ]
 RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1y", 365)]
 
 
-def _rfx_change(df, days, as_bp):
+def _rfx_change(df, days):
     if df is None or len(df) < 2:
         return None
     close = df["Close"].dropna()
@@ -2945,18 +2937,14 @@ def _rfx_change(df, days, as_bp):
         cutoff = close.index[-1] - pd.Timedelta(days=days)
         prior = close[close.index <= cutoff]
         start = prior.iloc[-1] if len(prior) else close.iloc[0]
-    if pd.isna(start) or pd.isna(end):
-        return None
-    if as_bp:
-        return round((end - start) * 100, 1)
-    if start == 0:
+    if pd.isna(start) or pd.isna(end) or start == 0:
         return None
     return round((end / start - 1) * 100, 2)
 
 
 def _run_rates_fx(symbols, name_map, sector_map):
     rows, skipped = [], []
-    for name, ticker, kind, tv in RFX_UNIVERSE:
+    for name, ticker, tv in RFX_UNIVERSE:
         df = _gxc_fetch_history(ticker)
         close = df["Close"].dropna() if df is not None else None
         if close is None or close.empty:
@@ -2965,17 +2953,15 @@ def _run_rates_fx(symbols, name_map, sector_map):
         row = {
             "name": name,
             "symbol": ticker,
-            "kind": kind,
-            "unit": "bp" if kind == "yield" else "%",
-            "level": round(float(close.iloc[-1]), 3 if kind == "yield" else 2),
+            "level": round(float(close.iloc[-1]), 2),
             "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv)}",
         }
         for tf, days in RFX_TIMEFRAMES:
-            row[f"chg_{tf}"] = _rfx_change(df, days, as_bp=(kind == "yield"))
+            row[f"chg_{tf}"] = _rfx_change(df, days)
         rows.append(row)
     for i, r in enumerate(rows, 1):
         r["rank"] = i
-    return {"label": "Rates & FX", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
+    return {"label": "Currency (USD/INR, DXY)", "push_rows": rows, "scanned": len(rows), "skipped": len(skipped)}, None
 
 
 # ── strategicAlpha ───────────────────────────────────────────────────────────
