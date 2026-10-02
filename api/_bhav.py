@@ -51,6 +51,8 @@ SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
 STATE_KEY = "bhav_state"
 TECH_KEY = "bhav_technicals"
+MCAP_KEY = "bhav_mcaps"
+MCAP_REFRESH_DAYS = 14
 DB_MAX_MB = 400  # refuse to grow the database past this
 JUMP_LO, JUMP_HI = 0.77, 1.30  # day-over-day close ratio outside this = candidate split/bonus
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*", "Accept-Language": "en-US,en;q=0.9"}
@@ -723,6 +725,54 @@ def verify(rows, ms):
     return all(checks), stats
 
 
+def _market_cap(sym):
+    """(symbol, market cap in Cr or None). NSE's files carry no share counts, so
+    this is the one thing here that comes from Yahoo (fast_info; ETFs and a few
+    unlisted/odd symbols have none)."""
+    import yfinance as yf
+
+    try:
+        mc = yf.Ticker(f"{sym}.NS").fast_info["market_cap"]
+        return sym, (round(float(mc) / 1e7) if mc else None)
+    except Exception:
+        return sym, None
+
+
+def refresh_market_caps(symbols, budget_s):
+    """Fill/refresh market caps within a time budget — symbols never fetched first,
+    then the stalest — so the ~3,300 get covered over a few runs and then re-cycle
+    about every MCAP_REFRESH_DAYS days. {symbol: Cr or None} for everything known."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    conn = get_conn()
+    try:
+        store = (get_meta(conn, MCAP_KEY, None) or {}).get("d") or {}
+    finally:
+        conn.close()
+    today = date.today().isoformat()
+    stale_before = (date.today() - timedelta(days=MCAP_REFRESH_DAYS)).isoformat()
+    order = sorted(
+        (s for s in symbols if s not in store or (store[s][1] or "") < stale_before),
+        key=lambda s: store[s][1] if s in store else "",
+    )
+    t0 = time.monotonic()
+    fetched = 0
+    for i in range(0, len(order), 40):
+        if time.monotonic() - t0 > budget_s:
+            break
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            for sym, mc in pool.map(_market_cap, order[i:i + 40]):
+                store[sym] = [mc, today]
+                fetched += 1
+    if fetched:
+        conn = get_conn()
+        try:
+            set_meta(conn, MCAP_KEY, {"d": store})
+        finally:
+            conn.close()
+    return {s: (store[s][0] if s in store else None) for s in symbols}, {"market_caps_fetched": fetched, "market_caps_known": sum(1 for s in symbols if s in store and store[s][0]), "market_caps_waiting": max(0, len(order) - fetched)}
+
+
 def publish(budget_s=240):
     """Load the store, confirm/adjust corporate actions, compute technicals for
     every stock, verify against Yahoo, publish (ok flag + rows) to bhav_technicals.
@@ -758,6 +808,10 @@ def publish(budget_s=240):
         conn.close()
     df = adjust_frame(df, actions, jumps)
     rows = compute_technicals(df, state.get("names") or {})
+    caps, cap_stats = refresh_market_caps([r["symbol"] for r in rows], budget_s=max(0, min(150, budget_s - (time.monotonic() - t0) - 40)))
+    for r in rows:
+        r["market_cap_cr"] = caps.get(r["symbol"])
+    action_stats.update(cap_stats)
     ok, stats = verify(rows, ms)
     payload = {
         "ok": bool(ok),

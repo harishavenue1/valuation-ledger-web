@@ -540,7 +540,7 @@ export default function AllTechnicals() {
         // different screener. Caught live 2026-09-26 building Sector
         // Directory: this column silently showed "—" for all 750 rows
         // in production before the mismatch was found.
-        nt_market_cap: fund?.marketcap ?? null,
+        nt_market_cap: fund?.marketcap ?? bh?.market_cap_cr ?? null,
         nt_1w_pct: nt?.pct_1w ?? bh?.w_pct_1w ?? null,
         nt_1m_pct: nt?.pct_1m ?? bh?.w_pct_1m ?? null,
         nt_3m_pct: nt?.pct_3m ?? bh?.w_pct_3m ?? null,

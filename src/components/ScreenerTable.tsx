@@ -246,7 +246,17 @@ export function GenericTable({
     if (!sortKey) return filtered;
     const copy = [...filtered];
     copy.sort((a, b) => {
-      const cmp = compareVals(a[sortKey], b[sortKey]);
+      // 2026-10-02 ("many values are blank") — blank cells must sort LAST in
+      // either direction. compareVals already puts them last ascending, but
+      // flipping its result for "desc" floated every blank to the TOP, so a
+      // sparse column (Market Cap outside the NSE-750, any detector screener)
+      // looked empty on a descending sort.
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      const aNil = av === null || av === undefined || av === "";
+      const bNil = bv === null || bv === undefined || bv === "";
+      if (aNil || bNil) return aNil && bNil ? 0 : aNil ? 1 : -1;
+      const cmp = compareVals(av, bv);
       return sortDir === "desc" ? -cmp : cmp;
     });
     return copy;
