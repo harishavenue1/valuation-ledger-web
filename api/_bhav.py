@@ -217,7 +217,9 @@ def load_frame(conn, since_iso):
                 cols[k].extend(ch[k])
     if not sym:
         return pd.DataFrame(columns=["symbol", "date", "o", "h", "l", "c", "v", "dp"])
-    df = pd.DataFrame({"symbol": sym, "date": pd.to_datetime(dts), **{k: pd.to_numeric(pd.Series(v), errors="coerce") for k, v in cols.items()}})
+    # every numeric column as float64: volume arrives as int64 when no bar is
+    # missing it, and split-adjusting it (v / factor) then raises in pandas
+    df = pd.DataFrame({"symbol": sym, "date": pd.to_datetime(dts), **{k: pd.to_numeric(pd.Series(v), errors="coerce").astype("float64") for k, v in cols.items()}})
     df = df[df["date"] >= pd.Timestamp(since_iso)]
     return df.sort_values(["symbol", "date"]).reset_index(drop=True)
 

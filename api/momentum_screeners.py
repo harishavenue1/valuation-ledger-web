@@ -3843,9 +3843,12 @@ def _run_db_size(symbols, name_map, sector_map):
             cur.execute("SELECT key, pg_column_size(data) FROM meta ORDER BY pg_column_size(data) DESC")
             for key, nbytes in cur.fetchall():
                 rows.append({"item": f"meta:{key}", "bytes": nbytes, "mb": round(nbytes / 1024 / 1024, 2)})
-            for table in ("stocks", "scenarios", "guidance", "meta"):
-                cur.execute(f"SELECT pg_total_relation_size('{table}')")
+            for table in ("stocks", "scenarios", "guidance", "meta", "bhav_chunks", "bhav_actions"):
+                # to_regclass: NULL (not an error) for a table that doesn't exist yet
+                cur.execute("SELECT pg_total_relation_size(to_regclass(%s))", (table,))
                 nbytes = cur.fetchone()[0]
+                if nbytes is None:
+                    continue
                 rows.append({"item": f"table:{table} (incl. index)", "bytes": nbytes, "mb": round(nbytes / 1024 / 1024, 2)})
             cur.execute("SELECT pg_database_size(current_database())")
             db_bytes = cur.fetchone()[0]
