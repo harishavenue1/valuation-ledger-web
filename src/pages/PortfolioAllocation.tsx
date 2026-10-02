@@ -252,7 +252,7 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 // 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
 // also currency for same USD and INR") — then ("remove all this ... and
 // only keep Currency changes") — the yield rows are gone; this is just
-// USD/INR and the Dollar Index with 1D/1W/1M/1Y % changes, refreshed
+// USD/INR and the Dollar Index with D/W/M/Q/Y % changes, refreshed
 // daily, each name linking to its TradingView chart. Colored by what a
 // MOVE means for Indian equities, not by sign: red = rising (a stronger
 // dollar or a weaker rupee is a headwind), green = falling.
@@ -278,10 +278,11 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
             <tr className="text-slate-500 text-[11px]">
               <th className="text-left font-medium py-1">Pair</th>
               <th className="text-right font-medium py-1">Level</th>
-              <th className="text-right font-medium py-1">1D</th>
-              <th className="text-right font-medium py-1">1W</th>
-              <th className="text-right font-medium py-1">1M</th>
-              <th className="text-right font-medium py-1">1Y</th>
+              <th className="text-right font-medium py-1">D</th>
+              <th className="text-right font-medium py-1">W</th>
+              <th className="text-right font-medium py-1">M</th>
+              <th className="text-right font-medium py-1">Q</th>
+              <th className="text-right font-medium py-1">Y</th>
             </tr>
           </thead>
           <tbody>
@@ -296,6 +297,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1d)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1w)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1m)}</td>
+                <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1q)}</td>
                 <td className="py-1.5 text-right tabular-nums">{cell(r.chg_1y)}</td>
               </tr>
             ))}

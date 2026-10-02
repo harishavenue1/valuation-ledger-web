@@ -2913,15 +2913,15 @@ def _run_global_currencies(symbols, name_map, sector_map):
 # also currency for same USD and INR") — shown as a compact panel on the
 # Portfolio page. Started as US yields + USD/INR + DXY; the yield rows
 # were removed the same day ("remove all this and only keep Currency
-# changes") — what's left is USD/INR and the Dollar Index with 1D/1W/
-# 1M/1Y % changes and a TradingView link per row. The key stays
+# changes") — what's left is USD/INR and the Dollar Index with D/W/M/Q/Y
+# % changes and a TradingView link per row. The key stays
 # "ratesFx" (cron, Run now button and the pushed rows all hang off it)
 # rather than renaming and orphaning the stored data.
 RFX_UNIVERSE = [
     ("USD/INR", "USDINR=X", "FX_IDC:USDINR"),
     ("Dollar Index", "DX-Y.NYB", "TVC:DXY"),
 ]
-RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1y", 365)]
+RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("1y", 365)]  # 91 days = a quarter, same as GCE_TIMEFRAMES' 3m
 
 
 def _rfx_change(df, days):
