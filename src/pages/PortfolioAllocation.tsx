@@ -278,6 +278,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
       {rows.length === 0 ? (
         <div className="text-xs text-slate-400 py-4">No data yet — click Run now.</div>
       ) : (
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-500 text-[11px]">
@@ -329,6 +330,7 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
             ))}
           </tbody>
         </table>
+        </div>
       )}
       <p className="text-[10px] text-slate-400 mt-2">Currency: red = rising (a stronger dollar or weaker rupee is a headwind for Indian equities). Indices and My Portfolio: green = rising. My Portfolio is what your current holdings would have returned over each window (weighted by value, not a record of your actual trades). vs 20D / 50D / 200D / 33W = % above (+) or below (−) that EMA (OHLC4); ATH / 52W High = % below the high (ATH is the highest point in 5 years). For My Portfolio the ATH / 52W High columns are how far your holdings sit from their own highs, value-weighted. Refreshed daily; Y and vs 20D fill in for My Portfolio after the next PF update.</p>
     </div>
@@ -861,19 +863,21 @@ export default function PortfolioAllocation() {
               strip at the bottom whenever the table's taller. flex +
               h-full + a centered inner wrapper puts the content in the
               middle of whatever height the row ends up being instead. */}
-          {/* 2026-10-02 — Currency card stacked under the donut: the donut's
-              own flex-1 centering absorbs whatever height is left after
-              the new card, so the column still matches Portfolio
-              Breakdown's height. */}
-          <div className="flex flex-col gap-6 h-full">
-            <div className="p-4 border border-slate-200 rounded-lg flex flex-col flex-1">
-              <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
-              <div className="flex-1 flex items-center">
-                <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
-              </div>
+          <div className="p-4 border border-slate-200 rounded-lg flex flex-col h-full">
+            <h2 className="text-sm font-medium text-slate-700 mb-3">Sector Allocation</h2>
+            <div className="flex-1 flex items-center">
+              <SectorDonut slices={sectorSlices} selected={selectedSector} onSelect={setSelectedSector} />
             </div>
-            <RatesFxCard rows={[...(pfRow ? [pfRow] : []), ...(bundle.momentum_screeners["ratesFx"]?.rows ?? [])]} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
           </div>
+        </div>
+      )}
+
+      {/* 2026-10-02 — its own full-width row: with the EMA/ATH columns the
+          table is ~775px wide, which no longer fits in half the page (it
+          lived under the donut while it only had D/W/M/Q/Y). */}
+      {rows.length > 0 && (
+        <div className="mb-6">
+          <RatesFxCard rows={[...(pfRow ? [pfRow] : []), ...(bundle.momentum_screeners["ratesFx"]?.rows ?? [])]} asOf={bundle.momentum_screeners["ratesFx"]?.as_of} />
         </div>
       )}
 
