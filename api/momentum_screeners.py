@@ -3343,8 +3343,17 @@ def _run_bhav_diff(symbols, name_map, sector_map):
                 kinds[kind] += 1
                 ev.append((sym, b, round(sc * 100, 1), round(yc * 100, 1), kind))
     rows.append({"item": "adjustment mismatches", "value": f"{dict(kinds)} events {len(ev)} symbols {len({e[0] for e in ev})}"})
-    for sym, d, sc, yc, kind in sorted(ev, key=lambda e: e[1])[:70]:
-        rows.append({"item": f"adj {sym} {d}", "value": f"store day chg {sc}% yahoo day chg {yc}% {kind}"})
+    from _bhav import load_actions
+
+    cn = get_conn()
+    try:
+        acts = load_actions(cn)
+    finally:
+        cn.close()
+    for sym, d, sc, yc, kind in sorted(ev, key=lambda e: e[1]):
+        if kind == "store_unadjusted" and abs(sc) >= 15:
+            near = [a for a in acts.get(sym, []) if abs((date.fromisoformat(a[0]) - date.fromisoformat(d)).days) <= 10]
+            rows.append({"item": f"BIG {sym} {d}", "value": f"store {sc}% yahoo {yc}% actions {near}"})
     rows.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
     return {"label": "Bhavcopy vs Yahoo raw bars", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
