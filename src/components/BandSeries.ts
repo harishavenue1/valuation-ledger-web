@@ -56,6 +56,8 @@ export const defaultBandSeriesOptions: BandSeriesOptions = {
 };
 
 class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
+  // maps a bar's time to its x in the pane; supplied by the chart owner
+  constructor(private _timeToX: (t: Time) => number | null) {}
   private _data: PaneRendererCustomData<Time, BandData> | null = null;
   private _options: BandSeriesOptions | null = null;
 
@@ -73,16 +75,23 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
     // padded by one on each side so the fill doesn't visibly truncate
     // right at the pane boundary.
     // 2026-10-03 — after wheel-zooming in (CandlestickChart's right-anchored
-    // zoom) the padded visibleRange slice drew a stray flat rectangle from the
-    // left edge, so the slice is now chosen by on-screen x instead: every bar
-    // within a screen-width margin of the pane, which is cheap (a few hundred
-    // bars at most) and cannot go stale against the zoom state.
-    const all = this._data.bars;
+    // zoom) the library's own bar.x is only trustworthy for bars inside its
+    // visible range; the older off-screen bars arrive with positions that are
+    // simply wrong and drew a stray flat rectangle across the pane. So x is
+    // re-derived from each bar's TIME through the time scale (valid for any
+    // bar, on screen or not), and only bars within a screen-width margin of
+    // the pane are drawn.
     let paneW = 0;
     target.useMediaCoordinateSpace(({ mediaSize }) => {
       paneW = mediaSize.width;
     });
-    const bars = paneW > 0 ? all.filter((b) => Number.isFinite(b.x) && b.x > -paneW && b.x < paneW * 2) : all.slice();
+    const bars: { x: number; originalData: BandData }[] = [];
+    for (const b of this._data.bars) {
+      const x = this._timeToX(b.time);
+      if (x == null || !Number.isFinite(x)) continue;
+      if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
+      bars.push({ x, originalData: b.originalData });
+    }
     if (bars.length === 0) return;
 
     // 2026-09-27 ("on top left corner what is wrong, some green
@@ -150,7 +159,10 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
 }
 
 export class BandSeries implements ICustomSeriesPaneView<Time, BandData, BandSeriesOptions> {
-  private _renderer = new BandSeriesRenderer();
+  private _renderer: BandSeriesRenderer;
+  constructor(timeToX: (t: Time) => number | null) {
+    this._renderer = new BandSeriesRenderer(timeToX);
+  }
 
   priceValueBuilder(plotRow: BandData): CustomSeriesPricePlotValues {
     return [plotRow.top, plotRow.bottom];

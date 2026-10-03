@@ -312,7 +312,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       // visibleRange, so it was drawing through off-screen buffered
       // data on every redraw). Was a two-dashed-lines approximation in
       // between while that was unresolved.
-      const band = chart.addCustomSeries(new BandSeries(), {
+      const band = chart.addCustomSeries(new BandSeries((t) => chart.timeScale().timeToCoordinate(t)), {
         fillColor: SM_CHANNEL_FILL,
         borderColor: SM_CHANNEL_BORDER,
         borderWidth: 1,
