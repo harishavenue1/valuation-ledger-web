@@ -56,6 +56,9 @@ MCAP_KEY = "bhav_mcaps"
 MCAP_REFRESH_DAYS = 14
 DB_MAX_MB = 400  # refuse to grow the database past this
 JUMP_LO, JUMP_HI = 0.77, 1.30  # day-over-day close ratio outside this = candidate split/bonus
+SMALL_LO, SMALL_HI = 0.93, 1.08  # inside (JUMP_LO, SMALL_LO] / [SMALL_HI, JUMP_HI): small-bonus candidates, only ever acted on with a Yahoo record
+SPLITCHECK_KEY = "bhav_splitcheck"
+SPLITCHECK_DAYS = 14
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*", "Accept-Language": "en-US,en;q=0.9"}
 
 DDL = """
@@ -559,6 +562,106 @@ def confirm_jumps(jumps, actions, budget_s=90):
     return {"flagged": len(jumps), "pending_before": len(pending), **dict(stats)}
 
 
+def find_small_candidates(df):
+    """[(symbol, ex_iso, ratio)] for day-over-day moves INSIDE the plain-jump band
+    but big enough to be a small bonus (1:10 = 0.909, 1:5 = 0.833, 1:4 = 0.8).
+    Ordinary moves look the same, so these are never acted on without a matching
+    Yahoo split record (sweep_small_actions)."""
+    if df.empty:
+        return []
+    cal = {d: i for i, d in enumerate(sorted(df["date"].unique()))}
+    day_idx = df["date"].map(cal).to_numpy()
+    sym = df["symbol"].to_numpy()
+    c = df["c"].to_numpy(dtype=float)
+    prev = np.roll(c, 1)
+    same = (np.roll(sym, 1) == sym) & (day_idx - np.roll(day_idx, 1) == 1)
+    same[0] = False
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.where(same & (prev > 0), c / prev, 1.0)
+    idx = np.where(((ratio > JUMP_LO) & (ratio <= SMALL_LO)) | ((ratio >= SMALL_HI) & (ratio < JUMP_HI)))[0]
+    dates = df["date"].dt.date.astype(str).to_numpy()
+    return [(sym[i], dates[i], float(ratio[i])) for i in idx]
+
+
+def _small_factor(ratio, near):
+    """Factor for a small-band candidate from Yahoo split ratios dated near it —
+    a direct match only (the day's residual move must stay within about 12%), no
+    clean-ratio snapping, because an ordinary -9% day next to a real split must
+    not be mistaken for a second one."""
+    for sr in near:
+        if ratio < 1 and not (1.03 < sr < 1.4):
+            continue
+        if ratio > 1 and not (0.7 < sr < 0.97):
+            continue
+        if 0.88 <= ratio * sr <= 1.14:
+            return 1.0 / sr
+    return None
+
+
+def sweep_small_actions(df, actions, budget_s=60, key=SPLITCHECK_KEY):
+    """Find small bonuses (the plain jump detector's blind band) by asking Yahoo
+    for each affected symbol's split record, at most once per SPLITCHECK_DAYS,
+    oldest-checked first and resumable across runs. Records source 'yahoo-small'."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    t0 = time.monotonic()
+    cands = find_small_candidates(df)
+    known = {(s, ex) for s, rows in actions.items() for ex, _f_, _src in rows}
+    by_symbol = collections.defaultdict(list)
+    for sym, ex, ratio in cands:
+        if (sym, ex) not in known:
+            by_symbol[sym].append((ex, ratio))
+    conn = get_conn()
+    try:
+        checked = get_meta(conn, key, None) or {}
+    finally:
+        conn.close()
+    cutoff = (date.today() - timedelta(days=SPLITCHECK_DAYS)).isoformat()
+    todo = sorted((s for s in by_symbol if checked.get(s, "") < cutoff), key=lambda s: checked.get(s, ""))
+    stats = collections.Counter()
+    stats["candidate_symbols"] = len(by_symbol)
+    stats["to_check"] = len(todo)
+    for i in range(0, len(todo), 24):
+        if time.monotonic() - t0 > budget_s:
+            break
+        batch = todo[i:i + 24]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            looked = list(pool.map(_lookup_symbol, batch))
+        rows = []
+        for sym, split_list, _known_to_yahoo in looked:
+            if split_list is None:
+                stats["yahoo_failed"] += 1
+                continue
+            checked[sym] = date.today().isoformat()
+            stats["checked"] += 1
+            have = [date.fromisoformat(ex) for ex, _f_, src in actions.get(sym, []) if src not in ("rejected", "nodata")]
+            for ex, ratio in by_symbol[sym]:
+                ex_d = date.fromisoformat(ex)
+                near = [sr for sd, sr in split_list if abs((sd - ex_d).days) <= 4 and not any(abs((sd - h).days) <= 4 for h in have)]
+                f = _small_factor(ratio, near)
+                if f is not None:
+                    rows.append((sym, ex, float(f), "yahoo-small"))
+                    stats["small_bonus_found"] += 1
+        if rows:
+            wconn = get_conn()
+            try:
+                with wconn.cursor() as cur:
+                    psycopg2.extras.execute_values(
+                        cur,
+                        "INSERT INTO bhav_actions (symbol, ex_date, factor, source) VALUES %s ON CONFLICT (symbol, ex_date) DO UPDATE SET factor = EXCLUDED.factor, source = EXCLUDED.source",
+                        rows,
+                    )
+                wconn.commit()
+            finally:
+                wconn.close()
+    wconn = get_conn()
+    try:
+        set_meta(wconn, key, checked)
+    finally:
+        wconn.close()
+    return dict(stats)
+
+
 def adjust_frame(df, actions, jumps):
     """Back-adjust prices for confirmed splits, and cut each symbol's history at
     its latest still-unresolved jump (never show a number across one)."""
@@ -854,7 +957,13 @@ def publish(budget_s=240):
         return [{"item": "RESULT", "value": "store is empty — nothing published"}]
 
     jumps = find_jumps(df)
-    action_stats = confirm_jumps(jumps, actions, budget_s=max(20, budget_s - (time.monotonic() - t0) - 60))
+    action_stats = confirm_jumps(jumps, actions, budget_s=max(20, budget_s - (time.monotonic() - t0) - 100))
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    action_stats.update({f"small_{k}": v for k, v in sweep_small_actions(df, actions, budget_s=max(15, min(80, budget_s - (time.monotonic() - t0) - 90))).items()})
 
     conn = get_conn()
     try:
@@ -921,7 +1030,13 @@ def resolve_deep_actions(symbols, budget_s=200):
         actions = load_actions(conn)
     finally:
         conn.close()
-    stats = confirm_jumps(jumps, actions, budget_s=max(10, budget_s - (time.monotonic() - t0)))
+    stats = confirm_jumps(jumps, actions, budget_s=max(10, budget_s - (time.monotonic() - t0) - 100))
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    stats.update({f"small_{k}": v for k, v in sweep_small_actions(df, actions, budget_s=max(10, budget_s - (time.monotonic() - t0)), key=SPLITCHECK_KEY + "_deep").items()})
     return {"bars": len(df), "symbols": int(df["symbol"].nunique()), **stats}
 
 
