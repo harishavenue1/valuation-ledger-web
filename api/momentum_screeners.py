@@ -5253,6 +5253,8 @@ CHART_RANGE_BARS = {
 }
 # prior-high windows (in bars of the timeframe) behind the 2M/3M/6M/9M/1Y level lines
 CHART_LEVEL_WINDOWS = {"d": (42, 63, 126, 189, 252), "w": (8, 13, 26, 39, 52), "m": (2, 3, 6, 9, 12)}
+# EMA 3 (the green slow line) has a length per timeframe in the user's Pine inputs: "EMA 3 (222D / 33W / 36M)"
+CHART_SLOW_EMA_BY_TF = {"d": 222, "w": 33, "m": 36}
 CHART_RIBBON_PERIODS = (12, 21, 33)  # weekly EMA ribbon — myLongTermInvestingStrategy's own lengths
 CHART_RSI_PERIOD = 14
 CHART_RSI_THRESHOLD = 66
@@ -5417,7 +5419,7 @@ def _run_chart_data(symbol, range_param, tf="w"):
     # ── system 2: myLongTermInvestingStrategy's own 12W/21W/33W ribbon
     ema1 = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[0])
     ema2 = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[1])
-    slow_ema = _chart_ema(ohlc4, CHART_RIBBON_PERIODS[2])  # ema3 in the Pine script
+    slow_ema = _chart_ema(ohlc4, CHART_SLOW_EMA_BY_TF.get(tf, CHART_RIBBON_PERIODS[2]))  # ema3 in the Pine script (222D / 33W / 36M)
     rsi_series = _val_rsi_series(pd.Series(closes), CHART_RSI_PERIOD)
     rsi = [round(float(v), 2) if pd.notna(v) else None for v in rsi_series]
 

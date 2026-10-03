@@ -426,7 +426,7 @@ export default function PortfolioCharts() {
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#47b027" }} />
-              Slow EMA (33{sfx}) {fmtNum(last.slow_ema, 2)}
+              Slow EMA ({tf === "d" ? 222 : tf === "m" ? 36 : 33}{sfx}) {fmtNum(last.slow_ema, 2)}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full bg-sky-500 mr-1" />
