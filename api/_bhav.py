@@ -136,7 +136,13 @@ def parse_day(text):
     the previous day). One row per symbol, series priority EQ > BE > SM."""
     rows = {}
     dates = collections.Counter()
-    for raw in csv.DictReader(io.StringIO(text)):
+    # splitlines (not StringIO) and NULs stripped: a few old files are damaged,
+    # and one (2022-08-08) is not a CSV at all — a ZIP/Excel file published under
+    # the CSV name — which has no SYMBOL/SERIES header and yields nothing.
+    lines = [ln for ln in text.replace("\0", "").splitlines() if ln.strip()]
+    if not lines or "SYMBOL" not in lines[0] or "SERIES" not in lines[0]:
+        return None, {}
+    for raw in csv.DictReader(lines):
         x = {k.strip(): (v or "").strip() for k, v in raw.items() if k}
         sym, series = x.get("SYMBOL"), x.get("SERIES")
         pri = SERIES_PRIORITY.get(series)
@@ -287,7 +293,7 @@ def run_store(budget_s=200, deep_symbols=None):
 
     t0 = time.monotonic()
     session = requests.Session()
-    fetched, copies, missing, blocked, errors = {}, 0, 0, 0, 0
+    fetched, copies, missing, blocked, errors, unparseable = {}, 0, 0, 0, 0, 0
     stored_days, written = 0, 0
     stop = False
 
@@ -321,9 +327,14 @@ def run_store(budget_s=200, deep_symbols=None):
                 continue
             day, (status, text) = res
             if status == 200 and text:
-                trade, rows = parse_day(text)
+                try:
+                    trade, rows = parse_day(text)
+                except Exception:
+                    trade, rows = None, {}
                 if trade is None:
-                    errors += 1
+                    unparseable += 1
+                    if day not in always:  # an old damaged file never gets better; today's might
+                        checked.add(day.isoformat())
                 elif trade == day.isoformat():
                     if day < start:  # only the deep window reaches here: NSE-750 rows only
                         rows = {sym: r for sym, r in rows.items() if sym in deep_symbols}
@@ -377,6 +388,7 @@ def run_store(budget_s=200, deep_symbols=None):
         {"item": "weekdays requested", "value": len(todo)},
         {"item": "trading days stored", "value": stored_days},
         {"item": "holiday copies skipped", "value": copies},
+        {"item": "unparseable files skipped", "value": unparseable},
         {"item": "files not found (404)", "value": missing},
         {"item": "blocked (403) / errors", "value": f"{blocked} / {errors}"},
         {"item": "chunk rows written", "value": written},
