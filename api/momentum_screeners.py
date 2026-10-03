@@ -3212,6 +3212,78 @@ def _run_bhav_technicals(symbols, name_map, sector_map):
     return {"label": "Bhavcopy technicals", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+def _run_bhav_resolve(symbols, name_map, sector_map):
+    from _bhav import resolve_deep_actions
+
+    stats = resolve_deep_actions(symbols)
+    rows = [{"item": k, "value": v} for k, v in stats.items()]
+    return {"label": "Bhavcopy deep actions", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
+# Screeners run on BOTH price sources by bhavCompare, with the field names
+# worth comparing — the decisive evidence before the source is flipped.
+_BHAV_COMPARE_SCREENERS = (
+    ("nseScreener", _run_nse_screener, ("price", "change_pct", "weekly_pct", "monthly_pct", "three_month_pct", "yearly_pct", "rsi_d", "rsi_w", "rsi_m")),
+    ("52wHigh", _run_52w_high, ("price", "high_52w", "pct_off_high")),
+    ("maBreakout", _run_ma_breakout, ("price", "ema33w", "pct_above_33w", "weeks_since_cross_33w")),
+    ("myLongTermInvestingStrategy", _run_ltis, ("rsi14", "pct_above_ema33")),
+    ("volumeRockers", _run_volume_rockers, ("ltp", "day_vol", "day_chg_pct", "turnover_cr", "month_vol_avg", "vol_change_times")),
+    ("Nifty500RelativeStrength", _run_rs, ("r_1w", "r_1m", "r_3m", "r_6m", "rs_score")),
+)
+
+
+def _compare_rows(a_rows, b_rows, fields):
+    """Per-field share of symbols whose two values agree (abs <= 0.15 or <= 0.7%
+    relative), plus symbols present on only one side."""
+    a = {r.get("symbol"): r for r in a_rows}
+    b = {r.get("symbol"): r for r in b_rows}
+    both = set(a) & set(b)
+    out = {"only_yahoo": len(set(a) - set(b)), "only_store": len(set(b) - set(a)), "both": len(both)}
+    for f in fields:
+        ok = n = 0
+        for sym in both:
+            x, y = a[sym].get(f), b[sym].get(f)
+            if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
+                if x == y:
+                    ok += 1
+                n += 1
+                continue
+            n += 1
+            if abs(x - y) <= 0.15 or abs(x - y) <= 0.007 * max(abs(x), abs(y)):
+                ok += 1
+        out[f] = f"{round(ok / n, 3) if n else None} (n={n})"
+    return out
+
+
+def _run_bhav_compare(symbols, name_map, sector_map):
+    """Run the real screeners on the Yahoo price cache and on the bhavcopy store
+    (same process, same universe) and diff their outputs."""
+    global _PRICE_SOURCE_OVERRIDE
+    rows = []
+    t0 = time.monotonic()
+    results = {}
+    for src in ("yahoo", "store"):
+        _PRICE_SOURCE_OVERRIDE = src
+        for name, fn, _fields in _BHAV_COMPARE_SCREENERS:
+            if time.monotonic() - t0 > 240:
+                break
+            try:
+                res, err = fn(symbols, name_map, sector_map)
+                results[(src, name)] = (res or {}).get("push_rows") or []
+                if err:
+                    rows.append({"item": f"{src} {name} error", "value": str(err)[:120]})
+            except Exception as e:
+                rows.append({"item": f"{src} {name} raised", "value": str(e)[:120]})
+    _PRICE_SOURCE_OVERRIDE = None
+    for name, _fn, fields in _BHAV_COMPARE_SCREENERS:
+        if (("yahoo", name) in results) and (("store", name) in results):
+            rows.append({"item": f"== {name}", "value": f"yahoo rows {len(results[('yahoo', name)])} / store rows {len(results[('store', name)])}"})
+            for k, v in _compare_rows(results[("yahoo", name)], results[("store", name)], fields).items():
+                rows.append({"item": f"   {k}", "value": v})
+    rows.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
+    return {"label": "Bhavcopy vs Yahoo price source", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 # ── strategicAlpha ───────────────────────────────────────────────────────────
 #
 # Added 2026-09-06 — "one more page to be built as a strategic alpha
@@ -5624,9 +5696,53 @@ def _run_nse750_price_cache(symbols, name_map, sector_map):
 
 
 _PRICE_CACHE_RAW = None  # module-level, memoized for the lifetime of ONE process/invocation only — see _price_cache_raw_data()
+_PRICE_RAW_BY_SOURCE = {}  # source -> data, memoized per process
+_PRICE_SOURCE_OVERRIDE = None  # bhavCompare flips this to run the same screener on both sources
+
+
+def _price_source():
+    """"yahoo" (the nse750PriceCache shards) unless meta bhav_price_source says
+    "store" (the NSE-bhavcopy store, api/_bhav.py). 2026-10-02/03, step 2 of
+    retiring the Yahoo price cache — default stays Yahoo until the comparison
+    (bhavCompare) has shown the two agree."""
+    if _PRICE_SOURCE_OVERRIDE:
+        return _PRICE_SOURCE_OVERRIDE
+    try:
+        conn = get_conn()
+        try:
+            return (get_meta(conn, "bhav_price_source", {}) or {}).get("source", "yahoo")
+        finally:
+            conn.close()
+    except Exception:
+        return "yahoo"
 
 
 def _price_cache_raw_data():
+    """Dispatch to the Yahoo shards or the bhavcopy store. Any failure reading
+    the store falls back to Yahoo, so flipping the source can never leave the
+    screeners without prices."""
+    source = _price_source()
+    if source in _PRICE_RAW_BY_SOURCE:
+        return _PRICE_RAW_BY_SOURCE[source]
+    data = None
+    if source == "store":
+        try:
+            from _bhav import store_price_data
+
+            data = store_price_data([c[0] for c in _ms_get_universe_symbols()]) or None
+        except Exception:
+            data = None
+        if data is None:
+            source = "yahoo"
+            if source in _PRICE_RAW_BY_SOURCE:
+                return _PRICE_RAW_BY_SOURCE[source]
+    if data is None:
+        data = _price_cache_raw_data_yahoo()
+    _PRICE_RAW_BY_SOURCE[source] = data
+    return data
+
+
+def _price_cache_raw_data_yahoo():
     """The raw {symbol: rows} dict behind nse750PriceCache's shards,
     loaded from Postgres and merged ONCE per process. Split out of
     _price_cache_read() 2026-09-18 ('do the technical cron
@@ -5882,6 +5998,8 @@ SCREENER_RUNNERS = {
     "ratesFx": _run_rates_fx,
     "bhavStore": _run_bhav_store,
     "bhavTechnicals": _run_bhav_technicals,
+    "bhavResolve": _run_bhav_resolve,
+    "bhavCompare": _run_bhav_compare,
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,

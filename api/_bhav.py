@@ -891,3 +891,59 @@ def publish(budget_s=240):
         out.append({"item": f"verify {k} vs {v['vs']}", "value": f"{v['within']} within {v['tol_pp']}pp (n={v['n']})"})
     out.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
     return out
+
+
+# ── price-cache replacement (step 2) ─────────────────────────────────────────
+
+def _deep_frame(symbols, since_days=1826):
+    """The NSE-750's bars from the store, back since_days (raw prices)."""
+    since = (date.today() - timedelta(days=since_days)).isoformat()
+    conn = get_conn()
+    try:
+        ensure_tables(conn)
+        df = load_frame(conn, since)
+    finally:
+        conn.close()
+    if symbols:
+        df = df[df["symbol"].isin(set(symbols))]
+    return df.reset_index(drop=True)
+
+
+def resolve_deep_actions(symbols, budget_s=200):
+    """Confirm/decide split-bonus events across the NSE-750's whole 5 years (the
+    daily publish only looks at the last two), so the price-cache replacement
+    can adjust that far back."""
+    t0 = time.monotonic()
+    df = _deep_frame(symbols)
+    jumps = find_jumps(df)
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    stats = confirm_jumps(jumps, actions, budget_s=max(10, budget_s - (time.monotonic() - t0)))
+    return {"bars": len(df), "symbols": int(df["symbol"].nunique()), **stats}
+
+
+def store_price_data(symbols, since_days=1826):
+    """{symbol: [[date, open, high, low, close, volume], ...]} — exactly the shape
+    nse750PriceCache's shards decode to, built from the store with splits/bonuses
+    back-adjusted (a still-unresolved jump cuts that stock's history)."""
+    df = _deep_frame(symbols, since_days)
+    if df.empty:
+        return {}
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    jumps = find_jumps(df)
+    df = adjust_frame(df, actions, jumps)
+    df = df.dropna(subset=["o", "h", "l", "c"])
+    out = {}
+    for sym, g in df.groupby("symbol", sort=False):
+        dates = g["date"].dt.date.astype(str).tolist()
+        o, h, l, c = (g[k].round(2).tolist() for k in ("o", "h", "l", "c"))
+        v = [int(x) if x == x else None for x in g["v"].tolist()]
+        out[sym] = [list(r) for r in zip(dates, o, h, l, c, v)]
+    return out
