@@ -3259,6 +3259,24 @@ def _compare_rows(a_rows, b_rows, fields):
     return out
 
 
+def _set_price_source(source):
+    conn = get_conn()
+    try:
+        set_meta(conn, "bhav_price_source", {"source": source, "set": datetime.utcnow().isoformat()})
+    finally:
+        conn.close()
+    rows = [{"item": "bhav_price_source", "value": source}]
+    return {"label": "Price source", "push_rows": rows, "scanned": 1, "skipped": 0}, None
+
+
+def _run_bhav_use_store(symbols, name_map, sector_map):
+    return _set_price_source("store")
+
+
+def _run_bhav_use_yahoo(symbols, name_map, sector_map):
+    return _set_price_source("yahoo")
+
+
 def _run_bhav_diff(symbols, name_map, sector_map):
     """Diagnose WHY the two price sources disagree: compares the raw per-symbol
     bars (dates present, close level by age, volume) rather than screener output."""
@@ -5846,6 +5864,11 @@ def _price_cache_raw_data():
             from _bhav import store_price_data
 
             data = store_price_data([c[0] for c in _ms_get_universe_symbols()]) or None
+            if data:
+                # a store that stopped being fed (bhavStore failing) must not quietly serve old prices
+                latest = max(rows[-1][0] for rows in data.values() if rows)
+                if (date.today() - date.fromisoformat(latest)).days > 4:
+                    data = None
         except Exception:
             data = None
         if data is None:
@@ -6123,6 +6146,8 @@ SCREENER_RUNNERS = {
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
+    "bhavUseStore": _run_bhav_use_store,
+    "bhavUseYahoo": _run_bhav_use_yahoo,
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
