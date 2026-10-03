@@ -662,6 +662,55 @@ def sweep_small_actions(df, actions, budget_s=60, key=SPLITCHECK_KEY):
     return dict(stats)
 
 
+def derive_rejected_from_reference(df, actions, ref):
+    """Demergers (SIEMENS, EDELWEISS, HERITGFOOD…) are not splits: Yahoo has no
+    split record, so a big drop gets 'rejected' — yet Yahoo's own adjusted series
+    is continuous across it. For those NSE-750 events, take the factor straight
+    from the Yahoo cache: the factor that makes our raw close ratio equal its
+    ratio across the ex-date (accepted only where Yahoo's own day move is within
+    ±15% and ours is a >20% drop/rise, so a real crash is never smoothed away).
+    Recorded as source 'yahoo-derived'."""
+    todo = [(s, ex) for s, rows in actions.items() for ex, f, src in rows if src == "rejected" and s in ref]
+    if not todo:
+        return {"derived_candidates": 0}
+    close = {s: g.set_index(g["date"].dt.date.astype(str))["c"] for s, g in df[df["symbol"].isin({t[0] for t in todo})].groupby("symbol")}
+    out, stats = [], collections.Counter()
+    for sym, ex in todo:
+        sc = close.get(sym)
+        yc = {r[0]: r[4] for r in ref[sym] if r[4]}
+        if sc is None or ex not in sc.index or ex not in yc:
+            stats["no_data"] += 1
+            continue
+        sd = [d for d in sc.index if d < ex]
+        yd = [d for d in yc if d < ex]
+        if not sd or not yd:
+            stats["no_data"] += 1
+            continue
+        s_prev, y_prev = float(sc[max(sd)]), yc[max(yd)]
+        s_ex, y_ex = float(sc[ex]), yc[ex]
+        s_move, y_move = s_ex / s_prev, y_ex / y_prev
+        if (s_move <= 0.8 or s_move >= 1.25) and 0.85 <= y_move <= 1.15:
+            f = (y_prev / y_ex) * (s_ex / s_prev)
+            out.append((sym, ex, round(float(f), 5), "yahoo-derived"))
+            stats["derived"] += 1
+        else:
+            stats["kept_rejected"] += 1
+    if out:
+        wconn = get_conn()
+        try:
+            with wconn.cursor() as cur:
+                psycopg2.extras.execute_values(
+                    cur,
+                    "INSERT INTO bhav_actions (symbol, ex_date, factor, source) VALUES %s ON CONFLICT (symbol, ex_date) DO UPDATE SET factor = EXCLUDED.factor, source = EXCLUDED.source",
+                    out,
+                )
+            wconn.commit()
+        finally:
+            wconn.close()
+    stats["derived_events"] = ", ".join(f"{s} {ex} x{f}" for s, ex, f, _ in out)[:400]
+    return dict(stats)
+
+
 def adjust_frame(df, actions, jumps):
     """Back-adjust prices for confirmed splits, and cut each symbol's history at
     its latest still-unresolved jump (never show a number across one)."""
@@ -1018,7 +1067,7 @@ def _deep_frame(symbols, since_days=1826):
     return df.reset_index(drop=True)
 
 
-def resolve_deep_actions(symbols, budget_s=200):
+def resolve_deep_actions(symbols, budget_s=200, ref=None):
     """Confirm/decide split-bonus events across the NSE-750's whole 5 years (the
     daily publish only looks at the last two), so the price-cache replacement
     can adjust that far back."""
@@ -1037,6 +1086,13 @@ def resolve_deep_actions(symbols, budget_s=200):
     finally:
         conn.close()
     stats.update({f"small_{k}": v for k, v in sweep_small_actions(df, actions, budget_s=max(10, budget_s - (time.monotonic() - t0)), key=SPLITCHECK_KEY + "_deep").items()})
+    if ref:
+        conn = get_conn()
+        try:
+            actions = load_actions(conn)
+        finally:
+            conn.close()
+        stats.update({f"derive_{k}": v for k, v in derive_rejected_from_reference(df, actions, ref).items()})
     return {"bars": len(df), "symbols": int(df["symbol"].nunique()), **stats}
 
 

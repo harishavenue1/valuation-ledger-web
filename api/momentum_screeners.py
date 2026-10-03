@@ -3215,7 +3215,7 @@ def _run_bhav_technicals(symbols, name_map, sector_map):
 def _run_bhav_resolve(symbols, name_map, sector_map):
     from _bhav import resolve_deep_actions
 
-    stats = resolve_deep_actions(symbols)
+    stats = resolve_deep_actions(symbols, ref=_price_cache_raw_data_yahoo())
     rows = [{"item": k, "value": v} for k, v in stats.items()]
     return {"label": "Bhavcopy deep actions", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
