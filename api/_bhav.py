@@ -49,6 +49,7 @@ NAMES_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 SME_NAMES_URL = "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv"
 SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
+DEEP_DAYS = 1830  # the NSE-750 keep 5y (what the Yahoo nse750PriceCache holds), so the store can replace it
 STATE_KEY = "bhav_state"
 TECH_KEY = "bhav_technicals"
 MCAP_KEY = "bhav_mcaps"
@@ -252,10 +253,14 @@ def load_frame(conn, since_iso):
 
 # ── ingest (the daily job) ───────────────────────────────────────────────────
 
-def run_store(budget_s=200):
+def run_store(budget_s=200, deep_symbols=None):
     """Fetch every weekday in the last STORE_DAYS not yet checked (today and
     yesterday always re-checked: NSE publishes late), newest first, then merge
-    them into the store. Gentle on purpose (2 workers) and resumable."""
+    them into the store. Gentle on purpose (2 workers) and resumable.
+
+    deep_symbols (the NSE-750) additionally get history back to DEEP_DAYS —
+    days older than STORE_DAYS keep only their rows, so the rest of the market
+    stays at two years and the database grows by the 750 stocks' extra three."""
     from concurrent.futures import ThreadPoolExecutor
 
     conn = get_conn()
@@ -271,10 +276,11 @@ def run_store(budget_s=200):
     checked = set(state.get("checked") or [])
     today = date.today()
     start = today - timedelta(days=STORE_DAYS)
+    deep_start = today - timedelta(days=DEEP_DAYS) if deep_symbols else start
     always = {today, today - timedelta(days=1)}
     todo = []
     d = today
-    while d >= start:
+    while d >= deep_start:
         if d.weekday() < 5 and (d in always or d.isoformat() not in checked):
             todo.append(d)
         d -= timedelta(days=1)
@@ -319,6 +325,8 @@ def run_store(budget_s=200):
                 if trade is None:
                     errors += 1
                 elif trade == day.isoformat():
+                    if day < start:  # only the deep window reaches here: NSE-750 rows only
+                        rows = {sym: r for sym, r in rows.items() if sym in deep_symbols}
                     fetched[trade] = rows
                     checked.add(day.isoformat())
                 else:
@@ -346,7 +354,7 @@ def run_store(budget_s=200):
 
     conn = get_conn()
     try:
-        cutoff = start.isoformat()
+        cutoff = (today - timedelta(days=DEEP_DAYS)).isoformat()  # keep the deep window's "checked" marks even on a run without deep_symbols
         state["checked"] = sorted(c for c in checked if c >= cutoff)
         # names refresh weekly
         if (state.get("names_as_of") or "") < (today - timedelta(days=7)).isoformat() or not state.get("names_has_sme"):
@@ -356,6 +364,11 @@ def run_store(budget_s=200):
         set_meta(conn, STATE_KEY, state)
         pruned = prune_dead(conn)
         size = db_size_mb(conn)
+        with conn.cursor() as cur:
+            cur.execute("SELECT min(q), count(DISTINCT symbol) FROM bhav_chunks")
+            earliest_q, n_symbols = cur.fetchone()
+            cur.execute("SELECT count(DISTINCT symbol) FROM bhav_chunks WHERE q = %s", (earliest_q,))
+            n_earliest = cur.fetchone()[0]
     finally:
         conn.close()
 
@@ -370,6 +383,8 @@ def run_store(budget_s=200):
         {"item": "latest trade date", "value": state.get("last_trade")},
         {"item": "stopped early", "value": stop or (time.monotonic() - t0 > budget_s)},
         {"item": "database MB", "value": round(size, 1)},
+        {"item": "earliest quarter stored / symbols in it", "value": f"{earliest_q} / {n_earliest}"},
+        {"item": "symbols stored", "value": n_symbols},
     ]
 
 

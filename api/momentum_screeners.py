@@ -3199,7 +3199,9 @@ def _run_rates_fx(symbols, name_map, sector_map):
 def _run_bhav_store(symbols, name_map, sector_map):
     from _bhav import run_store
 
-    rows = run_store()
+    # the NSE-750 universe (this runner is called without offset/limit by its
+    # cron; a sliced universe is not the whole 750, so no deep history then)
+    rows = run_store(deep_symbols=set(symbols) if len(symbols) >= 500 else None)
     return {"label": "Bhavcopy store", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
