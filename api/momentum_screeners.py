@@ -3318,6 +3318,33 @@ def _run_bhav_diff(symbols, name_map, sector_map):
     worst.sort(reverse=True)
     for dev, sym, first, last in worst[:12]:
         rows.append({"item": f"worst {sym}", "value": f"median dev {dev:.3f}; oldest ratio {first:.3f}, newest {last:.3f}"})
+    # which dates does only Yahoo have, across symbols?
+    from collections import Counter
+
+    dc = Counter()
+    for sym in syms:
+        sd_dates = {r[0] for r in st[sym]}
+        for r in y[sym]:
+            if r[0] not in sd_dates and r[0] >= "2021-01-01":
+                dc[r[0]] += 1
+    rows.append({"item": "dates only in yahoo (date:symbols)", "value": " ".join(f"{d}:{n}" for d, n in sorted(dc.items()) if n > 100)[:900]})
+    # adjustment boundaries: day-over-day ratio of (store/yahoo) jumping >8%
+    kinds = Counter()
+    ev = []
+    for sym in syms:
+        yd = {r[0]: r[4] for r in y[sym] if r[4]}
+        sd = {r[0]: r[4] for r in st[sym] if r[4]}
+        cd = sorted(set(yd) & set(sd))
+        for a, b in zip(cd, cd[1:]):
+            q = (sd[b] / yd[b]) / (sd[a] / yd[a])
+            if abs(q - 1) > 0.08:
+                sc, yc = sd[b] / sd[a] - 1, yd[b] / yd[a] - 1
+                kind = "store_unadjusted" if abs(sc) > abs(yc) else "yahoo_unadjusted"
+                kinds[kind] += 1
+                ev.append((sym, b, round(sc * 100, 1), round(yc * 100, 1), kind))
+    rows.append({"item": "adjustment mismatches", "value": f"{dict(kinds)} events {len(ev)} symbols {len({e[0] for e in ev})}"})
+    for sym, d, sc, yc, kind in sorted(ev, key=lambda e: e[1])[:70]:
+        rows.append({"item": f"adj {sym} {d}", "value": f"store day chg {sc}% yahoo day chg {yc}% {kind}"})
     rows.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
     return {"label": "Bhavcopy vs Yahoo raw bars", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
