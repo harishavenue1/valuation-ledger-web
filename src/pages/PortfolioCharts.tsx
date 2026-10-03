@@ -426,7 +426,7 @@ export default function PortfolioCharts() {
         {!loading && error && <div className="text-sm text-red-600 text-center py-16 border border-red-200 rounded-lg bg-red-50 shrink-0">{error}</div>}
         {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg shrink-0">No chart data for {symbol}.</div>}
         {!loading && !error && bars.length > 0 && (
-          <div className="flex-1 min-h-0 border border-slate-200 rounded-lg p-3">
+          <div className="flex-1 min-h-0 border border-slate-700 rounded-lg p-2" style={{ background: "#14171f" }}>
             <CandlestickChart bars={bars} lines={lineVisibility} levels={data?.levels} />
           </div>
         )}

@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
+import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, UTCTimestamp, createChart } from "lightweight-charts";
 import { ChartBar, ChartLevel } from "../lib/api";
 import { BandSeries } from "./BandSeries";
+import { MarkerEvent, MarkersPrimitive } from "./ChartMarkers";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
 // (StrategicAlpha's TimeSeriesChart, PortfolioAllocation's SectorDonut)
@@ -98,12 +99,12 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
 };
 
 export const LEVEL_COLORS: Record<string, string> = {
-  h8: "#a1a1aa",
-  h13: "#78716c",
-  h26: "#57534e",
-  h39: "#44403c",
-  h52: "#292524",
-  ath: "#be123c",
+  h8: "#7c8594",
+  h13: "#8d96a3",
+  h26: "#a2aab5",
+  h39: "#b5bcc6",
+  h52: "#c9ced6",
+  ath: "#f43f5e",
 };
 const LEVEL_FLAG: Record<string, keyof LineVisibility> = { h8: "lvl8", h13: "lvl13", h26: "lvl26", h39: "lvl39", h52: "lvl52", ath: "lvlAth" };
 export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisibility): ChartLevel[] {
@@ -124,11 +125,13 @@ export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisib
 // 2026-09-27 ("needs some more fine tuning, see this format" — a
 // screenshot of the user's own TradingView) — pixel-sampled from the
 // attached image with PIL, not eyeballed.
-const UP_COLOR = "#1a796f"; // teal, pixel-sampled from the user's own TradingView screenshot
-const DOWN_COLOR = "#ffb6c1"; // 2026-09-27 ("the grey candle in chart change color to pink lighttone") — CSS's own "lightpink", replacing the earlier tan/beige (which read as grey)
+const UP_COLOR = "#2e796f"; // teal, pixel-sampled from the user's own TradingView screenshot
+const DOWN_COLOR = "#a49077"; // 2026-09-27 ("the grey candle in chart change color to pink lighttone") — CSS's own "lightpink", replacing the earlier tan/beige (which read as grey)
+const VOL_UP = "#1d5553"; // sampled from the TradingView layout
+const VOL_DOWN = "#752e33";
 const EMA1_COLOR = "#d4aa00"; // Pine's own EMA1 color
 const EMA2_COLOR = "#94a3b8"; // Pine's own EMA2 (#dee3e7) is too light for a white background here
-const SLOW_EMA_COLOR = "#47b027"; // Pine's own EMA3/slow color
+const SLOW_EMA_COLOR = "#3f6a50"; // muted green like the TradingView layout // Pine's own EMA3/slow color
 const QB_UPPER_COLOR = "#0ea5e9"; // sky-500 — quantBollinger upper band
 const QB_TRAIL_COLOR = "#f97316"; // orange-500 — quantBollinger 34W trail
 const SM_TREND_COLOR = "#0d9488"; // teal-600 — Pine's own smLineColor when dir==1, close enough as a fixed color
@@ -142,20 +145,23 @@ const SM_FAST2_COLOR = "#ec4899"; // pink-500
 // EMA line. Shifted to indigo — distinct from every other line color
 // on this chart (green/teal/purple/pink/sky/orange/gold/slate already
 // taken), still reads as a "zone" rather than a line.
-const SM_CHANNEL_FILL = "rgba(99, 102, 241, 0.15)"; // indigo-500 — the "lighter green curve"/"thin intense green wave" the user pointed at — a real filled band via BandSeries.ts
-const SM_CHANNEL_BORDER = "rgba(99, 102, 241, 0.6)";
+const SM_CHANNEL_FILL = "rgba(255, 255, 255, 0.035)"; // indigo-500 — the "lighter green curve"/"thin intense green wave" the user pointed at — a real filled band via BandSeries.ts
+const SM_CHANNEL_BORDER = "rgba(63, 106, 80, 0.55)";
 const QB_SELL_MARKER_COLOR = "#dc2626"; // Pine hardcodes color.red for this ONE marker, independent of DOWN_COLOR (candle down-color is now tan, not red — this stays red regardless)
 
 function toUnixSeconds(dateStr: string): UTCTimestamp {
   return (Date.parse(dateStr + "T00:00:00Z") / 1000) as UTCTimestamp;
 }
 
+// 2026-10-03 ("match it") — dark chart like the user's TradingView layout;
+// colours pixel-sampled from the screenshot (background #14171f, no grid).
+const CHART_BG = "#14171f";
 const COMMON_LAYOUT = {
-  layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#475569", fontSize: 11 },
-  grid: { vertLines: { visible: false }, horzLines: { visible: false } }, // 2026-10-03 ("remove grid lines")
-  rightPriceScale: { borderColor: "#e2e8f0" },
-  timeScale: { borderColor: "#e2e8f0" },
-  crosshair: { vertLine: { color: "#94a3b8", labelBackgroundColor: "#334155" }, horzLine: { color: "#94a3b8", labelBackgroundColor: "#334155" } },
+  layout: { background: { type: ColorType.Solid, color: CHART_BG }, textColor: "#a4a4a6", fontSize: 11 },
+  grid: { vertLines: { visible: false }, horzLines: { visible: false } },
+  rightPriceScale: { borderColor: "#2a2e39" },
+  timeScale: { borderColor: "#2a2e39" },
+  crosshair: { vertLine: { color: "#6b7280", labelBackgroundColor: "#363a45" }, horzLine: { color: "#6b7280", labelBackgroundColor: "#363a45" } },
 };
 
 // Faithful to the pasted Pine script's own shape/color/position choices
@@ -172,19 +178,21 @@ const COMMON_LAYOUT = {
 // uparrow instead of down arrow"), matching the other buy-side
 // markers (QB/SM Entry) instead of Pine's original above-bar
 // down-arrow placement.
-function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
-  const markers: SeriesMarker<Time>[] = [];
+function buildMarkerEvents(bars: ChartBar[]): MarkerEvent[] {
+  const ev: MarkerEvent[] = [];
   for (const b of bars) {
     const time = toUnixSeconds(b.date);
-    if (b.qb_buy) markers.push({ time, position: "belowBar", color: "#84cc16", shape: "arrowUp" }); // lime
-    if (b.qb_sell) markers.push({ time, position: "aboveBar", color: QB_SELL_MARKER_COLOR, shape: "arrowDown" }); // red
-    if (b.mltis_buy) markers.push({ time, position: "belowBar", color: "#06b6d4", shape: "arrowUp" }); // aqua
-    if (b.mltis_sell) markers.push({ time, position: "aboveBar", color: "#f97316", shape: "square", text: "✕" }); // orange, xcross abovebar (approximated as square)
-    if (b.sm_buy) markers.push({ time, position: "belowBar", color: "#0d9488", shape: "arrowUp", text: "SM Entry" }); // teal
-    if (b.sm_sell) markers.push({ time, position: "aboveBar", color: "#7f1d1d", shape: "arrowDown", text: "SM Sell" }); // maroon
-    if (b.sm_close) markers.push({ time, position: "inBar", color: QB_TRAIL_COLOR, shape: "circle", text: "SM Close" }); // orange, closest to Pine's absolute-position xcross
+    const base = { time, high: b.high, low: b.low, close: b.close };
+    // the EMA-ribbon exit and the QB trail break usually land on the same
+    // week; TradingView draws one small triangle for them, not two shapes
+    if (b.qb_sell || b.mltis_sell) ev.push({ ...base, kind: "sell" });
+    if (b.mltis_buy) ev.push({ ...base, kind: "rsi" });
+    if (b.qb_buy) ev.push({ ...base, kind: "qbBuy" });
+    if (b.sm_buy) ev.push({ ...base, kind: "smEntry" });
+    if (b.sm_sell) ev.push({ ...base, kind: "smSell" });
+    if (b.sm_close) ev.push({ ...base, kind: "smClose" });
   }
-  return markers;
+  return ev;
 }
 
 export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY, levels }: { bars: ChartBar[]; lines?: LineVisibility; levels?: ChartLevel[] }) {
@@ -230,6 +238,8 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       borderVisible: false,
       wickUpColor: UP_COLOR,
       wickDownColor: DOWN_COLOR,
+      lastValueVisible: false, // TradingView layout shows no last-price tag / line
+      priceLineVisible: false,
     });
 
     const toPoints = (key: keyof ChartBar) => bars.filter((b) => b[key] != null).map((b) => ({ time: toUnixSeconds(b.date), value: b[key] as number }));
@@ -248,7 +258,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       // briefly an Area series with a gradient glow underneath, which
       // was the wrong element to shade. Plain line, like every other
       // EMA here.
-      const s = chart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 2, priceLineVisible: false, lastValueVisible: false });
+      const s = chart.addSeries(LineSeries, { color: SLOW_EMA_COLOR, lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
       s.setData(toPoints("slow_ema"));
     }
     if (lines.qbUpper) {
@@ -296,7 +306,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     if (lines.volume) {
       const volumeSeries = chart.addSeries(HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "vol", lastValueVisible: false, priceLineVisible: false });
       chart.priceScale("vol").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-      volumeSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), value: b.volume ?? 0, color: b.close >= b.open ? `${UP_COLOR}66` : `${DOWN_COLOR}66` })));
+      volumeSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), value: b.volume ?? 0, color: b.close >= b.open ? VOL_UP : VOL_DOWN })));
     }
 
     // Prior-high levels: a dashed line from the bar that made the high (or the
@@ -324,7 +334,14 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     }
 
     candleSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
-    createSeriesMarkers(candleSeries, buildMarkers(bars));
+    candleSeries.attachPrimitive(new MarkersPrimitive(buildMarkerEvents(bars)));
+
+    // TradingView's own "High / Low" axis tags for the visible range
+    const hi = Math.max(...bars.map((b) => b.high));
+    const lo = Math.min(...bars.map((b) => b.low));
+    for (const [price, title] of [[hi, "High"], [lo, "Low"]] as [number, string][]) {
+      candleSeries.createPriceLine({ price, title, color: "transparent", lineVisible: false, axisLabelVisible: true, axisLabelColor: "#142a55", axisLabelTextColor: "#8fb3ff" });
+    }
 
     chart.timeScale().fitContent();
     } // end setUpSeries
