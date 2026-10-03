@@ -86,11 +86,22 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
       paneW = mediaSize.width;
     });
     const bars: { x: number; originalData: BandData }[] = [];
-    for (const b of this._data.bars) {
-      const x = this._timeToX(b.originalData.time);
-      if (x == null || !Number.isFinite(x)) continue;
-      if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
-      bars.push({ x, originalData: b.originalData });
+    try {
+      for (const b of this._data.bars) {
+        const x = this._timeToX(b.originalData.time);
+        if (x == null || !Number.isFinite(x)) continue;
+        if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
+        bars.push({ x, originalData: b.originalData });
+      }
+    } catch (e) {
+      console.error("BandSeries: timeToX failed, using the library's own x", e);
+      bars.length = 0;
+    }
+    if (bars.length === 0) {
+      // fall back to the library's x for the bars it says are visible
+      const range = this._data.visibleRange;
+      const vis = range ? this._data.bars.slice(Math.max(0, range.from - 1), Math.min(this._data.bars.length, range.to + 1)) : this._data.bars;
+      for (const b of vis) bars.push({ x: b.x, originalData: b.originalData });
     }
     if (bars.length === 0) return;
 
