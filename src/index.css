@@ -37,3 +37,69 @@ input[type="number"] {
 .card {
   @apply bg-white border border-slate-200 rounded-lg shadow-sm;
 }
+
+
+/* ── TV dark ────────────────────────────────────────────────────────────────
+   Palette sampled from the user's TradingView layout (2026-10-03): page
+   #14171f, panels #1a1d26 / #222631, hairlines #2a2e39 / #3c3d44, text #d6d6d6
+   (muted #8b8e97 / #747474), up #389d8b (candle #2e796f), down #ee2e3f, blue
+   #2962ff. Remaps the Tailwind utilities the pages already use, so no page
+   changed. Light theme = remove the class. */
+html.tv-dark { color-scheme: dark; }
+html.tv-dark body { background: #14171f; color: #d6d6d6; }
+html.tv-dark ::-webkit-scrollbar-thumb { background: #3c3d44; }
+html.tv-dark input, html.tv-dark select, html.tv-dark textarea { background-color: #1a1d26; color: #d6d6d6; border-color: #3c3d44; }
+html.tv-dark input::placeholder, html.tv-dark textarea::placeholder { color: #747474; }
+html.tv-dark .card { background: #1a1d26; border-color: #2a2e39; box-shadow: none; }
+
+/* surfaces */
+html.tv-dark .bg-white, html.tv-dark .num-input { background-color: #1a1d26; }
+html.tv-dark .bg-white\/90 { background-color: rgba(20, 23, 31, 0.92); }
+html.tv-dark .bg-slate-50 { background-color: #1a1d26; }
+html.tv-dark .bg-slate-50\/60 { background-color: rgba(26, 29, 38, 0.6); }
+html.tv-dark .bg-slate-100 { background-color: #222631; }
+html.tv-dark .bg-slate-300 { background-color: #3c3d44; }
+html.tv-dark .bg-slate-800 { background-color: #d6d6d6; }
+html.tv-dark .hover\:bg-slate-50:hover { background-color: #222631; }
+
+/* hairlines */
+html.tv-dark .border-slate-50, html.tv-dark .border-slate-100 { border-color: #22252e; }
+html.tv-dark .border-slate-200 { border-color: #2a2e39; }
+html.tv-dark .border-slate-300, html.tv-dark .border-slate-400, html.tv-dark .hover\:border-slate-300:hover, html.tv-dark .hover\:border-slate-400:hover, html.tv-dark .focus\:border-slate-400:focus { border-color: #3c3d44; }
+html.tv-dark .border-slate-700 { border-color: #2a2e39; }
+html.tv-dark .divide-neutral-800 > :not([hidden]) ~ :not([hidden]) { border-color: #2a2e39; }
+
+/* text */
+html.tv-dark .text-slate-900, html.tv-dark .text-slate-800 { color: #e6e7ea; }
+html.tv-dark .text-slate-700 { color: #d6d6d6; }
+html.tv-dark .text-slate-600 { color: #b2b5be; }
+html.tv-dark .text-slate-500 { color: #8b8e97; }
+html.tv-dark .text-slate-400 { color: #747474; }
+html.tv-dark .text-slate-300 { color: #555a66; }
+html.tv-dark .hover\:text-slate-800:hover, html.tv-dark .hover\:text-slate-700:hover { color: #ffffff; }
+html.tv-dark .fill-slate-400 { fill: #747474; }
+html.tv-dark .fill-slate-700 { fill: #b2b5be; }
+
+/* up / down */
+html.tv-dark .text-emerald-600, html.tv-dark .text-emerald-700, html.tv-dark .text-emerald-800 { color: #3fb5a0; }
+html.tv-dark .text-red-500, html.tv-dark .text-red-600, html.tv-dark .text-red-700, html.tv-dark .text-rose-700, html.tv-dark .hover\:text-red-500:hover, html.tv-dark .hover\:text-red-600:hover { color: #f23645; }
+html.tv-dark .bg-emerald-50, html.tv-dark .bg-emerald-50\/40 { background-color: rgba(56, 157, 139, 0.14); }
+html.tv-dark .bg-emerald-100, html.tv-dark .hover\:bg-emerald-100:hover { background-color: rgba(56, 157, 139, 0.24); }
+html.tv-dark .border-emerald-100, html.tv-dark .border-emerald-300, html.tv-dark .border-emerald-400 { border-color: rgba(56, 157, 139, 0.5); }
+html.tv-dark .bg-red-50, html.tv-dark .bg-red-100 { background-color: rgba(238, 46, 63, 0.14); }
+html.tv-dark .border-red-200, html.tv-dark .border-red-300, html.tv-dark .hover\:border-red-400:hover { border-color: rgba(238, 46, 63, 0.5); }
+
+/* amber (warnings, notes) */
+html.tv-dark .text-amber-500, html.tv-dark .text-amber-600, html.tv-dark .text-amber-700, html.tv-dark .text-amber-800, html.tv-dark .hover\:text-amber-400:hover { color: #f0b74a; }
+html.tv-dark .bg-amber-50, html.tv-dark .bg-amber-50\/40, html.tv-dark .bg-amber-50\/50, html.tv-dark .bg-amber-50\/80 { background-color: rgba(240, 183, 74, 0.1); }
+html.tv-dark .border-amber-200, html.tv-dark .border-amber-300, html.tv-dark .hover\:border-amber-400:hover { border-color: rgba(240, 183, 74, 0.4); }
+
+/* blue (TradingView's own blue replaces indigo) */
+html.tv-dark .bg-indigo-600, html.tv-dark .bg-violet-600 { background-color: #2962ff; }
+html.tv-dark .hover\:bg-indigo-700:hover { background-color: #1e53e5; }
+html.tv-dark .border-indigo-600 { border-color: #2962ff; }
+html.tv-dark .text-indigo-600, html.tv-dark .text-indigo-700, html.tv-dark .hover\:text-indigo-600:hover, html.tv-dark .hover\:text-indigo-900:hover, html.tv-dark .text-blue-700 { color: #6d9bff; }
+html.tv-dark .bg-indigo-50, html.tv-dark .bg-indigo-50\/50, html.tv-dark .bg-indigo-50\/60, html.tv-dark .bg-blue-50 { background-color: rgba(41, 98, 255, 0.16); }
+html.tv-dark .border-indigo-200, html.tv-dark .border-indigo-300, html.tv-dark .border-blue-200, html.tv-dark .hover\:border-indigo-400:hover, html.tv-dark .focus\:border-indigo-400:focus, html.tv-dark .hover\:border-indigo-500:hover { border-color: rgba(41, 98, 255, 0.6); }
+html.tv-dark .ring-indigo-200, html.tv-dark .focus\:ring-indigo-200:focus { --tw-ring-color: rgba(41, 98, 255, 0.35); }
+html.tv-dark .fill-indigo-500 { fill: #6d9bff; }

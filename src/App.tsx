@@ -1,6 +1,7 @@
 import { useEffect, useState, createContext, useContext } from "react";
 import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { api, ApiError, Bundle } from "./lib/api";
+import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
 import Summary from "./pages/Summary";
 import Companies from "./pages/Companies";
@@ -109,6 +110,7 @@ const EMPTY: Bundle = {
 
 export default function App() {
   const [status, setStatus] = useState<"loading" | "authed" | "anon">("loading");
+  const [themeState, setThemeState] = useState<Theme>(() => getTheme());
   const [bundle, setBundle] = useState<Bundle>(EMPTY);
   const [cloudRuns, setCloudRuns] = useState<Record<string, CloudRunEntry>>({});
   const setCloudRun = (screener: string, entry: CloudRunEntry) => setCloudRuns((prev) => ({ ...prev, [screener]: entry }));
@@ -158,6 +160,17 @@ export default function App() {
               (COL_WIDTHS ~1655px) still has comfortable margin at 2000px. */}
           <div className="max-w-[2000px] mx-auto px-4 py-3 flex items-center gap-4">
             <span className="font-semibold tracking-tight text-base text-indigo-600 flex-shrink-0">🧮 Valuation Ledger</span>
+            <button
+              onClick={() => {
+                const next = getTheme() === "dark" ? "light" : "dark";
+                setTheme(next);
+                setThemeState(next);
+              }}
+              className="text-sm px-1.5 rounded border border-slate-300 hover:border-slate-400 flex-shrink-0"
+              title="Switch between the TradingView-style dark theme and the light theme"
+            >
+              {themeState === "dark" ? "☀️" : "🌙"}
+            </button>
             {/* 2026-09-06 — "headers are distorted make it display with
                 no slider but fit in a single row": 13 nav items no
                 longer fit at text-sm/gap-4 with full labels once
