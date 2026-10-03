@@ -156,6 +156,7 @@ function toUnixSeconds(dateStr: string): UTCTimestamp {
 // 2026-10-03 ("match it") — dark chart like the user's TradingView layout;
 // colours pixel-sampled from the screenshot (background #14171f, no grid).
 const CHART_BG = "#14171f";
+const RIGHT_GAP_BARS = 10; // empty bars after the latest candle, like TradingView
 const COMMON_LAYOUT = {
   layout: { background: { type: ColorType.Solid, color: CHART_BG }, textColor: "#a4a4a6", fontSize: 11 },
   grid: { vertLines: { visible: false }, horzLines: { visible: false } },
@@ -243,6 +244,14 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
         height,
         width,
         rightPriceScale: { ...COMMON_LAYOUT.rightPriceScale, mode: lines.logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal },
+        // 2026-10-03 ("on zooming the behaviour is different on tradingview"):
+        // TradingView keeps a gap of empty bars to the right of the latest bar
+        // and zooms with the RIGHT EDGE fixed (bars grow/shrink leftwards),
+        // not around the cursor. The wheel is handled below for that; pinch
+        // and axis-drag stay the library's own.
+        timeScale: { ...COMMON_LAYOUT.timeScale, rightOffset: RIGHT_GAP_BARS, minBarSpacing: 1, barSpacing: 8 },
+        handleScale: { mouseWheel: false, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
+        handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       });
       setUpSeries(chart);
     }
@@ -364,7 +373,8 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       candleSeries.createPriceLine({ price, title, color: "transparent", lineVisible: false, axisLabelVisible: true, axisLabelColor: "#142a55", axisLabelTextColor: "#8fb3ff" });
     }
 
-    chart.timeScale().fitContent();
+    // fit every bar plus the right-hand gap (fitContent() would drop the gap)
+    chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: bars.length - 1 + RIGHT_GAP_BARS });
     } // end setUpSeries
 
     // Fills whatever size its container is given by CSS (flex-1 in
@@ -385,8 +395,24 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     });
     resizeObserver.observe(container);
 
+    // wheel / trackpad-pinch zoom anchored at the right edge: changing the bar
+    // spacing alone leaves the right offset (and so the latest bar) in place
+    function onWheel(e: WheelEvent) {
+      if (!chart) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return; // horizontal pan is the library's
+      e.preventDefault();
+      const ts = chart.timeScale();
+      const vr = ts.getVisibleLogicalRange();
+      if (!vr || ts.width() <= 0) return;
+      const spacing = ts.width() / (vr.to - vr.from + 1); // current px per bar (options().barSpacing goes stale after a range set)
+      const next = Math.min(120, Math.max(1, spacing * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))));
+      ts.applyOptions({ barSpacing: next });
+    }
+    container.addEventListener("wheel", onWheel, { passive: false });
+
     return () => {
       resizeObserver.disconnect();
+      container.removeEventListener("wheel", onWheel);
       chart?.remove();
     };
   }, [bars, lines, levels]);
