@@ -72,8 +72,17 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
     // the actual fix for the edge zigzag. `visibleRange` indices are
     // padded by one on each side so the fill doesn't visibly truncate
     // right at the pane boundary.
-    const range = this._data.visibleRange;
-    const bars = range ? this._data.bars.slice(Math.max(0, range.from - 1), Math.min(this._data.bars.length, range.to + 1)) : this._data.bars;
+    // 2026-10-03 — after wheel-zooming in (CandlestickChart's right-anchored
+    // zoom) the padded visibleRange slice drew a stray flat rectangle from the
+    // left edge, so the slice is now chosen by on-screen x instead: every bar
+    // within a screen-width margin of the pane, which is cheap (a few hundred
+    // bars at most) and cannot go stale against the zoom state.
+    const all = this._data.bars;
+    let paneW = 0;
+    target.useMediaCoordinateSpace(({ mediaSize }) => {
+      paneW = mediaSize.width;
+    });
+    const bars = paneW > 0 ? all.filter((b) => Number.isFinite(b.x) && b.x > -paneW && b.x < paneW * 2) : all.slice();
     if (bars.length === 0) return;
 
     // 2026-09-27 ("on top left corner what is wrong, some green

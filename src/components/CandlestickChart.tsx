@@ -214,6 +214,8 @@ function buildMarkerEvents(bars: ChartBar[]): MarkerEvent[] {
 
 export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY, levels }: { bars: ChartBar[]; lines?: LineVisibility; levels?: ChartLevel[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // the zoom/scroll position survives toggling a line in Chart Settings (TradingView keeps its view when an indicator is switched)
+  const savedView = useRef<{ sig: string; from: number; to: number } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || bars.length === 0) return;
@@ -374,7 +376,9 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     }
 
     // fit every bar plus the right-hand gap (fitContent() would drop the gap)
-    chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: bars.length - 1 + RIGHT_GAP_BARS });
+    const sig = `${bars[0].date}|${bars.length}|${bars[bars.length - 1].date}`;
+    const keep = savedView.current && savedView.current.sig === sig ? savedView.current : null;
+    chart.timeScale().setVisibleLogicalRange(keep ? { from: keep.from, to: keep.to } : { from: -0.5, to: bars.length - 1 + RIGHT_GAP_BARS });
     } // end setUpSeries
 
     // Fills whatever size its container is given by CSS (flex-1 in
@@ -411,6 +415,8 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     container.addEventListener("wheel", onWheel, { passive: false });
 
     return () => {
+      const vr = chart?.timeScale().getVisibleLogicalRange();
+      if (vr && bars.length > 0) savedView.current = { sig: `${bars[0].date}|${bars.length}|${bars[bars.length - 1].date}`, from: vr.from, to: vr.to };
       resizeObserver.disconnect();
       container.removeEventListener("wheel", onWheel);
       chart?.remove();
