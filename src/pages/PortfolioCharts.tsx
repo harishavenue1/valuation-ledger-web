@@ -173,17 +173,17 @@ export default function PortfolioCharts() {
   // No symbol in the URL yet (first visit to /portfolio-charts), or an
   // unrecognized one — land on the top holding by allocation weight.
   // `replace: true` so this doesn't spam browser history.
+  // Only an EMPTY url lands on the top of the list; any symbol in the url is
+  // charted even if it isn't in the sidebar list (a link from elsewhere, or a
+  // stock typed in), and a link from the Portfolio page flips to its list.
   useEffect(() => {
     if (sortedHoldings.length === 0 || currentIndex !== -1) return;
     if (!useTech && !holdingsReady) return;
-    // arrived with a symbol that is in the OTHER list (e.g. a link from the
-    // Portfolio page while the technicals list is active) — switch lists
-    // instead of bouncing to the top of this one
-    if (symbol && useTech && pfHoldings.some((h) => h.symbol === symbol)) {
+    if (!symbol) {
+      navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
+    } else if (useTech && pfHoldings.some((h) => h.symbol === symbol)) {
       setSource("portfolio");
-      return;
     }
-    navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
   }, [holdingsReady, sortedHoldings, currentIndex, navigate, useTech, symbol, pfHoldings]);
 
   // ArrowUp/ArrowDown move to the previous/next holding IN THE CURRENT

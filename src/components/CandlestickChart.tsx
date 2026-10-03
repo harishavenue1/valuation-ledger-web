@@ -107,7 +107,18 @@ export const LEVEL_COLORS: Record<string, string> = {
 };
 const LEVEL_FLAG: Record<string, keyof LineVisibility> = { h8: "lvl8", h13: "lvl13", h26: "lvl26", h39: "lvl39", h52: "lvl52", ath: "lvlAth" };
 export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisibility): ChartLevel[] {
-  return (levels ?? []).filter((l) => lines[LEVEL_FLAG[l.key]]);
+  // Two windows often land on the same bar (2M and 3M both = the same high; 9M
+  // = ATH when the stock is still below its top): draw one line, name it with
+  // every label that shares it, ATH's colour winning.
+  const order = ["ath", "h52", "h39", "h26", "h13", "h8"];
+  const shown = (levels ?? []).filter((l) => lines[LEVEL_FLAG[l.key]]).sort((a, b) => order.indexOf(a.key) - order.indexOf(b.key));
+  const out: ChartLevel[] = [];
+  for (const l of shown) {
+    const twin = out.find((o) => Math.abs(o.price - l.price) < 0.005);
+    if (twin) twin.label = `${twin.label} = ${l.label}`;
+    else out.push({ ...l });
+  }
+  return out;
 }
 
 // 2026-09-27 ("needs some more fine tuning, see this format" — a
