@@ -87,7 +87,7 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
     });
     const bars: { x: number; originalData: BandData }[] = [];
     for (const b of this._data.bars) {
-      const x = this._timeToX(b.time);
+      const x = this._timeToX(b.originalData.time);
       if (x == null || !Number.isFinite(x)) continue;
       if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
       bars.push({ x, originalData: b.originalData });
