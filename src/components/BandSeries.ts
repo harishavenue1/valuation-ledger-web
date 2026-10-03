@@ -57,7 +57,7 @@ export const defaultBandSeriesOptions: BandSeriesOptions = {
 
 class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
   // maps a bar's time to its x in the pane; supplied by the chart owner
-  constructor(private _timeToX: (t: Time) => number | null) {}
+  constructor(private _timeToX: (t: Time) => number | null, private _source: BandData[]) {}
   private _data: PaneRendererCustomData<Time, BandData> | null = null;
   private _options: BandSeriesOptions | null = null;
 
@@ -85,23 +85,15 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
     target.useMediaCoordinateSpace(({ mediaSize }) => {
       paneW = mediaSize.width;
     });
+    // The library's own bars array is NOT used: its x positions are unreliable
+    // once the view is zoomed (see above), so the band's data is held here and
+    // positioned from time through the time scale on every paint.
     const bars: { x: number; originalData: BandData }[] = [];
-    try {
-      for (const b of this._data.bars) {
-        const x = this._timeToX(b.originalData.time);
-        if (x == null || !Number.isFinite(x)) continue;
-        if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
-        bars.push({ x, originalData: b.originalData });
-      }
-    } catch (e) {
-      console.error("BandSeries: timeToX failed, using the library's own x", e);
-      bars.length = 0;
-    }
-    if (bars.length === 0) {
-      // fall back to the library's x for the bars it says are visible
-      const range = this._data.visibleRange;
-      const vis = range ? this._data.bars.slice(Math.max(0, range.from - 1), Math.min(this._data.bars.length, range.to + 1)) : this._data.bars;
-      for (const b of vis) bars.push({ x: b.x, originalData: b.originalData });
+    for (const d of this._source) {
+      const x = this._timeToX(d.time);
+      if (x == null || !Number.isFinite(x)) continue;
+      if (paneW > 0 && (x < -paneW || x > paneW * 2)) continue;
+      bars.push({ x, originalData: d });
     }
     if (bars.length === 0) return;
 
@@ -171,8 +163,8 @@ class BandSeriesRenderer implements ICustomSeriesPaneRenderer {
 
 export class BandSeries implements ICustomSeriesPaneView<Time, BandData, BandSeriesOptions> {
   private _renderer: BandSeriesRenderer;
-  constructor(timeToX: (t: Time) => number | null) {
-    this._renderer = new BandSeriesRenderer(timeToX);
+  constructor(timeToX: (t: Time) => number | null, source: BandData[]) {
+    this._renderer = new BandSeriesRenderer(timeToX, source);
   }
 
   priceValueBuilder(plotRow: BandData): CustomSeriesPricePlotValues {
