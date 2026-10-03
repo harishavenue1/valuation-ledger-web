@@ -596,14 +596,22 @@ export default function AllTechnicals() {
   const activeSources = useMemo(() => new Set(optionalCols.filter((c) => enabledCols.has(c.key) && c.source).map((c) => c.source!)), [enabledCols, optionalCols]);
 
   const [onlyMatches, setOnlyMatches] = useState(true);
+  // Quick filters (blank values never pass an active filter)
+  const [fAth, setFAth] = useState(false);
+  const [f52w, setF52w] = useState(false);
+  const [fMcap, setFMcap] = useState(false);
   const displayedRows = useMemo(() => {
-    const base =
+    let base =
       !onlyMatches || activeSources.size === 0 ? rows : rows.filter((r: any) => Array.from(activeSources).some((src) => r[`_has_${src}`]));
+    const within = (v: any) => typeof v === "number" && v >= -10 && v <= 0;
+    if (fAth) base = base.filter((r: any) => within(r.nt_pct_from_ath));
+    if (f52w) base = base.filter((r: any) => within(r.nt_pct_from_52w_high));
+    if (fMcap) base = base.filter((r: any) => typeof r.nt_market_cap === "number" && r.nt_market_cap > 500);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -691,6 +699,22 @@ export default function AllTechnicals() {
             Only show rows with data in the checked columns
           </label>
         )}
+        {([
+          [fAth, setFAth, "ATH 0–10%", "Within 10% of all-time high (% from ATH between −10 and 0)"],
+          [f52w, setF52w, "52WH 0–10%", "Within 10% of the 52-week high"],
+          [fMcap, setFMcap, "Mcap > ₹500 Cr", "Market cap above ₹500 crore (rows with no market cap are hidden)"],
+        ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
+          <label
+            key={label}
+            title={tip}
+            className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
+              on ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
+            }`}
+          >
+            <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />
+            {label}
+          </label>
+        ))}
       </div>
       {pickerOpen && (
         <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 space-y-3">
