@@ -3241,6 +3241,7 @@ def _compare_rows(a_rows, b_rows, fields):
     out = {"only_yahoo": len(set(a) - set(b)), "only_store": len(set(b) - set(a)), "both": len(both)}
     for f in fields:
         ok = n = 0
+        diffs = []
         for sym in both:
             x, y = a[sym].get(f), b[sym].get(f)
             if isinstance(x, bool) or isinstance(y, bool) or not isinstance(x, (int, float)) or not isinstance(y, (int, float)):
@@ -3249,9 +3250,12 @@ def _compare_rows(a_rows, b_rows, fields):
                 n += 1
                 continue
             n += 1
+            diffs.append(abs(x - y))
             if abs(x - y) <= 0.15 or abs(x - y) <= 0.007 * max(abs(x), abs(y)):
                 ok += 1
-        out[f] = f"{round(ok / n, 3) if n else None} (n={n})"
+        diffs.sort()
+        med = f" median abs diff {diffs[len(diffs) // 2]:.2f} p90 {diffs[int(len(diffs) * 0.9)]:.2f}" if diffs else ""
+        out[f] = f"{round(ok / n, 3) if n else None} (n={n}){med}"
     return out
 
 
@@ -3365,7 +3369,7 @@ def _run_bhav_compare(symbols, name_map, sector_map):
     rows = []
     t0 = time.monotonic()
     results = {}
-    for src in ("yahoo", "store"):
+    for src in ("yahoo_clean", "store"):
         _PRICE_SOURCE_OVERRIDE = src
         for name, fn, _fields in _BHAV_COMPARE_SCREENERS:
             if time.monotonic() - t0 > 240:
@@ -3379,9 +3383,9 @@ def _run_bhav_compare(symbols, name_map, sector_map):
                 rows.append({"item": f"{src} {name} raised", "value": str(e)[:120]})
     _PRICE_SOURCE_OVERRIDE = None
     for name, _fn, fields in _BHAV_COMPARE_SCREENERS:
-        if (("yahoo", name) in results) and (("store", name) in results):
-            rows.append({"item": f"== {name}", "value": f"yahoo rows {len(results[('yahoo', name)])} / store rows {len(results[('store', name)])}"})
-            for k, v in _compare_rows(results[("yahoo", name)], results[("store", name)], fields).items():
+        if (("yahoo_clean", name) in results) and (("store", name) in results):
+            rows.append({"item": f"== {name}", "value": f"yahoo(clean) rows {len(results[('yahoo_clean', name)])} / store rows {len(results[('store', name)])}"})
+            for k, v in _compare_rows(results[("yahoo_clean", name)], results[("store", name)], fields).items():
                 rows.append({"item": f"   {k}", "value": v})
     rows.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
     return {"label": "Bhavcopy vs Yahoo price source", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
@@ -5820,6 +5824,15 @@ def _price_source():
         return "yahoo"
 
 
+def _price_cache_raw_data_for(source):
+    global _PRICE_SOURCE_OVERRIDE
+    prev, _PRICE_SOURCE_OVERRIDE = _PRICE_SOURCE_OVERRIDE, source
+    try:
+        return _price_cache_raw_data()
+    finally:
+        _PRICE_SOURCE_OVERRIDE = prev
+
+
 def _price_cache_raw_data():
     """Dispatch to the Yahoo shards or the bhavcopy store. Any failure reading
     the store falls back to Yahoo, so flipping the source can never leave the
@@ -5839,6 +5852,12 @@ def _price_cache_raw_data():
             source = "yahoo"
             if source in _PRICE_RAW_BY_SOURCE:
                 return _PRICE_RAW_BY_SOURCE[source]
+    if source == "yahoo_clean":
+        # diagnostic only (bhavCompare): the Yahoo cache minus bars on dates the
+        # NSE never traded (Yahoo prints flat, zero-volume bars on exchange holidays)
+        store = _price_cache_raw_data_for("store")
+        cal = {r[0] for rows in store.values() for r in rows}
+        data = {sym: [r for r in rows if r[0] in cal or r[0] < min(cal)] for sym, rows in _price_cache_raw_data_yahoo().items()}
     if data is None:
         data = _price_cache_raw_data_yahoo()
     _PRICE_RAW_BY_SOURCE[source] = data
