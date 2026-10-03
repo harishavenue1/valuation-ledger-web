@@ -104,7 +104,7 @@ export const LEVEL_COLORS: Record<string, string> = {
   h26: "#a2aab5",
   h39: "#b5bcc6",
   h52: "#c9ced6",
-  ath: "#2962ff", // TradingView blue
+  ath: "#5194f0", // TradingView's blue axis tag (sampled)
 };
 const LEVEL_FLAG: Record<string, keyof LineVisibility> = { h8: "lvl8", h13: "lvl13", h26: "lvl26", h39: "lvl39", h52: "lvl52", ath: "lvlAth" };
 export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisibility): ChartLevel[] {
@@ -318,15 +318,20 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     for (const lv of visibleLevels(levels, lines)) {
       const startT = Math.max(toUnixSeconds(lv.date), firstT) as UTCTimestamp;
       const startUse = startT >= lastT ? (toUnixSeconds(bars[Math.max(0, bars.length - 2)].date) as UTCTimestamp) : startT;
+      // ATH is drawn the way the user's TradingView layout shows it: a 1px
+      // solid dim-blue line (#284062) from the ATH bar to the edge, with a
+      // light-blue price tag (#5194f0, dark text) on the axis.
+      const isAth = lv.key === "ath";
       const s = chart.addSeries(LineSeries, {
-        color: LEVEL_COLORS[lv.key] ?? "#78716c",
+        color: isAth ? "#284062" : LEVEL_COLORS[lv.key] ?? "#78716c",
         lineWidth: 1,
-        lineStyle: 2,
+        lineStyle: isAth ? 0 : 2,
         priceLineVisible: false,
-        lastValueVisible: true,
+        lastValueVisible: !isAth,
         crosshairMarkerVisible: false,
         autoscaleInfoProvider: () => null,
       });
+      if (isAth) s.createPriceLine({ price: lv.price, lineVisible: false, axisLabelVisible: true, axisLabelColor: "#5194f0", axisLabelTextColor: "#06080b", title: "" });
       s.setData([
         { time: startUse, value: lv.price },
         { time: lastT, value: lv.price },
