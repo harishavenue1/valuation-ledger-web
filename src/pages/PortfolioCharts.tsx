@@ -418,7 +418,7 @@ export default function PortfolioCharts() {
                 {lv.label} {fmtNum(lv.price, 2)}
               </span>
             ))}
-            <span className="ml-auto text-slate-400">week ending {last.date}</span>
+            <span className="ml-auto text-slate-400">week of {last.date}</span>
           </div>
         )}
 

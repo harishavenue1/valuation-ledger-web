@@ -855,6 +855,45 @@ def ath_adjustments(conn_actions, basis, ath):
     return out
 
 
+# ── weekly bars for the Charts page ──────────────────────────────────────────
+
+def symbol_weekly(sym, since_days=DEEP_DAYS):
+    """Weekly bars [(monday_iso, o, h, l, c, v), ...] for ONE symbol from the
+    store's daily bars (split/bonus-adjusted like everything else here), plus the
+    last trade date. NSE official closes, Mon-Fri weeks keyed on their Monday —
+    what TradingView shows — instead of Yahoo's mis-dated, sometimes split
+    weekly bars. None when the symbol isn't in the store."""
+    since = (date.today() - timedelta(days=since_days)).isoformat()
+    conn = get_conn()
+    try:
+        ensure_tables(conn)
+        cols = {k: [] for k in ("d", "o", "h", "l", "c", "v")}
+        with conn.cursor() as cur:
+            cur.execute("SELECT data FROM bhav_chunks WHERE symbol = %s AND q >= %s ORDER BY q", (sym, quarter_of(since)))
+            for (ch,) in cur.fetchall():
+                for k in cols:
+                    cols[k].extend(ch[k])
+            cur.execute("SELECT ex_date, factor, source FROM bhav_actions WHERE symbol = %s", (sym,))
+            acts = [(ex.isoformat(), float(f), src) for ex, f, src in cur.fetchall()]
+    finally:
+        conn.close()
+    if not cols["d"]:
+        return None
+    df = pd.DataFrame({"symbol": sym, "date": pd.to_datetime(cols["d"]), **{k: pd.to_numeric(pd.Series(cols[k]), errors="coerce").astype("float64") for k in ("o", "h", "l", "c", "v")}})
+    df = df[df["date"] >= pd.Timestamp(since)].sort_values("date").reset_index(drop=True)
+    if df.empty:
+        return None
+    jumps = find_jumps(df)
+    df = adjust_frame(df, {sym: acts} if acts else {}, jumps)
+    df = df.dropna(subset=["o", "h", "l", "c"])
+    if df.empty:
+        return None
+    df["wk"] = df["date"] - pd.to_timedelta(df["date"].dt.weekday, unit="D")
+    wk = df.groupby("wk", sort=True).agg(o=("o", "first"), h=("h", "max"), l=("l", "min"), c=("c", "last"), v=("v", "sum")).reset_index()
+    out = [(r.wk.date().isoformat(), float(r.o), float(r.h), float(r.l), float(r.c), float(r.v) if r.v == r.v else 0.0) for r in wk.itertuples()]
+    return out, df["date"].max().date().isoformat()
+
+
 def adjust_frame(df, actions, jumps):
     """Back-adjust prices for confirmed splits, and cut each symbol's history at
     its latest still-unresolved jump (never show a number across one)."""

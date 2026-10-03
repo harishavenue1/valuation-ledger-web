@@ -5302,8 +5302,70 @@ def _chart_wilder_rma(values, period):
     return [round(float(v), 4) if pd.notna(v) else None for v in s]
 
 
+def _chart_normalise_yahoo(rows):
+    """Yahoo's weekly timestamps for NSE stocks land on the Sunday before the
+    week, and the in-progress week can arrive as two bars. Re-key every bar on its
+    Monday and merge duplicates of the same week."""
+    weeks = {}
+    for t, o, h, l, c, v in rows:
+        d = datetime.utcfromtimestamp(t).date()
+        monday = d - timedelta(days=d.weekday()) if d.weekday() < 6 else d + timedelta(days=1)
+        if monday in weeks:
+            po, ph, pl, pc, pv = weeks[monday]
+            weeks[monday] = (po, max(ph, h), min(pl, l), c, (pv or 0) + (v or 0))
+        else:
+            weeks[monday] = (o, h, l, c, v or 0)
+    return [(int((datetime(m.year, m.month, m.day) - datetime(1970, 1, 1)).total_seconds()), *weeks[m]) for m in sorted(weeks)]
+
+
+def _chart_store_only(symbol):
+    try:
+        from _bhav import symbol_weekly
+
+        got = symbol_weekly(symbol)
+        if not got or len(got[0]) < 30:
+            return None
+        epoch = datetime(1970, 1, 1)
+        return [(int((datetime.fromisoformat(w[0]) - epoch).total_seconds()), *w[1:]) for w in got[0]]
+    except Exception:
+        return None
+
+
+def _chart_merge_store(symbol, rows):
+    """Weekly rows = NSE-store weeks (official closes) where the store has them,
+    Yahoo only for the older weeks the store doesn't reach, rescaled so the seam
+    is continuous. Any failure leaves the Yahoo rows untouched."""
+    try:
+        from _bhav import symbol_weekly
+
+        got = symbol_weekly(symbol)
+        if not got:
+            return rows
+        store_weeks, _last = got
+        if len(store_weeks) < 8:
+            return rows
+        epoch = datetime(1970, 1, 1)
+        st = [(int((datetime.fromisoformat(w[0]) - epoch).total_seconds()), *w[1:]) for w in store_weeks]
+        # the store's first week may be partial (it starts mid-week): begin from its second week
+        first_full = st[1][0] if len(st) > 1 else st[0][0]
+        store_by_t = {r[0]: r for r in st}
+        older = [r for r in rows if r[0] < first_full]
+        if older and first_full in {r[0] for r in rows}:
+            y_seam = next(r for r in rows if r[0] == first_full)
+            ratio = store_by_t[first_full][4] / y_seam[4] if y_seam[4] else 1.0
+            if abs(ratio - 1) > 0.02:  # Yahoo's history is on a different basis (missed split / dividends): re-base it
+                older = [(t, o * ratio, h * ratio, l * ratio, c * ratio, v) for t, o, h, l, c, v in older]
+        merged = older + [r for r in st if r[0] >= first_full]
+        return merged
+    except Exception:
+        return rows
+
+
 def _run_chart_data(symbol, range_param):
     rows = _chart_fetch_weekly_bars(f"{symbol}.NS")
+    if rows is not None:
+        rows = _chart_normalise_yahoo(rows)
+    rows = _chart_merge_store(symbol, rows) if rows is not None else _chart_store_only(symbol)
     if rows is None:
         return None
     n = len(rows)
