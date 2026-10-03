@@ -343,8 +343,8 @@ export const api = {
   // the momentum_screeners bundle (no Postgres push, fetched fresh
   // every call), so it's its own request rather than going through
   // useScreeners/getScreeners.
-  getChartData: (symbol: string, range: "6mo" | "1y" | "2y" | "5y" = "2y"): Promise<ChartResponse> =>
-    req(`/api/momentum_screeners?chart_symbol=${encodeURIComponent(symbol)}&range=${range}`),
+  getChartData: (symbol: string, range: "6mo" | "1y" | "2y" | "5y" = "2y", tf: "d" | "w" | "m" = "w"): Promise<ChartResponse> =>
+    req(`/api/momentum_screeners?chart_symbol=${encodeURIComponent(symbol)}&range=${range}&tf=${tf}`),
 
   fetchCompany: (ticker: string): Promise<{ stock: Stock }> =>
     req("/api/fetch_company", { method: "POST", body: JSON.stringify({ ticker }) }),

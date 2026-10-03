@@ -209,6 +209,14 @@ export default function PortfolioCharts() {
   }, [sortedHoldings, currentIndex, navigate]);
 
   const [range, setRange] = useState<"6mo" | "1y" | "2y" | "5y">("2y");
+  // D / W / M. Signals (RSI>66, QB, SM markers) are weekly-only, as in the Pine
+  // script; D and M show candles, volume, the EMA/band lines and the levels.
+  const [tf, setTf] = useState<"d" | "w" | "m">("w");
+  const sfx = tf === "d" ? "D" : tf === "m" ? "M" : "W";
+  function pickTf(next: "d" | "w" | "m") {
+    setTf(next);
+    setRange(next === "d" ? "1y" : next === "w" ? "2y" : "5y");
+  }
   const [data, setData] = useState<ChartResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -233,7 +241,7 @@ export default function PortfolioCharts() {
     setLoading(true);
     setError("");
     api
-      .getChartData(symbol, range)
+      .getChartData(symbol, range, tf)
       .then((res) => {
         if (!cancelled) setData(res);
       })
@@ -246,7 +254,7 @@ export default function PortfolioCharts() {
     return () => {
       cancelled = true;
     };
-  }, [symbol, range]);
+  }, [symbol, range, tf]);
 
   const bars = data?.bars ?? [];
   const last = bars[bars.length - 1];
@@ -348,7 +356,7 @@ export default function PortfolioCharts() {
             <>
               <span className="text-lg font-semibold tabular-nums">₹{fmtNum(last.close, 2)}</span>
               <Signed v={weekChangePct} digits={2} />
-              <span className="text-[10px] text-slate-400">this week</span>
+              <span className="text-[10px] text-slate-400">{tf === "w" ? "this week" : tf === "m" ? "this month" : "today"}</span>
             </>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -371,6 +379,26 @@ export default function PortfolioCharts() {
               )}
             </div>
             <div className="flex gap-1">
+              {(
+                [
+                  ["d", "D"],
+                  ["w", "W"],
+                  ["m", "M"],
+                ] as ["d" | "w" | "m", string][]
+              ).map(([k, label]) => (
+                <button
+                  key={k}
+                  onClick={() => pickTf(k)}
+                  className={`text-xs px-2.5 py-1 rounded border ${
+                    tf === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"
+                  }`}
+                  title={k === "d" ? "Daily bars" : k === "w" ? "Weekly bars (signals shown)" : "Monthly bars"}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1">
               {RANGES.map((r) => (
                 <button
                   key={r.key}
@@ -390,15 +418,15 @@ export default function PortfolioCharts() {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 mb-2 shrink-0">
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#d4aa00" }} />
-              EMA1 (12W) {fmtNum(last.ema1, 2)}
+              EMA1 (12{sfx}) {fmtNum(last.ema1, 2)}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#94a3b8" }} />
-              EMA2 (21W) {fmtNum(last.ema2, 2)}
+              EMA2 (21{sfx}) {fmtNum(last.ema2, 2)}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: "#47b027" }} />
-              Slow EMA (33W) {fmtNum(last.slow_ema, 2)}
+              Slow EMA (33{sfx}) {fmtNum(last.slow_ema, 2)}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full bg-sky-500 mr-1" />
@@ -406,7 +434,7 @@ export default function PortfolioCharts() {
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full bg-orange-500 mr-1" />
-              QB Trail (34W) {fmtNum(last.qb_trail, 2)}
+              QB Trail (34{sfx}) {fmtNum(last.qb_trail, 2)}
             </span>
             <span>
               <span className="inline-block w-2 h-2 rounded-full bg-violet-600 mr-1" />
@@ -418,7 +446,7 @@ export default function PortfolioCharts() {
                 {lv.label} {fmtNum(lv.price, 2)}
               </span>
             ))}
-            <span className="ml-auto text-slate-400">week of {last.date}</span>
+            <span className="ml-auto text-slate-400">{tf === "w" ? "week of" : tf === "m" ? "month of" : "bar"} {last.date}</span>
           </div>
         )}
 

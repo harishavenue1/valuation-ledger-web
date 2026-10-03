@@ -857,8 +857,9 @@ def ath_adjustments(conn_actions, basis, ath):
 
 # ── weekly bars for the Charts page ──────────────────────────────────────────
 
-def symbol_weekly(sym, since_days=DEEP_DAYS):
-    """Weekly bars [(monday_iso, o, h, l, c, v), ...] for ONE symbol from the
+def symbol_bars(sym, tf="w", since_days=DEEP_DAYS):
+    """Bars [(key_iso, o, h, l, c, v), ...] for ONE symbol — tf "d" (one per trading
+    day), "w" (keyed on the week's Monday) or "m" (first of the month) — from the
     store's daily bars (split/bonus-adjusted like everything else here), plus the
     last trade date. NSE official closes, Mon-Fri weeks keyed on their Monday —
     what TradingView shows — instead of Yahoo's mis-dated, sometimes split
@@ -888,10 +889,20 @@ def symbol_weekly(sym, since_days=DEEP_DAYS):
     df = df.dropna(subset=["o", "h", "l", "c"])
     if df.empty:
         return None
-    df["wk"] = df["date"] - pd.to_timedelta(df["date"].dt.weekday, unit="D")
+    if tf == "d":
+        out = [(r.date.date().isoformat(), float(r.o), float(r.h), float(r.l), float(r.c), float(r.v) if r.v == r.v else 0.0) for r in df.itertuples()]
+        return out, df["date"].max().date().isoformat()
+    if tf == "m":
+        df["wk"] = df["date"].dt.to_period("M").dt.start_time
+    else:
+        df["wk"] = df["date"] - pd.to_timedelta(df["date"].dt.weekday, unit="D")
     wk = df.groupby("wk", sort=True).agg(o=("o", "first"), h=("h", "max"), l=("l", "min"), c=("c", "last"), v=("v", "sum")).reset_index()
     out = [(r.wk.date().isoformat(), float(r.o), float(r.h), float(r.l), float(r.c), float(r.v) if r.v == r.v else 0.0) for r in wk.itertuples()]
     return out, df["date"].max().date().isoformat()
+
+
+def symbol_weekly(sym, since_days=DEEP_DAYS):
+    return symbol_bars(sym, "w", since_days)
 
 
 def adjust_frame(df, actions, jumps):

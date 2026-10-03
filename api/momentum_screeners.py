@@ -4775,7 +4775,7 @@ def _nse750t_fetch_weekly_bars(yahoo_ticker):
     same shape as PortfolioAllocation's own _fetch_weekly_bars."""
     try:
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
-                          params={"range": "5y", "interval": "1wk"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                          params={"range": "5y", "interval": interval}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         result = r.json()["chart"]["result"]
         if not result:
             return None
@@ -5245,6 +5245,14 @@ def _run_fii_sector_trend(symbols, name_map, sector_map):
 # stocks" scope is a FRONTEND choice (the 📈 chart link only appears
 # on Portfolio Allocation's own rows), not a backend restriction.
 CHART_RANGE_WEEKS = {"6mo": 26, "1y": 52, "2y": 104, "5y": 260}
+# bars shown per timeframe for each range button (d = daily, w = weekly, m = monthly)
+CHART_RANGE_BARS = {
+    "d": {"6mo": 126, "1y": 252, "2y": 504, "5y": 1260},
+    "w": CHART_RANGE_WEEKS,
+    "m": {"6mo": 6, "1y": 12, "2y": 24, "5y": 60},
+}
+# prior-high windows (in bars of the timeframe) behind the 2M/3M/6M/9M/1Y level lines
+CHART_LEVEL_WINDOWS = {"d": (42, 63, 126, 189, 252), "w": (8, 13, 26, 39, 52), "m": (2, 3, 6, 9, 12)}
 CHART_RIBBON_PERIODS = (12, 21, 33)  # weekly EMA ribbon — myLongTermInvestingStrategy's own lengths
 CHART_RSI_PERIOD = 14
 CHART_RSI_THRESHOLD = 66
@@ -5257,7 +5265,7 @@ CHART_SM_TREND_LEN = 40
 CHART_SM_RANGE_MULT = 0.618
 
 
-def _chart_fetch_weekly_bars(yahoo_ticker):
+def _chart_fetch_weekly_bars(yahoo_ticker, interval="1wk"):
     """[(timestamp, open, high, low, close, volume), ...] ~5y of weekly
     bars, oldest first, or None. Same query1.finance.yahoo.com/v8
     endpoint every other per-symbol fetch in this file uses, kept here
@@ -5318,11 +5326,11 @@ def _chart_normalise_yahoo(rows):
     return [(int((datetime(m.year, m.month, m.day) - datetime(1970, 1, 1)).total_seconds()), *weeks[m]) for m in sorted(weeks)]
 
 
-def _chart_store_only(symbol):
+def _chart_store_only(symbol, tf="w"):
     try:
-        from _bhav import symbol_weekly
+        from _bhav import symbol_bars
 
-        got = symbol_weekly(symbol)
+        got = symbol_bars(symbol, tf)
         if not got or len(got[0]) < 30:
             return None
         epoch = datetime(1970, 1, 1)
@@ -5331,14 +5339,39 @@ def _chart_store_only(symbol):
         return None
 
 
-def _chart_merge_store(symbol, rows):
+def _chart_normalise_daily(rows):
+    """Yahoo prints flat zero-volume bars on NSE holidays: drop them, key each
+    bar on its date."""
+    out = {}
+    for t, o, h, l, c, v in rows:
+        if not v:
+            continue
+        d = datetime.utcfromtimestamp(t).date()
+        out[d] = (o, h, l, c, v)
+    return [(int((datetime(d.year, d.month, d.day) - datetime(1970, 1, 1)).total_seconds()), *out[d]) for d in sorted(out)]
+
+
+def _chart_to_monthly(rows):
+    """Aggregate weekly/daily rows into calendar months (first-of-month key)."""
+    months = {}
+    for t, o, h, l, c, v in rows:
+        d = datetime.utcfromtimestamp(t).date().replace(day=1)
+        if d in months:
+            po, ph, pl, pc, pv = months[d]
+            months[d] = (po, max(ph, h), min(pl, l), c, (pv or 0) + (v or 0))
+        else:
+            months[d] = (o, h, l, c, v or 0)
+    return [(int((datetime(d.year, d.month, d.day) - datetime(1970, 1, 1)).total_seconds()), *months[d]) for d in sorted(months)]
+
+
+def _chart_merge_store(symbol, rows, tf="w"):
     """Weekly rows = NSE-store weeks (official closes) where the store has them,
     Yahoo only for the older weeks the store doesn't reach, rescaled so the seam
     is continuous. Any failure leaves the Yahoo rows untouched."""
     try:
-        from _bhav import symbol_weekly
+        from _bhav import symbol_bars
 
-        got = symbol_weekly(symbol)
+        got = symbol_bars(symbol, tf)
         if not got:
             return rows
         store_weeks, _last = got
@@ -5361,11 +5394,17 @@ def _chart_merge_store(symbol, rows):
         return rows
 
 
-def _run_chart_data(symbol, range_param):
-    rows = _chart_fetch_weekly_bars(f"{symbol}.NS")
+def _run_chart_data(symbol, range_param, tf="w"):
+    """tf: "d" daily, "w" weekly (the account's own timeframe — all three signal
+    systems are weekly in the Pine script, so markers are weekly-only), "m"
+    monthly (aggregated from the weekly series)."""
+    base_tf = "w" if tf == "m" else tf
+    rows = _chart_fetch_weekly_bars(f"{symbol}.NS", "1d" if base_tf == "d" else "1wk")
     if rows is not None:
-        rows = _chart_normalise_yahoo(rows)
-    rows = _chart_merge_store(symbol, rows) if rows is not None else _chart_store_only(symbol)
+        rows = _chart_normalise_daily(rows) if base_tf == "d" else _chart_normalise_yahoo(rows)
+    rows = _chart_merge_store(symbol, rows, base_tf) if rows is not None else _chart_store_only(symbol, base_tf)
+    if rows is not None and tf == "m":
+        rows = _chart_to_monthly(rows)
     if rows is None:
         return None
     n = len(rows)
@@ -5445,6 +5484,9 @@ def _run_chart_data(symbol, range_param):
         sm_close[i] = prev_condition != 0 and close_cond
         prev_condition = condition
 
+    if tf != "w":  # the Pine script gates every signal to the weekly chart: lines only on D / M
+        qb_buy = qb_sell = mltis_buy = mltis_sell = sm_buy = sm_sell = sm_close = [False] * n
+
     bars = []
     for i, r in enumerate(rows):
         bars.append({
@@ -5483,14 +5525,14 @@ def _run_chart_data(symbol, range_param):
     # a previous resistance, not simply the run in progress. Computed on the
     # full ~5y history before the display range trims it.
     levels = []
-    for weeks_n, label in ((8, "2M"), (13, "3M"), (26, "6M"), (39, "9M"), (52, "1Y")):
+    for weeks_n, label in zip(CHART_LEVEL_WINDOWS.get(tf, CHART_LEVEL_WINDOWS["w"]), ("2M", "3M", "6M", "9M", "1Y")):
         offset = round(weeks_n / 3)
         frm = n - offset - 1
         if frm < 1:
             continue
         to = max(0, frm - weeks_n)
         best = max(range(to, frm + 1), key=lambda k: highs[k])
-        levels.append({"key": f"h{weeks_n}", "label": label, "price": round(highs[best], 2), "date": bars[best]["date"]})
+        levels.append({"key": "h" + str((8, 13, 26, 39, 52)[("2M", "3M", "6M", "9M", "1Y").index(label)]), "label": label, "price": round(highs[best], 2), "date": bars[best]["date"]})
     # All-time high: the NSE store's split-adjusted figure (back to 2020, not
     # just these 5y), falling back to this chart's own 5y high.
     ath_price, ath_date = max(((highs[k], bars[k]["date"]) for k in range(n)), key=lambda t: t[0])
@@ -5509,8 +5551,8 @@ def _run_chart_data(symbol, range_param):
         pass
     levels.append({"key": "ath", "label": "ATH", "price": round(ath_price, 2), "date": ath_date})
 
-    weeks = CHART_RANGE_WEEKS.get(range_param, 260)
-    return {"bars": bars[-weeks:], "levels": levels}
+    keep = CHART_RANGE_BARS.get(tf, CHART_RANGE_WEEKS).get(range_param, 260)
+    return {"bars": bars[-keep:], "levels": levels}
 
 
 # ── turtleWealth ──────────────────────────────────────────────────────────
@@ -6306,7 +6348,10 @@ class handler(BaseHTTPRequestHandler):
             range_param = (query.get("range") or ["2y"])[0]
             if range_param not in CHART_RANGE_WEEKS:
                 range_param = "2y"
-            chart = _run_chart_data(chart_symbol.upper(), range_param)
+            tf_param = (query.get("tf") or ["w"])[0]
+            if tf_param not in CHART_RANGE_BARS:
+                tf_param = "w"
+            chart = _run_chart_data(chart_symbol.upper(), range_param, tf_param)
             if chart is None:
                 send_json(self, 502, {"error": f"chart data fetch failed for {chart_symbol}"})
             else:
