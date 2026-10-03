@@ -104,7 +104,7 @@ export const LEVEL_COLORS: Record<string, string> = {
   h26: "#a2aab5",
   h39: "#b5bcc6",
   h52: "#c9ced6",
-  ath: "#f43f5e",
+  ath: "#2962ff", // TradingView blue
 };
 const LEVEL_FLAG: Record<string, keyof LineVisibility> = { h8: "lvl8", h13: "lvl13", h26: "lvl26", h39: "lvl39", h52: "lvl52", ath: "lvlAth" };
 export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisibility): ChartLevel[] {
@@ -320,7 +320,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       const startUse = startT >= lastT ? (toUnixSeconds(bars[Math.max(0, bars.length - 2)].date) as UTCTimestamp) : startT;
       const s = chart.addSeries(LineSeries, {
         color: LEVEL_COLORS[lv.key] ?? "#78716c",
-        lineWidth: lv.key === "ath" ? 2 : 1,
+        lineWidth: 1,
         lineStyle: 2,
         priceLineVisible: false,
         lastValueVisible: true,
