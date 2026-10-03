@@ -128,7 +128,7 @@ function TrendSparkline({ stock }: { stock: Stock }) {
     return [x, y] as [number, number];
   });
   const up = closes[closes.length - 1] >= closes[0];
-  const color = up ? "#16a34a" : "#dc2626";
+  const color = up ? "#16a34a" : "#d9894a";
   const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const area = `${PAD},${H - PAD} ${line} ${W - PAD},${H - PAD}`;
   const title = `1Y weekly: ${fmt(closes[0], 1)} → ${fmt(closes[closes.length - 1], 1)} (${fmtSigned((closes[closes.length - 1] / closes[0] - 1) * 100, 1)})`;

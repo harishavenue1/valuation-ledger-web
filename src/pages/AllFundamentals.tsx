@@ -67,7 +67,7 @@ function QuarterlySparkline({ labels, values }: { labels: string[]; values: (num
     return [x, y] as [number, number];
   });
   const up = vals[vals.length - 1] >= vals[0];
-  const color = up ? "#16a34a" : "#dc2626";
+  const color = up ? "#16a34a" : "#d9894a";
   const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const title = labels.map((lb, i) => `${lb}: ${values[i] === null || values[i] === undefined ? "—" : values[i] === "T" ? "Turned profitable" : `${values[i]}%`}`).join(" → ");
 

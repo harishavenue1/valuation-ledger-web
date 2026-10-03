@@ -82,12 +82,12 @@ html.tv-dark .fill-slate-700 { fill: #b2b5be; }
 
 /* up / down */
 html.tv-dark .text-emerald-600, html.tv-dark .text-emerald-700, html.tv-dark .text-emerald-800 { color: #3fb5a0; }
-html.tv-dark .text-red-500, html.tv-dark .text-red-600, html.tv-dark .text-red-700, html.tv-dark .text-rose-700, html.tv-dark .hover\:text-red-500:hover, html.tv-dark .hover\:text-red-600:hover { color: #f23645; }
+html.tv-dark .text-red-500, html.tv-dark .text-red-600, html.tv-dark .text-red-700, html.tv-dark .text-rose-700, html.tv-dark .hover\:text-red-500:hover, html.tv-dark .hover\:text-red-600:hover { color: #d9894a; }
 html.tv-dark .bg-emerald-50, html.tv-dark .bg-emerald-50\/40 { background-color: rgba(56, 157, 139, 0.14); }
 html.tv-dark .bg-emerald-100, html.tv-dark .hover\:bg-emerald-100:hover { background-color: rgba(56, 157, 139, 0.24); }
 html.tv-dark .border-emerald-100, html.tv-dark .border-emerald-300, html.tv-dark .border-emerald-400 { border-color: rgba(56, 157, 139, 0.5); }
-html.tv-dark .bg-red-50, html.tv-dark .bg-red-100 { background-color: rgba(238, 46, 63, 0.14); }
-html.tv-dark .border-red-200, html.tv-dark .border-red-300, html.tv-dark .hover\:border-red-400:hover { border-color: rgba(238, 46, 63, 0.5); }
+html.tv-dark .bg-red-50, html.tv-dark .bg-red-100 { background-color: rgba(217, 137, 74, 0.13); }
+html.tv-dark .border-red-200, html.tv-dark .border-red-300, html.tv-dark .hover\:border-red-400:hover { border-color: rgba(217, 137, 74, 0.45); }
 
 /* amber (warnings, notes) */
 html.tv-dark .text-amber-500, html.tv-dark .text-amber-600, html.tv-dark .text-amber-700, html.tv-dark .text-amber-800, html.tv-dark .hover\:text-amber-400:hover { color: #f0b74a; }
@@ -103,3 +103,6 @@ html.tv-dark .bg-indigo-50, html.tv-dark .bg-indigo-50\/50, html.tv-dark .bg-ind
 html.tv-dark .border-indigo-200, html.tv-dark .border-indigo-300, html.tv-dark .border-blue-200, html.tv-dark .hover\:border-indigo-400:hover, html.tv-dark .focus\:border-indigo-400:focus, html.tv-dark .hover\:border-indigo-500:hover { border-color: rgba(41, 98, 255, 0.6); }
 html.tv-dark .ring-indigo-200, html.tv-dark .focus\:ring-indigo-200:focus { --tw-ring-color: rgba(41, 98, 255, 0.35); }
 html.tv-dark .fill-indigo-500 { fill: #6d9bff; }
+
+/* price-down text is a low-intensity orange in the light theme too (2026-10-03) */
+html:not(.tv-dark) .text-red-500, html:not(.tv-dark) .text-red-600, html:not(.tv-dark) .text-red-700 { color: #c2762d; }
