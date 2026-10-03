@@ -596,22 +596,31 @@ export default function AllTechnicals() {
   const activeSources = useMemo(() => new Set(optionalCols.filter((c) => enabledCols.has(c.key) && c.source).map((c) => c.source!)), [enabledCols, optionalCols]);
 
   const [onlyMatches, setOnlyMatches] = useState(true);
-  // Quick filters (blank values never pass an active filter)
+  // Quick filters (blank values never pass an active filter); thresholds are editable
   const [fAth, setFAth] = useState(false);
   const [f52w, setF52w] = useState(false);
   const [fMcap, setFMcap] = useState(false);
+  const [f3m, setF3m] = useState(false);
+  const [vAth, setVAth] = useState(10);
+  const [v52w, setV52w] = useState(10);
+  const [vMcap, setVMcap] = useState(500);
+  const [v3m, setV3m] = useState(27);
   const displayedRows = useMemo(() => {
     let base =
       !onlyMatches || activeSources.size === 0 ? rows : rows.filter((r: any) => Array.from(activeSources).some((src) => r[`_has_${src}`]));
-    const within = (v: any) => typeof v === "number" && v >= -10 && v <= 0;
-    if (fAth) base = base.filter((r: any) => within(r.nt_pct_from_ath));
-    if (f52w) base = base.filter((r: any) => within(r.nt_pct_from_52w_high));
-    if (fMcap) base = base.filter((r: any) => typeof r.nt_market_cap === "number" && r.nt_market_cap > 500);
+    const within = (v: any, n: number) => typeof v === "number" && v >= -n && v <= 0;
+    if (fAth) base = base.filter((r: any) => within(r.nt_pct_from_ath, vAth));
+    if (f52w) base = base.filter((r: any) => within(r.nt_pct_from_52w_high, v52w));
+    if (fMcap) base = base.filter((r: any) => typeof r.nt_market_cap === "number" && r.nt_market_cap > vMcap);
+    if (f3m) base = base.filter((r: any) => {
+      const v = r.three_month_pct ?? r.nt_3m_pct;
+      return typeof v === "number" && v > v3m;
+    });
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -700,10 +709,11 @@ export default function AllTechnicals() {
           </label>
         )}
         {([
-          [fAth, setFAth, "ATH 0–10%", "Within 10% of all-time high (% from ATH between −10 and 0)"],
-          [f52w, setF52w, "52WH 0–10%", "Within 10% of the 52-week high"],
-          [fMcap, setFMcap, "Mcap > ₹500 Cr", "Market cap above ₹500 crore (rows with no market cap are hidden)"],
-        ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
+          [fAth, setFAth, "ATH within", vAth, setVAth, "%", "Within this % of the all-time high (% from ATH between −N and 0)"],
+          [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
+          [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
+          [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
+        ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
             title={tip}
@@ -713,6 +723,18 @@ export default function AllTechnicals() {
           >
             <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />
             {label}
+            <input
+              type="number"
+              value={val}
+              min={0}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
+                if (!Number.isNaN(n)) setVal(n);
+              }}
+              className="w-14 px-1 py-0 text-sm text-right border border-slate-300 rounded bg-white font-normal text-slate-800"
+            />
+            {unit}
           </label>
         ))}
       </div>

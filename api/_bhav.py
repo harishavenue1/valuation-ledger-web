@@ -58,6 +58,8 @@ DB_MAX_MB = 400  # refuse to grow the database past this
 JUMP_LO, JUMP_HI = 0.77, 1.30  # day-over-day close ratio outside this = candidate split/bonus
 SMALL_LO, SMALL_HI = 0.93, 1.08  # inside (JUMP_LO, SMALL_LO] / [SMALL_HI, JUMP_HI): small-bonus candidates, only ever acted on with a Yahoo record
 SPLITCHECK_KEY = "bhav_splitcheck"
+ATH_KEY = "bhav_ath"
+ATH_FLOOR = date(2020, 6, 1)  # NSE's archive of these files starts here
 SPLITCHECK_DAYS = 14
 HEADERS = {"User-Agent": "Mozilla/5.0", "Accept": "text/csv,*/*", "Accept-Language": "en-US,en;q=0.9"}
 
@@ -711,6 +713,148 @@ def derive_rejected_from_reference(df, actions, ref):
     return dict(stats)
 
 
+# ── all-time high (history older than the store) ─────────────────────────────
+
+def run_ath_backfill(budget_s=230):
+    """True all-time highs. The store keeps ~2 years, so 'ATH' from it alone is a
+    2-year high (TATVA is 44% off its real ATH and showed -9%). This walks the
+    older NSE files back to ATH_FLOOR, newest first, WITHOUT keeping their daily
+    bars: per symbol it keeps only the highest split-adjusted high. State lives in
+    meta bhav_ath: basis B (first day of the stored window; fixed), next_end (the
+    earliest day already folded in), ath {symbol: [high, date]} on B's price basis
+    — publish() multiplies by the factors of corporate actions dated >= B and takes
+    the max with the stored window. Resumable; every run re-links on next_end."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    t0 = time.monotonic()
+    conn = get_conn()
+    try:
+        ensure_tables(conn)
+        st = get_meta(conn, ATH_KEY, None) or {}
+    finally:
+        conn.close()
+    if st.get("done"):
+        return [{"item": "ATH backfill", "value": f"already complete down to {st.get('next_end')} ({len(st.get('ath') or {})} symbols)"}]
+    basis = st.get("basis") or (date.today() - timedelta(days=STORE_DAYS)).isoformat()
+    end = date.fromisoformat(st.get("next_end") or basis)
+    ath = st.get("ath") or {}
+
+    days = []
+    d = end
+    while d >= ATH_FLOOR:
+        if d.weekday() < 5:
+            days.append(d)
+        d -= timedelta(days=1)
+    session = requests.Session()
+    fetched, copies, missing, blocked, unparseable = {}, 0, 0, 0, 0
+    fetch_budget = max(30, budget_s * 0.45)
+    stop = False
+    exhausted = True
+    for i in range(0, len(days), 16):
+        if stop or time.monotonic() - t0 > fetch_budget:
+            exhausted = False
+            break
+        batch = days[i:i + 16]
+
+        def one(day):
+            time.sleep(0.15)
+            return day, fetch_file(day, session)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda day: _safe(one, day), batch))
+        nb = 0
+        for res in results:
+            if res is None:
+                continue
+            day, (status, text) = res
+            if status == 200 and text:
+                try:
+                    trade, rows = parse_day(text)
+                except Exception:
+                    trade, rows = None, {}
+                if trade is None:
+                    unparseable += 1
+                elif trade == day.isoformat():
+                    fetched[trade] = rows
+                else:
+                    copies += 1
+            elif status == 404:
+                missing += 1
+            elif status == 403:
+                nb += 1
+        blocked += nb
+        if nb >= len(batch) // 2:
+            stop = True
+    if not fetched:
+        return [{"item": "ATH backfill", "value": "no files fetched"}, {"item": "blocked", "value": blocked}]
+
+    recs = [(sym, dt, r[0], r[1], r[2], r[3], r[4] or 0.0) for dt, rows in fetched.items() for sym, r in rows.items()]
+    df = pd.DataFrame(recs, columns=["symbol", "date", "o", "h", "l", "c", "v"])
+    df["date"] = pd.to_datetime(df["date"])
+    for k in ("o", "h", "l", "c", "v"):
+        df[k] = pd.to_numeric(df[k], errors="coerce").astype("float64")
+    df = df.dropna(subset=["c"]).sort_values(["symbol", "date"]).reset_index(drop=True)
+    earliest = df["date"].min().date().isoformat()
+
+    jumps = [j for j in find_jumps(df) if j[1] < basis]
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    cstats = confirm_jumps(jumps, actions, budget_s=max(15, budget_s - (time.monotonic() - t0) - 25))
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    actions_lt = {s: [a for a in rows if a[0] < basis] for s, rows in actions.items()}
+    old = df[df["date"] < pd.Timestamp(basis)].copy()
+    adj = adjust_frame(old, actions_lt, jumps)
+    if not adj.empty:
+        idx = adj.groupby("symbol", sort=False)["h"].idxmax()
+        for i in idx:
+            sym, hv, dt = adj.at[i, "symbol"], float(adj.at[i, "h"]), adj.at[i, "date"].date().isoformat()
+            if hv == hv and hv > 0 and (sym not in ath or hv > ath[sym][0]):
+                ath[sym] = [round(hv, 2), dt]
+    known_now = {(sy, ex) for sy, rws in actions.items() for ex, _f_, _src in rws}
+    pending = [j for j in jumps if (j[0], j[1]) not in known_now]
+    clean = not pending
+    if clean:
+        st["next_end"] = earliest
+        st["done"] = bool(exhausted and not stop)
+    st.update({"basis": basis, "ath": ath, "updated": date.today().isoformat()})
+    conn = get_conn()
+    try:
+        set_meta(conn, ATH_KEY, st)
+    finally:
+        conn.close()
+    return [
+        {"item": "days folded in (this run)", "value": len(fetched)},
+        {"item": "range this run", "value": f"{earliest} .. {max(fetched)}"},
+        {"item": "holiday copies / 404 / unparseable / blocked", "value": f"{copies} / {missing} / {unparseable} / {blocked}"},
+        {"item": "jumps flagged", "value": cstats.get("flagged")},
+        {"item": "split decisions", "value": ", ".join(f"{k}:{v}" for k, v in cstats.items() if k not in ("flagged", "pending_before"))},
+        {"item": "advanced to (next_end)", "value": st.get("next_end") if clean else f"NOT advanced ({len(pending)} split lookups still pending — this block is redone next run)"},
+        {"item": "complete", "value": bool(st.get("done"))},
+        {"item": "symbols with an old ATH", "value": len(ath)},
+        {"item": "seconds", "value": round(time.monotonic() - t0, 1)},
+    ]
+
+
+def ath_adjustments(conn_actions, basis, ath):
+    """{symbol: old-history ATH on TODAY's basis}: the stored B-basis high times
+    the factors of every real action dated on/after the basis day."""
+    out = {}
+    for sym, (hv, _dt) in ath.items():
+        f = 1.0
+        for ex, factor, src in conn_actions.get(sym, []):
+            if ex >= basis and src not in ("rejected", "nodata") and abs(factor - 1) > 1e-9:
+                f *= factor
+        out[sym] = hv * f
+    return out
+
+
 def adjust_frame(df, actions, jumps):
     """Back-adjust prices for confirmed splits, and cut each symbol's history at
     its latest still-unresolved jump (never show a number across one)."""
@@ -765,7 +909,7 @@ def _r2(x):
     return None if x is None or x != x else round(float(x), 2)
 
 
-def compute_technicals(df, names):
+def compute_technicals(df, names, ath_extra=None):
     """One row per symbol with its latest bar: price, % changes, EMA/high
     distances, RSI and delivery. EMAs on OHLC4, compared with the latest close
     (this account's standing convention); weekly bars are resampled from the
@@ -820,6 +964,8 @@ def compute_technicals(df, names):
         cal[sym] = out
 
     ath = df.groupby("symbol", sort=False)["h"].max()
+    if ath_extra:  # history older than the stored window
+        ath = pd.concat([ath, pd.Series(ath_extra, dtype="float64")], axis=1).max(axis=1)
     recent = df[df["date"] >= last_date - pd.Timedelta(days=365)]
     high52 = recent.groupby("symbol", sort=False)["h"].max()
     tail20 = df.groupby("symbol", sort=False).tail(20)
@@ -993,6 +1139,9 @@ def publish(budget_s=240):
     conn = get_conn()
     try:
         ensure_tables(conn)
+        ath_state = get_meta(conn, ATH_KEY, None) or {}
+        if ath_state.get("basis") and ath_state.get("ath"):
+            since = min(since, ath_state["basis"])  # keep every stored day, not a rolling 2y: the old-history ATH is anchored at the basis day
         df = load_frame(conn, since)
         actions = load_actions(conn)
     finally:
@@ -1022,7 +1171,12 @@ def publish(budget_s=240):
     finally:
         conn.close()
     df = adjust_frame(df, actions, jumps)
-    rows = compute_technicals(df, state.get("names") or {})
+    ath_extra = None
+    if ath_state.get("ath"):
+        known_ex = {(s_, ex) for s_, rws in actions.items() for ex, _f_, src in rws if src != "nodata"}
+        cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}  # history cut at an unresolved jump: old highs can't be trusted either
+        ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
+    rows = compute_technicals(df, state.get("names") or {}, ath_extra=ath_extra)
     shares, cap_stats = refresh_shares([r["symbol"] for r in rows], budget_s=max(0, min(150, budget_s - (time.monotonic() - t0) - 40)))
     for r in rows:
         n = shares.get(r["symbol"])

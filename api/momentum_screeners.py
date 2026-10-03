@@ -3269,6 +3269,13 @@ def _set_price_source(source):
     return {"label": "Price source", "push_rows": rows, "scanned": 1, "skipped": 0}, None
 
 
+def _run_bhav_ath(symbols, name_map, sector_map):
+    from _bhav import run_ath_backfill
+
+    rows = run_ath_backfill()
+    return {"label": "Bhavcopy all-time-high backfill", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_use_store(symbols, name_map, sector_map):
     return _set_price_source("store")
 
@@ -6147,6 +6154,7 @@ SCREENER_RUNNERS = {
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
     "bhavUseStore": _run_bhav_use_store,
+    "bhavAth": _run_bhav_ath,
     "bhavUseYahoo": _run_bhav_use_yahoo,
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
