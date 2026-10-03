@@ -90,10 +90,17 @@ export interface ChartBar {
   sm_ch_top: number | null; // SmartMoney channel top (trend + ATR*0.618)
   sm_ch_bot: number | null; // SmartMoney channel bottom (trend - ATR*0.618)
 }
+export interface ChartLevel {
+  key: string; // h8 | h13 | h26 | h39 | h52 | ath
+  label: string;
+  price: number;
+  date: string; // the bar that made the high
+}
 export interface ChartResponse {
   symbol: string;
   range: string;
   bars: ChartBar[];
+  levels?: ChartLevel[];
 }
 
 // "Run now" queue — see api/run_requests.py for why this is a queue a

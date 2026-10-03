@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, SeriesMarker, Time, UTCTimestamp, createChart, createSeriesMarkers } from "lightweight-charts";
-import { ChartBar } from "../lib/api";
+import { ChartBar, ChartLevel } from "../lib/api";
 import { BandSeries } from "./BandSeries";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
@@ -66,6 +66,14 @@ export interface LineVisibility {
   smLines: boolean; // SmartMoney EMA(10)/EMA(20)/SMA(40) trend — Pine's smShowLines
   smChannel: boolean; // SmartMoney ATR channel top/bottom — Pine's smShowChannel
   volume: boolean;
+  // Prior-high levels (dashed, from the bar that made the high out to the
+  // latest bar) — see api/momentum_screeners.py _run_chart_data
+  lvl8: boolean;
+  lvl13: boolean;
+  lvl26: boolean;
+  lvl39: boolean;
+  lvl52: boolean;
+  lvlAth: boolean;
   // 2026-09-27 ("chart needs log format") — not really a "line", but
   // lives in the same settings object/panel/localStorage entry as
   // everything else here rather than its own separate piece of state.
@@ -80,8 +88,27 @@ export const DEFAULT_LINE_VISIBILITY: LineVisibility = {
   smLines: false,
   smChannel: false,
   volume: true,
+  lvl8: true,
+  lvl13: true,
+  lvl26: false,
+  lvl39: true,
+  lvl52: false,
+  lvlAth: true,
   logScale: true,
 };
+
+export const LEVEL_COLORS: Record<string, string> = {
+  h8: "#a1a1aa",
+  h13: "#78716c",
+  h26: "#57534e",
+  h39: "#44403c",
+  h52: "#292524",
+  ath: "#be123c",
+};
+const LEVEL_FLAG: Record<string, keyof LineVisibility> = { h8: "lvl8", h13: "lvl13", h26: "lvl26", h39: "lvl39", h52: "lvl52", ath: "lvlAth" };
+export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisibility): ChartLevel[] {
+  return (levels ?? []).filter((l) => lines[LEVEL_FLAG[l.key]]);
+}
 
 // 2026-09-27 ("needs some more fine tuning, see this format" — a
 // screenshot of the user's own TradingView) — pixel-sampled from the
@@ -114,7 +141,7 @@ function toUnixSeconds(dateStr: string): UTCTimestamp {
 
 const COMMON_LAYOUT = {
   layout: { background: { type: ColorType.Solid, color: "#ffffff" }, textColor: "#475569", fontSize: 11 },
-  grid: { vertLines: { color: "#f1f5f9" }, horzLines: { color: "#f1f5f9" } },
+  grid: { vertLines: { visible: false }, horzLines: { visible: false } }, // 2026-10-03 ("remove grid lines")
   rightPriceScale: { borderColor: "#e2e8f0" },
   timeScale: { borderColor: "#e2e8f0" },
   crosshair: { vertLine: { color: "#94a3b8", labelBackgroundColor: "#334155" }, horzLine: { color: "#94a3b8", labelBackgroundColor: "#334155" } },
@@ -149,7 +176,7 @@ function buildMarkers(bars: ChartBar[]): SeriesMarker<Time>[] {
   return markers;
 }
 
-export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY }: { bars: ChartBar[]; lines?: LineVisibility }) {
+export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY, levels }: { bars: ChartBar[]; lines?: LineVisibility; levels?: ChartLevel[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -261,6 +288,30 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       volumeSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), value: b.volume ?? 0, color: b.close >= b.open ? `${UP_COLOR}66` : `${DOWN_COLOR}66` })));
     }
 
+    // Prior-high levels: a dashed line from the bar that made the high (or the
+    // left edge of the view) to the latest bar, with the price on the axis.
+    // autoscaleInfoProvider -> null keeps a far-away level (an ATH 40% above)
+    // from squashing the candles; out-of-view levels are simply not drawn.
+    const firstT = toUnixSeconds(bars[0].date);
+    const lastT = toUnixSeconds(bars[bars.length - 1].date);
+    for (const lv of visibleLevels(levels, lines)) {
+      const startT = Math.max(toUnixSeconds(lv.date), firstT) as UTCTimestamp;
+      const startUse = startT >= lastT ? (toUnixSeconds(bars[Math.max(0, bars.length - 2)].date) as UTCTimestamp) : startT;
+      const s = chart.addSeries(LineSeries, {
+        color: LEVEL_COLORS[lv.key] ?? "#78716c",
+        lineWidth: lv.key === "ath" ? 2 : 1,
+        lineStyle: 2,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        crosshairMarkerVisible: false,
+        autoscaleInfoProvider: () => null,
+      });
+      s.setData([
+        { time: startUse, value: lv.price },
+        { time: lastT, value: lv.price },
+      ]);
+    }
+
     candleSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     createSeriesMarkers(candleSeries, buildMarkers(bars));
 
@@ -289,7 +340,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       resizeObserver.disconnect();
       chart?.remove();
     };
-  }, [bars, lines]);
+  }, [bars, lines, levels]);
 
   return <div ref={containerRef} className="w-full h-full" />;
 }

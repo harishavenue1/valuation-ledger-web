@@ -1177,6 +1177,22 @@ def publish(budget_s=240):
         cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}  # history cut at an unresolved jump: old highs can't be trusted either
         ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
     rows = compute_technicals(df, state.get("names") or {}, ath_extra=ath_extra)
+    ath_levels = {}
+    try:  # {symbol: [ATH price, date]} for the Charts page's ATH line (kept out of the big rows payload)
+        win = df.loc[df.groupby("symbol", sort=False)["h"].idxmax()].set_index("symbol")
+        old_dates = {k: v[1] for k, v in (ath_state.get("ath") or {}).items()}
+        for r_ in rows:
+            sym = r_["symbol"]
+            if sym not in win.index:
+                continue
+            wv, wd = float(win.at[sym, "h"]), win.at[sym, "date"].date().isoformat()
+            ev = (ath_extra or {}).get(sym)
+            if ev is not None and ev > wv:
+                ath_levels[sym] = [round(float(ev), 2), old_dates.get(sym)]
+            else:
+                ath_levels[sym] = [round(wv, 2), wd]
+    except Exception:
+        ath_levels = {}
     shares, cap_stats = refresh_shares([r["symbol"] for r in rows], budget_s=max(0, min(150, budget_s - (time.monotonic() - t0) - 40)))
     for r in rows:
         n = shares.get(r["symbol"])
@@ -1194,6 +1210,8 @@ def publish(budget_s=240):
     conn = get_conn()
     try:
         set_meta(conn, TECH_KEY, payload)
+        if ok and ath_levels:
+            set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
     finally:
         conn.close()
     out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}]

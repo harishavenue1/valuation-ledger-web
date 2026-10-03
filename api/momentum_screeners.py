@@ -5415,8 +5415,40 @@ def _run_chart_data(symbol, range_param):
             "sm_ch_bot": sm_ch_bot[i],
         })
 
+    # Prior-high levels (2026-10-03, modelled on the nse-momentum-screener
+    # page's "Away From High" lines): the highest weekly high in a window of
+    # N weeks that ENDS round(N/3) weeks before the latest bar, so a level is
+    # a previous resistance, not simply the run in progress. Computed on the
+    # full ~5y history before the display range trims it.
+    levels = []
+    for weeks_n, label in ((8, "2M"), (13, "3M"), (26, "6M"), (39, "9M"), (52, "1Y")):
+        offset = round(weeks_n / 3)
+        frm = n - offset - 1
+        if frm < 1:
+            continue
+        to = max(0, frm - weeks_n)
+        best = max(range(to, frm + 1), key=lambda k: highs[k])
+        levels.append({"key": f"h{weeks_n}", "label": label, "price": round(highs[best], 2), "date": bars[best]["date"]})
+    # All-time high: the NSE store's split-adjusted figure (back to 2020, not
+    # just these 5y), falling back to this chart's own 5y high.
+    ath_price, ath_date = max(((highs[k], bars[k]["date"]) for k in range(n)), key=lambda t: t[0])
+    try:
+        conn = get_conn()
+        try:
+            stored = ((get_meta(conn, "bhav_ath_levels", {}) or {}).get("levels") or {}).get(symbol)
+        finally:
+            conn.close()
+        if stored and stored[0] and stored[1]:
+            ath_price, ath_date = float(stored[0]), stored[1]
+            recent = max(range(max(0, n - 3), n), key=lambda k: highs[k])  # a fresh high not in the store yet
+            if highs[recent] > ath_price:
+                ath_price, ath_date = highs[recent], bars[recent]["date"]
+    except Exception:
+        pass
+    levels.append({"key": "ath", "label": "ATH", "price": round(ath_price, 2), "date": ath_date})
+
     weeks = CHART_RANGE_WEEKS.get(range_param, 260)
-    return bars[-weeks:]
+    return {"bars": bars[-weeks:], "levels": levels}
 
 
 # ── turtleWealth ──────────────────────────────────────────────────────────
@@ -6212,11 +6244,11 @@ class handler(BaseHTTPRequestHandler):
             range_param = (query.get("range") or ["2y"])[0]
             if range_param not in CHART_RANGE_WEEKS:
                 range_param = "2y"
-            bars = _run_chart_data(chart_symbol.upper(), range_param)
-            if bars is None:
+            chart = _run_chart_data(chart_symbol.upper(), range_param)
+            if chart is None:
                 send_json(self, 502, {"error": f"chart data fetch failed for {chart_symbol}"})
             else:
-                send_json(self, 200, {"symbol": chart_symbol.upper(), "range": range_param, "bars": bars})
+                send_json(self, 200, {"symbol": chart_symbol.upper(), "range": range_param, "bars": chart["bars"], "levels": chart["levels"]})
             return
 
         # ?bhav_technicals=1 — the all-stocks technicals published by

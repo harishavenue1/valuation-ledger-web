@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api, ApiError, ChartResponse } from "../lib/api";
-import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LineVisibility } from "../components/CandlestickChart";
+import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LEVEL_COLORS, LineVisibility, visibleLevels } from "../components/CandlestickChart";
 import { MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
 import { ChartSource, loadChartList, loadChartSource, saveChartSource } from "../lib/chartList";
 
@@ -22,6 +22,12 @@ const LINE_TOGGLES: { key: keyof LineVisibility; label: string }[] = [
   { key: "smLines", label: "SmartMoney Lines (EMA10/EMA20/Trend)" },
   { key: "smChannel", label: "SmartMoney Channel" },
   { key: "volume", label: "Volume" },
+  { key: "lvlAth", label: "ATH level" },
+  { key: "lvl8", label: "Prior high 2M (8W)" },
+  { key: "lvl13", label: "Prior high 3M (13W)" },
+  { key: "lvl26", label: "Prior high 6M (26W)" },
+  { key: "lvl39", label: "Prior high 9M (39W)" },
+  { key: "lvl52", label: "Prior high 1Y (52W)" },
 ];
 
 function loadLineVisibility(): LineVisibility {
@@ -406,6 +412,12 @@ export default function PortfolioCharts() {
               <span className="inline-block w-2 h-2 rounded-full bg-violet-600 mr-1" />
               RSI14 {fmtNum(last.rsi14, 1)}
             </span>
+            {visibleLevels(data?.levels, lineVisibility).map((lv) => (
+              <span key={lv.key} title={`highest weekly high on ${lv.date}`}>
+                <span className="inline-block w-2 h-0.5 mr-1 align-middle" style={{ background: LEVEL_COLORS[lv.key] }} />
+                {lv.label} {fmtNum(lv.price, 2)}
+              </span>
+            ))}
             <span className="ml-auto text-slate-400">week ending {last.date}</span>
           </div>
         )}
@@ -415,7 +427,7 @@ export default function PortfolioCharts() {
         {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg shrink-0">No chart data for {symbol}.</div>}
         {!loading && !error && bars.length > 0 && (
           <div className="flex-1 min-h-0 border border-slate-200 rounded-lg p-3">
-            <CandlestickChart bars={bars} lines={lineVisibility} />
+            <CandlestickChart bars={bars} lines={lineVisibility} levels={data?.levels} />
           </div>
         )}
 
