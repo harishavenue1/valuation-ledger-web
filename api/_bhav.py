@@ -380,6 +380,11 @@ def run_store(budget_s=200, deep_symbols=None):
             earliest_q, n_symbols = cur.fetchone()
             cur.execute("SELECT count(DISTINCT symbol) FROM bhav_chunks WHERE q = %s", (earliest_q,))
             n_earliest = cur.fetchone()[0]
+            deep_bars = deep_syms_n = None
+            if deep_symbols:
+                cur.execute("SELECT sum(jsonb_array_length(data->'d')), count(DISTINCT symbol) FROM bhav_chunks WHERE symbol = ANY(%s)", (list(deep_symbols),))
+                deep_bars, deep_syms_n = cur.fetchone()
+        yahoo_idx = get_meta(conn, "nse750PriceCache", {}) or {}
     finally:
         conn.close()
 
@@ -397,6 +402,8 @@ def run_store(budget_s=200, deep_symbols=None):
         {"item": "database MB", "value": round(size, 1)},
         {"item": "earliest quarter stored / symbols in it", "value": f"{earliest_q} / {n_earliest}"},
         {"item": "symbols stored", "value": n_symbols},
+        {"item": "NSE-750 bars in the store / symbols", "value": f"{deep_bars} / {deep_syms_n}"},
+        {"item": "Yahoo price cache bars / symbols (for comparison)", "value": f"{yahoo_idx.get('rows_total')} / {yahoo_idx.get('symbols_cached')}"},
     ]
 
 
