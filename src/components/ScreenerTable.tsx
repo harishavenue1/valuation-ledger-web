@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 // Shared by MomentumScreeners.tsx and Watchlist.tsx — the Watchlist
 // page reuses NSE_SCREENER_COLS verbatim (2026-08-23, "a stocks
@@ -211,6 +211,9 @@ export function GenericTable({
   // already used to reset internal state elsewhere in this app, rather
   // than this component taking on a fully controlled sector prop.
   initialSector,
+  // Reports the rows exactly as shown (after the name/sector filters and the
+  // header sort) — callers keep it in a ref, so no re-render is triggered.
+  onSortedRows,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -219,6 +222,7 @@ export function GenericTable({
   emptyMessage?: string;
   gridLines?: boolean;
   initialSector?: string;
+  onSortedRows?: (rows: Record<string, any>[]) => void;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState(initialSector ?? "All");
@@ -261,6 +265,10 @@ export function GenericTable({
     });
     return copy;
   }, [filtered, sortKey, sortDir]);
+
+  useEffect(() => {
+    onSortedRows?.(sorted);
+  }, [sorted, onSortedRows]);
 
   // 2026-09-20 ("also columns must be equidistant") — previously only
   // switched to fixed/equal-width mode when EVERY column explicitly

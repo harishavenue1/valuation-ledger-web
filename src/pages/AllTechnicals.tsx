@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
+import { saveChartList } from "../lib/chartList";
 
 // 2026-09-18 — "design for technical and fundamental in intention to
 // speed up the app and reduce redundant info across pages" -> "let's
@@ -605,6 +606,35 @@ export default function AllTechnicals() {
   const [v52w, setV52w] = useState(10);
   const [vMcap, setVMcap] = useState(500);
   const [v3m, setV3m] = useState(27);
+  // the table's rows as shown (name/sector filter + header sort applied) —
+  // read when "Open in Charts" is clicked; a ref so it never causes a re-render
+  const visibleRef = useRef<Record<string, any>[]>([]);
+  const onSortedRows = useCallback((r: Record<string, any>[]) => {
+    visibleRef.current = r;
+  }, []);
+  function openInCharts() {
+    const list = visibleRef.current;
+    if (list.length === 0) return;
+    const parts: string[] = [];
+    if (fAth) parts.push(`ATH within ${vAth}%`);
+    if (f52w) parts.push(`52WH within ${v52w}%`);
+    if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
+    if (f3m) parts.push(`3M > ${v3m}%`);
+    saveChartList({
+      label: parts.length ? parts.join(" · ") : "no quick filters",
+      savedAt: new Date().toISOString(),
+      items: list.map((r: any) => ({
+        symbol: r.symbol,
+        name: r.name,
+        metric: r.three_month_pct ?? r.nt_3m_pct ?? null,
+        day: r.change_pct ?? null,
+        ath: r.nt_pct_from_ath ?? null,
+        wh52: r.nt_pct_from_52w_high ?? null,
+      })),
+    });
+    navigate(`/portfolio-charts/${encodeURIComponent(list[0].symbol)}`);
+  }
+
   const displayedRows = useMemo(() => {
     let base =
       !onlyMatches || activeSources.size === 0 ? rows : rows.filter((r: any) => Array.from(activeSources).some((src) => r[`_has_${src}`]));
@@ -708,6 +738,13 @@ export default function AllTechnicals() {
             Only show rows with data in the checked columns
           </label>
         )}
+        <button
+          onClick={openInCharts}
+          className="text-sm px-3 py-1.5 rounded border border-indigo-300 text-indigo-700 bg-indigo-50 hover:border-indigo-500 font-medium"
+          title="Browse these stocks on the Charts page with ↑/↓ — same filters, same sort as the table"
+        >
+          📈 Open in Charts
+        </button>
         {([
           [fAth, setFAth, "ATH within", vAth, setVAth, "%", "Within this % of the all-time high (% from ATH between −N and 0)"],
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
@@ -779,6 +816,7 @@ export default function AllTechnicals() {
         cols={cols}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
+        onSortedRows={onSortedRows}
         emptyMessage={
           rows.length > 0
             ? "No stocks currently match the checked columns (e.g. Quant Bollinger can legitimately have zero current breakout signals) — try unchecking \"Only show rows with data\" or a different column."

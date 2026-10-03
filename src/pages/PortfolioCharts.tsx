@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api, ApiError, ChartResponse } from "../lib/api";
 import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LineVisibility } from "../components/CandlestickChart";
 import { MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
+import { ChartSource, loadChartList, loadChartSource, saveChartSource } from "../lib/chartList";
 
 // 2026-09-27 ("give controls to modify the lines, as I did on trading
 // view") — persisted the same way AllTechnicals' own column picker is
@@ -59,16 +60,24 @@ export default function PortfolioCharts() {
   const { symbol = "" } = useParams();
   const { ready: holdingsReady } = useScreeners(["portfolioAllocation"]);
 
+  // One shape for both lists: the portfolio (metric = allocation %) and the
+  // list saved from All Technicals (metric = 3M %).
   interface Holding {
     symbol: string;
-    pct_of_portfolio: number;
-    pnl_pct: number | null;
+    metric: number | null;
     day_change_pct: number | null;
     pct_from_ath: number | null;
     pct_from_52w_high: number | null;
   }
 
-  const holdings = useMemo(() => {
+  const [source, setSourceState] = useState<ChartSource>(() => loadChartSource());
+  const techList = useMemo(() => loadChartList(), []);
+  function setSource(s: ChartSource) {
+    setSourceState(s);
+    saveChartSource(s);
+  }
+
+  const pfHoldings = useMemo(() => {
     const rows = bundle.momentum_screeners.portfolioAllocation?.rows ?? [];
     const seen = new Set<string>();
     // 2026-09-27 ("add a column for ATH% and 52WH% from the pf page
@@ -83,16 +92,30 @@ export default function PortfolioCharts() {
       seen.add(r.symbol);
       out.push({
         symbol: r.symbol,
-        pct_of_portfolio: r.pct_of_portfolio ?? 0,
-        pnl_pct: r.pnl_pct ?? null,
+        metric: r.pct_of_portfolio ?? 0,
         day_change_pct: r.day_change_pct ?? null,
         pct_from_ath: r.pct_from_ath ?? null,
         pct_from_52w_high: r.pct_from_52w_high ?? null,
       });
     }
-    out.sort((a, b) => b.pct_of_portfolio - a.pct_of_portfolio);
+    out.sort((a, b) => (b.metric ?? 0) - (a.metric ?? 0));
     return out;
   }, [bundle.momentum_screeners.portfolioAllocation]);
+
+  const techHoldings = useMemo<Holding[]>(
+    () =>
+      (techList?.items ?? []).map((i) => ({
+        symbol: i.symbol,
+        metric: i.metric,
+        day_change_pct: i.day,
+        pct_from_ath: i.ath,
+        pct_from_52w_high: i.wh52,
+      })),
+    [techList],
+  );
+
+  const useTech = source === "technicals" && techHoldings.length > 0;
+  const holdings = useTech ? techHoldings : pfHoldings;
 
   // 2026-09-28 ("add sort option on columns") — click a header to sort
   // by it, click again to flip direction; nulls always sort last
@@ -101,9 +124,14 @@ export default function PortfolioCharts() {
   // follows whatever order is currently ON SCREEN, not always the
   // underlying allocation-weight order — see sortedHoldings below,
   // used for both the list and the up/down navigation.
-  type SortKey = "symbol" | "pct_of_portfolio" | "day_change_pct" | "pct_from_ath" | "pct_from_52w_high";
-  const [sortKey, setSortKey] = useState<SortKey>("pct_of_portfolio");
+  type SortKey = "symbol" | "metric" | "day_change_pct" | "pct_from_ath" | "pct_from_52w_high";
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  // switching list resets to that list's own natural order
+  useEffect(() => {
+    setSortKey(null);
+  }, [useTech]);
 
   function clickSort(key: SortKey) {
     if (key === sortKey) {
@@ -116,6 +144,7 @@ export default function PortfolioCharts() {
 
   const sortedHoldings = useMemo(() => {
     const copy = [...holdings];
+    if (!sortKey) return copy; // portfolio: allocation order (pre-sorted); technicals: the table's own order
     copy.sort((a, b) => {
       let cmp: number;
       if (sortKey === "symbol") {
@@ -139,10 +168,21 @@ export default function PortfolioCharts() {
   // unrecognized one — land on the top holding by allocation weight.
   // `replace: true` so this doesn't spam browser history.
   useEffect(() => {
-    if (holdingsReady && sortedHoldings.length > 0 && currentIndex === -1) {
-      navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
+    if (sortedHoldings.length === 0 || currentIndex !== -1) return;
+    if (!useTech && !holdingsReady) return;
+    // arrived with a symbol that is in the OTHER list (e.g. a link from the
+    // Portfolio page while the technicals list is active) — switch lists
+    // instead of bouncing to the top of this one
+    if (symbol && useTech && pfHoldings.some((h) => h.symbol === symbol)) {
+      setSource("portfolio");
+      return;
     }
-  }, [holdingsReady, sortedHoldings, currentIndex, navigate]);
+    if (symbol && !useTech && source === "portfolio" && techHoldings.some((h) => h.symbol === symbol) && !pfHoldings.some((h) => h.symbol === symbol)) {
+      setSource("technicals");
+      return;
+    }
+    navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
+  }, [holdingsReady, sortedHoldings, currentIndex, navigate, useTech, symbol, pfHoldings, techHoldings, source]);
 
   // ArrowUp/ArrowDown move to the previous/next holding IN THE CURRENT
   // ON-SCREEN ORDER (sortedHoldings, not the raw allocation order) —
@@ -211,7 +251,7 @@ export default function PortfolioCharts() {
   const prev = bars[bars.length - 2];
   const weekChangePct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : null;
 
-  if (!holdingsReady) return <div className="text-sm text-slate-400 text-center py-16">Loading holdings…</div>;
+  if (!useTech && !holdingsReady) return <div className="text-sm text-slate-400 text-center py-16">Loading holdings…</div>;
   if (holdings.length === 0) {
     return (
       <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg">
@@ -224,12 +264,43 @@ export default function PortfolioCharts() {
     <div className="flex gap-4" style={{ height: "calc(100vh - 130px)" }}>
       <div className="w-80 shrink-0 overflow-y-auto border border-slate-200 rounded-lg">
         <div className="sticky top-0 bg-slate-50 text-[10px] text-slate-400 border-b border-slate-200">
-          <div className="px-2 py-1">{holdings.length} holdings · ↑↓ to browse</div>
+          <div className="flex gap-1 px-2 pt-2 pb-1">
+            {(
+              [
+                ["portfolio", "My Portfolio"],
+                ["technicals", "All Technicals"],
+              ] as [ChartSource, string][]
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setSource(k)}
+                className={`flex-1 text-xs py-1 rounded border ${
+                  (k === "technicals") === useTech ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {source === "technicals" && !techList && (
+            <div className="px-2 py-1 text-slate-500">
+              Nothing saved yet — set your filters on <Link to="/all-technicals" className="text-indigo-600 underline">All Technicals</Link> and press “Open in Charts”.
+            </div>
+          )}
+          <div className="px-2 py-1">
+            {useTech ? (
+              <>
+                {holdings.length} stocks · {techList?.label} · <Link to="/all-technicals" className="text-indigo-600 underline">edit filters</Link> · ↑↓ to browse
+              </>
+            ) : (
+              <>{holdings.length} holdings · ↑↓ to browse</>
+            )}
+          </div>
           <div className="grid grid-cols-[1fr_38px_38px_38px_42px] gap-1 px-2 pb-1 font-medium">
             {(
               [
                 ["symbol", "Symbol"],
-                ["pct_of_portfolio", "Alloc"],
+                ["metric", useTech ? "3M%" : "Alloc"],
                 ["day_change_pct", "Day%"],
                 ["pct_from_ath", "ATH%"],
                 ["pct_from_52w_high", "52WH%"],
@@ -250,7 +321,7 @@ export default function PortfolioCharts() {
             }`}
           >
             <span className="truncate">{h.symbol}</span>
-            <span className="tabular-nums text-slate-400 text-right shrink-0">{fmtNum(h.pct_of_portfolio, 1)}%</span>
+            <span className="tabular-nums text-slate-400 text-right shrink-0">{useTech ? <Signed v={h.metric} digits={0} /> : <>{fmtNum(h.metric, 1)}%</>}</span>
             <span className="text-right">
               <Signed v={h.day_change_pct} digits={1} />
             </span>
