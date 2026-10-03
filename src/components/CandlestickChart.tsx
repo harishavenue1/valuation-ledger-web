@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, ColorType, HistogramSeries, LineSeries, PriceScaleMode, UTCTimestamp, createChart } from "lightweight-charts";
+import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode, Time, UTCTimestamp, createChart } from "lightweight-charts";
 import { ChartBar, ChartLevel } from "../lib/api";
 import { BandSeries } from "./BandSeries";
 import { MarkerEvent, MarkersPrimitive } from "./ChartMarkers";
@@ -161,8 +161,24 @@ const COMMON_LAYOUT = {
   grid: { vertLines: { visible: false }, horzLines: { visible: false } },
   rightPriceScale: { borderColor: "#2a2e39" },
   timeScale: { borderColor: "#2a2e39" },
-  crosshair: { vertLine: { color: "#6b7280", labelBackgroundColor: "#363a45" }, horzLine: { color: "#6b7280", labelBackgroundColor: "#363a45" } },
+  // 2026-10-03 ("update the cursorhair like this") — TradingView's: 1px SOLID
+  // grey (#919191) lines, labels on a #2f333c box with white text, and the
+  // date label as "Mon 01 Jun '26". Colours sampled from the screenshot.
+  crosshair: {
+    mode: CrosshairMode.Normal,
+    vertLine: { color: "#919191", width: 1 as const, style: LineStyle.Solid, labelBackgroundColor: "#2f333c", labelVisible: true },
+    horzLine: { color: "#919191", width: 1 as const, style: LineStyle.Solid, labelBackgroundColor: "#2f333c", labelVisible: true },
+  },
+  localization: { timeFormatter: (t: Time) => formatCrosshairDate(t) },
 };
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function formatCrosshairDate(t: Time): string {
+  if (typeof t !== "number") return String(t);
+  const d = new Date(t * 1000);
+  return `${WEEKDAYS[d.getUTCDay()]} ${String(d.getUTCDate()).padStart(2, "0")} ${MONTHS[d.getUTCMonth()]} '${String(d.getUTCFullYear()).slice(2)}`;
+}
 
 // Faithful to the pasted Pine script's own shape/color/position choices
 // per signal (see its plotshape() calls) — lightweight-charts' marker
