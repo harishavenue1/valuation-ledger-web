@@ -3255,6 +3255,73 @@ def _compare_rows(a_rows, b_rows, fields):
     return out
 
 
+def _run_bhav_diff(symbols, name_map, sector_map):
+    """Diagnose WHY the two price sources disagree: compares the raw per-symbol
+    bars (dates present, close level by age, volume) rather than screener output."""
+    import statistics
+
+    t0 = time.monotonic()
+    y = _price_cache_raw_data_yahoo()
+    from _bhav import store_price_data
+
+    st = store_price_data([c[0] for c in _ms_get_universe_symbols()])
+    rows = []
+    syms = sorted(set(y) & set(st))
+    rows.append({"item": "symbols yahoo / store / both", "value": f"{len(y)} / {len(st)} / {len(syms)}"})
+    only_y = only_s = common = 0
+    ex_y, ex_s = {}, {}
+    buckets = {"<=1m": (0, 30), "1-3m": (30, 91), "3-12m": (91, 365), "1-3y": (365, 1095), "3-5y": (1095, 2000)}
+    ratio_by = {k: [] for k in buckets}
+    vol_ratio = []
+    today = date.today()
+    worst = []
+    for sym in syms:
+        yd = {r[0]: r for r in y[sym] if r[4] is not None}
+        sd = {r[0]: r for r in st[sym] if r[4] is not None}
+        ys, ss = set(yd), set(sd)
+        oy, os_ = ys - ss, ss - ys
+        only_y += len(oy)
+        only_s += len(os_)
+        common += len(ys & ss)
+        if oy:
+            ex_y[sym] = sorted(oy)[-2:]
+        if os_:
+            ex_s[sym] = sorted(os_)[-2:]
+        sym_rat = []
+        for d in ys & ss:
+            ry, rs = yd[d], sd[d]
+            if ry[4] and rs[4]:
+                age = (today - date.fromisoformat(d)).days
+                rat = rs[4] / ry[4]
+                for k, (a, b) in buckets.items():
+                    if a <= age < b:
+                        ratio_by[k].append(rat)
+                        break
+                sym_rat.append((d, rat))
+            if ry[5] and rs[5] and age < 400:
+                vol_ratio.append(rs[5] / ry[5])
+        if sym_rat:
+            sym_rat.sort()
+            worst.append((abs(statistics.median(r for _, r in sym_rat) - 1), sym, sym_rat[0][1], sym_rat[-1][1]))
+    rows.append({"item": "dates only yahoo / only store / common", "value": f"{only_y} / {only_s} / {common}"})
+    rows.append({"item": "sample dates only in yahoo", "value": str(list(ex_y.items())[:6])})
+    rows.append({"item": "sample dates only in store", "value": str(list(ex_s.items())[:6])})
+    for k, v in ratio_by.items():
+        if v:
+            v2 = sorted(v)
+            w = lambda t: round(sum(1 for r in v if abs(r - 1) <= t) / len(v), 3)
+            rows.append({"item": f"close store/yahoo {k}", "value": f"n={len(v)} median={v2[len(v)//2]:.4f} p5={v2[len(v)//20]:.4f} p95={v2[-len(v)//20-1]:.4f} within0.5%={w(0.005)} within2%={w(0.02)}"})
+    if vol_ratio:
+        v2 = sorted(vol_ratio)
+        n = len(v2)
+        rows.append({"item": "volume store/yahoo (<400d)", "value": f"n={n} median={v2[n//2]:.4f} p5={v2[n//20]:.4f} p95={v2[-n//20-1]:.4f} within1%={round(sum(1 for r in v2 if abs(r-1)<=0.01)/n,3)}"})
+    worst.sort(reverse=True)
+    for dev, sym, first, last in worst[:12]:
+        rows.append({"item": f"worst {sym}", "value": f"median dev {dev:.3f}; oldest ratio {first:.3f}, newest {last:.3f}"})
+    rows.append({"item": "seconds", "value": round(time.monotonic() - t0, 1)})
+    return {"label": "Bhavcopy vs Yahoo raw bars", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_compare(symbols, name_map, sector_map):
     """Run the real screeners on the Yahoo price cache and on the bhavcopy store
     (same process, same universe) and diff their outputs."""
@@ -6000,6 +6067,7 @@ SCREENER_RUNNERS = {
     "bhavTechnicals": _run_bhav_technicals,
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
+    "bhavDiff": _run_bhav_diff,
     "strategicAlpha": _run_strategic_alpha,
     "goldVsBenchmarks": _run_gold_vs_benchmarks,
     "reverseDcfScanNse750": _run_reverse_dcf_scan_nse750,
