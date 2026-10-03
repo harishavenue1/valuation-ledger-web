@@ -177,12 +177,8 @@ export default function PortfolioCharts() {
       setSource("portfolio");
       return;
     }
-    if (symbol && !useTech && source === "portfolio" && techHoldings.some((h) => h.symbol === symbol) && !pfHoldings.some((h) => h.symbol === symbol)) {
-      setSource("technicals");
-      return;
-    }
     navigate(`/portfolio-charts/${encodeURIComponent(sortedHoldings[0].symbol)}`, { replace: true });
-  }, [holdingsReady, sortedHoldings, currentIndex, navigate, useTech, symbol, pfHoldings, techHoldings, source]);
+  }, [holdingsReady, sortedHoldings, currentIndex, navigate, useTech, symbol, pfHoldings]);
 
   // ArrowUp/ArrowDown move to the previous/next holding IN THE CURRENT
   // ON-SCREEN ORDER (sortedHoldings, not the raw allocation order) —
@@ -273,7 +269,11 @@ export default function PortfolioCharts() {
             ).map(([k, label]) => (
               <button
                 key={k}
-                onClick={() => setSource(k)}
+                onClick={() => {
+                  setSource(k);
+                  const first = (k === "technicals" && techHoldings.length > 0 ? techHoldings : pfHoldings)[0];
+                  if (first) navigate(`/portfolio-charts/${encodeURIComponent(first.symbol)}`);
+                }}
                 className={`flex-1 text-xs py-1 rounded border ${
                   (k === "technicals") === useTech ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"
                 }`}
