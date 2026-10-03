@@ -86,6 +86,25 @@ def db_size_mb(conn):
         return cur.fetchone()[0] / 1024 / 1024
 
 
+def prune_dead(conn):
+    """Delete every chunk of a symbol that has none in the current or previous
+    quarter (delisted, merged, finished rights-entitlement tickers...). They are
+    never shown (the page only lists symbols with a recent bar) and only take
+    space. Returns the number of chunk rows removed."""
+    today = date.today()
+    first_of_q = date(today.year, 3 * ((today.month - 1) // 3) + 1, 1)
+    keep_from = quarter_of((first_of_q - timedelta(days=1)).isoformat())
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM bhav_chunks WHERE symbol IN (SELECT symbol FROM bhav_chunks GROUP BY symbol HAVING max(q) < %s)",
+            (keep_from,),
+        )
+        removed = cur.rowcount
+        cur.execute("DELETE FROM bhav_actions WHERE symbol NOT IN (SELECT DISTINCT symbol FROM bhav_chunks)")
+    conn.commit()
+    return removed
+
+
 def _f(x):
     try:
         v = float(x)
@@ -335,11 +354,13 @@ def run_store(budget_s=200):
             if names:
                 state["names"], state["names_as_of"], state["names_has_sme"] = names, today.isoformat(), True
         set_meta(conn, STATE_KEY, state)
+        pruned = prune_dead(conn)
         size = db_size_mb(conn)
     finally:
         conn.close()
 
     return [
+        {"item": "dead-symbol chunk rows pruned", "value": pruned},
         {"item": "weekdays requested", "value": len(todo)},
         {"item": "trading days stored", "value": stored_days},
         {"item": "holiday copies skipped", "value": copies},
