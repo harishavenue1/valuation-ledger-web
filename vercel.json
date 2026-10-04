@@ -23,6 +23,7 @@
     { "path": "/api/momentum_screeners?screener=ratesFx", "schedule": "40 10 * * *" },
     { "path": "/api/momentum_screeners?screener=bhavStore", "schedule": "30 13 * * 1-5" },
     { "path": "/api/momentum_screeners?screener=bhavTechnicals", "schedule": "50 13 * * 1-5" },
+    { "path": "/api/momentum_screeners?screener=fourPctScan", "schedule": "58 13 * * 1-5" },
     { "path": "/api/momentum_screeners?screener=bhavCompare", "schedule": "30 14 * * 1-5" },
     { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
     { "path": "/api/momentum_screeners?screener=top100UsStocks", "schedule": "41 10 * * *" },

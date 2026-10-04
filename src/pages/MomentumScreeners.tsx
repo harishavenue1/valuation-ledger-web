@@ -63,6 +63,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "momentumPersonal", label: "momentumPersonal", emoji: "🎯" },
   { key: "smeMomentum", label: "SME Momentum", emoji: "🌱" },
   { key: "volumeRockers", label: "Volume Rockers", emoji: "🚨" },
+  { key: "fourPctScan", label: "4% Scan", emoji: "⚡" },
 ];
 
 export default function MomentumScreeners() {
@@ -340,6 +341,21 @@ export default function MomentumScreeners() {
       { key: "score", label: "Score" },
       { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
+    fourPctScan: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "change_pct", label: "Day Chg %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "vol_x_prev", label: "Vol vs prev day ×", render: (r) => <span className="font-semibold">{fmtNum(r.vol_x_prev, 1)}×</span> },
+      { key: "volume", label: "Volume", render: (r) => fmtVol(r.volume) },
+      { key: "prev_volume", label: "Prev Volume", render: (r) => fmtVol(r.prev_volume) },
+      { key: "traded_value_cr", label: "Traded Value (₹ Cr)", render: (r) => fmtNum(r.traded_value_cr, 1) },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "deliv_pct", label: "Delivery %", render: (r) => fmtNum(r.deliv_pct, 1) },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+    ],
     volumeRockers: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -558,6 +574,17 @@ export default function MomentumScreeners() {
         on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
         than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
         ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
+      </>
+    ),
+    fourPctScan: (
+      <>
+        The <b>4% Scan</b> from Arthon Advisors' #IEC2026 talk (@thechartist26) — six filters, run every evening after the close, over{" "}
+        <b>every NSE-listed stock</b> in our daily NSE store (not just the NSE-750): <b>1.</b> price up more than 4% on the day,{" "}
+        <b>2.</b> volume up 300%+ (at least 4× the previous trading day's), <b>3.</b> market cap ₹500–10,000 Cr, <b>4.</b> traded value
+        (price × volume) above ₹10 Cr, <b>5.</b> price above ₹10, <b>6.</b> NSE-listed. Refreshes each trading evening after the NSE file lands
+        (about 7:30 pm IST); a split or bonus on the day is adjusted before the % and volume are compared. Market cap uses NSE close × share
+        count, so a stock whose share count we don't have yet is skipped rather than guessed. Ranked by volume multiple; every column sorts.
+        The sector column only fills for NSE-750 members.
       </>
     ),
     volumeRockers: (

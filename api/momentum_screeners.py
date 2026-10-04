@@ -3284,6 +3284,24 @@ def _run_bhav_use_yahoo(symbols, name_map, sector_map):
     return _set_price_source("yahoo")
 
 
+def _run_four_pct_scan(symbols, name_map, sector_map):
+    """The "4% Scan" tab: reads what bhavTechnicals computed for the latest
+    session (api/_bhav.py compute_four_pct_scan) — all NSE stocks, not only the
+    NSE-750 — and attaches the sector where the NSE-750 sector map knows it."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan4", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the 4% scan has not been published yet (bhavTechnicals computes it each evening)"
+    rows = []
+    for r in scan.get("rows") or []:
+        rows.append({**r, "sector": sector_map.get(r["symbol"], "")})
+    funnel = scan.get("funnel") or {}
+    return {"label": "4% Scan", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
+
+
 def _run_bhav_diff(symbols, name_map, sector_map):
     """Diagnose WHY the two price sources disagree: compares the raw per-symbol
     bars (dates present, close level by age, volume) rather than screener output."""
@@ -6291,6 +6309,7 @@ SCREENER_RUNNERS = {
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
+    "fourPctScan": _run_four_pct_scan,
     "bhavUseStore": _run_bhav_use_store,
     "bhavAth": _run_bhav_ath,
     "bhavUseYahoo": _run_bhav_use_yahoo,

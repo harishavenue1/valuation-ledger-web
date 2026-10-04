@@ -1066,6 +1066,71 @@ def compute_technicals(df, names, ath_extra=None):
 
 # ── verification + publishing ────────────────────────────────────────────────
 
+# ── the "4% Scan" (Arthon Advisors / @thechartist26, #IEC2026) ────────────────
+
+SCAN4 = {"min_chg_pct": 4.0, "min_vol_x": 4.0, "mcap_lo": 500, "mcap_hi": 10000, "min_traded_cr": 10.0, "min_price": 10.0}
+
+
+def compute_four_pct_scan(df, rows):
+    """Six filters, run every evening after the close: price up more than 4%
+    on the day, volume at least 4x the previous day's (up 300%+), market cap
+    Rs 500-10,000 Cr, traded value (price x volume) above Rs 10 Cr, price above
+    Rs 10, NSE-listed (everything in this store is). Runs over EVERY NSE stock in
+    the store, not just the NSE-750. Returns (matching rows, funnel counts)."""
+    if df.empty or not rows:
+        return [], {}
+    last_date = df["date"].max()
+    g = df.groupby("symbol", sort=False)["v"]
+    prev_vol = g.apply(lambda s: s.iloc[-2] if len(s) > 1 else np.nan)
+    last_vol = g.last()
+    funnel = {"universe": 0, "price_up": 0, "volume_x4": 0, "mcap_band": 0, "traded_value": 0, "price_over_10": 0}
+    out = []
+    for r in rows:
+        if r.get("as_of") != last_date.date().isoformat():
+            continue  # didn't trade on the latest session
+        funnel["universe"] += 1
+        sym = r["symbol"]
+        chg = r.get("change_pct")
+        if chg is None or not chg > SCAN4["min_chg_pct"]:
+            continue
+        funnel["price_up"] += 1
+        pv, lv = prev_vol.get(sym), last_vol.get(sym)
+        if pv is None or lv is None or not pv > 0 or not lv / pv >= SCAN4["min_vol_x"]:
+            continue
+        funnel["volume_x4"] += 1
+        mc = r.get("market_cap_cr")
+        if mc is None or not SCAN4["mcap_lo"] <= mc <= SCAN4["mcap_hi"]:
+            continue
+        funnel["mcap_band"] += 1
+        traded = r["price"] * lv / 1e7
+        if not traded > SCAN4["min_traded_cr"]:
+            continue
+        funnel["traded_value"] += 1
+        if not r["price"] > SCAN4["min_price"]:
+            continue
+        funnel["price_over_10"] += 1
+        out.append(
+            {
+                "symbol": sym,
+                "name": r.get("name") or sym,
+                "price": r["price"],
+                "change_pct": chg,
+                "volume": int(lv),
+                "prev_volume": int(pv),
+                "vol_x_prev": round(float(lv / pv), 1),
+                "traded_value_cr": round(float(traded), 1),
+                "market_cap_cr": mc,
+                "deliv_pct": r.get("deliv_pct"),
+                "pct_from_52w_high": r.get("pct_from_52w_high"),
+                "as_of": r["as_of"],
+            }
+        )
+    out.sort(key=lambda x: -x["vol_x_prev"])
+    for i, x in enumerate(out, 1):
+        x["rank"] = i
+    return out, funnel
+
+
 def verify(rows, ms):
     """Compare this store's numbers with the independent Yahoo-based ones the
     app already shows for the NSE-750 (same conventions, so apples to apples).
@@ -1248,6 +1313,11 @@ def publish(budget_s=240):
         n = shares.get(r["symbol"])
         r["market_cap_cr"] = round(r["price"] * n / 1e7) if n else None
     action_stats.update(cap_stats)
+    scan_rows, scan_funnel = [], {}
+    try:
+        scan_rows, scan_funnel = compute_four_pct_scan(df, rows)
+    except Exception as e:  # the scan must never block the page's own publish
+        scan_funnel = {"error": str(e)[:120]}
     ok, stats = verify(rows, ms)
     payload = {
         "ok": bool(ok),
@@ -1262,9 +1332,11 @@ def publish(budget_s=240):
         set_meta(conn, TECH_KEY, payload)
         if ok and ath_levels:
             set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
+        if ok:
+            set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():

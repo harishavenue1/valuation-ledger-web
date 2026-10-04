@@ -39,6 +39,7 @@ const CLOUD_SCREENERS = new Set([
   "allTimeHigh",
   "momentumPersonal",
   "volumeRockers",
+  "fourPctScan",
   "technicalSummary",
   "globalCountryEtfs",
   "globalCurrencies",
