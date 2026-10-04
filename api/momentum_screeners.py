@@ -3031,7 +3031,9 @@ def _rfx_nse_history_update(time_budget_s=200):
     # carries every index) until it does. A day NSE never published stays in
     # `checked` and is not asked again.
     wanted = {spec[1] for spec in RFX_NSE_INDICES}
-    incomplete = {k for k, v in days.items() if not wanted.issubset(v)}
+    sig = "|".join(sorted(wanted))
+    refetched = set(hist.get("refetched") or []) if hist.get("sig") == sig else set()  # days already re-read for THIS index set
+    incomplete = {k for k, v in days.items() if not wanted.issubset(v) and k not in refetched}
     todo = []
     d = today
     while d >= start:
@@ -3059,6 +3061,7 @@ def _rfx_nse_history_update(time_budget_s=200):
                     continue
                 if vals:
                     days[bd.isoformat()] = vals
+                    refetched.add(bd.isoformat())
                 if bd not in always or vals:
                     checked.add(bd.isoformat())
         if blocked >= len(batch) // 2:
@@ -3066,7 +3069,7 @@ def _rfx_nse_history_update(time_budget_s=200):
     cutoff = start.isoformat()
     days = {k: v for k, v in days.items() if k >= cutoff}
     checked = {k for k in checked if k >= cutoff}
-    hist = {"days": days, "checked": sorted(checked)}
+    hist = {"days": days, "checked": sorted(checked), "sig": sig, "refetched": sorted(k for k in refetched if k >= cutoff)}
     conn = get_conn()
     try:
         set_meta(conn, RFX_NSE_HISTORY_KEY, hist)
