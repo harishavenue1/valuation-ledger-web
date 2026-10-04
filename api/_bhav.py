@@ -1372,25 +1372,18 @@ def load_microcap_universe():
     return cached.get("symbols") or {}
 
 
-def compute_microcap_momentum(df, rows, universe, snapshot):
-    """(rows to show, new snapshot, funnel). snapshot = last stored
-    {month, as_of, top10, entries, exits}."""
-    if df.empty or not rows or not universe:
-        return [], snapshot, {"error": "no universe" if not universe else "no data"}
-    last_date = df["date"].max()
-    month = last_date.strftime("%Y-%m")
-    by_row = {r["symbol"]: r for r in rows if r.get("as_of") == last_date.date().isoformat()}
-    funnel = {"universe": len(universe), "traded_latest_session": 0, "enough_history": 0, "scored": 0}
-    scored = []
-    syms = [s_ for s_ in universe if s_ in by_row]
-    funnel["traded_latest_session"] = len(syms)
-    sub = df[df["symbol"].isin(set(syms))]
+def momentum_scores(df, by_row, symbols):
+    """{symbol: {r6m, r1m, vol3m, score, avg_traded_cr}} — the Microcap Momentum
+    score: (0.7*6M% + 0.3*1M%) / annualised 63-session volatility of daily
+    returns. Shared by the Microcap Momentum tab and the Directory lists so the
+    two always agree."""
+    out = {}
+    sub = df[df["symbol"].isin(set(symbols))]
     for sym, g in sub.groupby("symbol", sort=False):
         c = g["c"].to_numpy(dtype=float)
         d = g["date"].to_numpy()
         if len(c) < MICRO["min_bars"]:
             continue
-        funnel["enough_history"] += 1
         t6 = np.datetime64(pd.Timestamp(d[-1]) - pd.DateOffset(months=6))
         j6 = int(np.searchsorted(d, t6, side="right")) - 1
         if j6 < 0 or c[j6] <= 0:
@@ -1403,9 +1396,33 @@ def compute_microcap_momentum(df, rows, universe, snapshot):
         vol = float(np.std(rets, ddof=1) * np.sqrt(252) * 100) if len(rets) > 10 else 0.0
         if not vol > 0:
             continue
-        score = (MICRO["w6m"] * r6 + MICRO["w1m"] * r1) / vol
         v = g["v"].to_numpy(dtype=float)
-        avg_traded = float(np.mean(c[-20:] * v[-20:]) / 1e7)
+        out[sym] = {
+            "r6m": round(float(r6), 1),
+            "r1m": r1,
+            "vol3m": round(vol, 1),
+            "score": round(float((MICRO["w6m"] * r6 + MICRO["w1m"] * r1) / vol), 2),
+            "avg_traded_cr": round(float(np.mean(c[-20:] * v[-20:]) / 1e7), 2),
+            "bars": len(c),
+        }
+    return out
+
+
+def compute_microcap_momentum(df, rows, universe, snapshot):
+    """(rows to show, new snapshot, funnel). snapshot = last stored
+    {month, as_of, top10, entries, exits}."""
+    if df.empty or not rows or not universe:
+        return [], snapshot, {"error": "no universe" if not universe else "no data"}
+    last_date = df["date"].max()
+    month = last_date.strftime("%Y-%m")
+    by_row = {r["symbol"]: r for r in rows if r.get("as_of") == last_date.date().isoformat()}
+    funnel = {"universe": len(universe), "traded_latest_session": 0, "enough_history": 0, "scored": 0}
+    scored = []
+    syms = [s_ for s_ in universe if s_ in by_row]
+    funnel["traded_latest_session"] = len(syms)
+    ms_ = momentum_scores(df, by_row, syms)
+    funnel["enough_history"] = sum(1 for s_ in syms if s_ in ms_)
+    for sym, m_ in ms_.items():
         funnel["scored"] += 1
         r = by_row[sym]
         scored.append(
@@ -1415,11 +1432,11 @@ def compute_microcap_momentum(df, rows, universe, snapshot):
                 "sector": universe.get(sym, ""),
                 "price": r["price"],
                 "change_pct": r.get("change_pct"),
-                "r6m": round(float(r6), 1),
-                "r1m": r1,
-                "vol3m": round(vol, 1),
-                "score": round(float(score), 2),
-                "avg_traded_cr": round(avg_traded, 2),
+                "r6m": m_["r6m"],
+                "r1m": m_["r1m"],
+                "vol3m": m_["vol3m"],
+                "score": m_["score"],
+                "avg_traded_cr": m_["avg_traded_cr"],
                 "market_cap_cr": r.get("market_cap_cr"),
                 "pct_from_52w_high": r.get("pct_from_52w_high"),
                 "as_of": r["as_of"],
@@ -1491,7 +1508,7 @@ def load_index_universe(key, urls, min_n):
     return cached.get("symbols") or {}
 
 
-def compute_index_directory(rows):
+def compute_index_directory(rows, df=None):
     """One row per (index, member) for the Directory page: the member's latest
     technicals from the published rows plus its NSE industry."""
     by_row = {r["symbol"]: r for r in rows}
@@ -1499,6 +1516,12 @@ def compute_index_directory(rows):
     for index_name, (key, urls, min_n) in INDEX_DIR_LISTS.items():
         members = load_index_universe(key, urls, min_n)
         n = 0
+        # momentum score + rank WITHIN the index (Smallcap 250 and Microcap 250 tabs)
+        mom = {}
+        if df is not None and index_name in ("Smallcap 250", "Microcap 250"):
+            mom = momentum_scores(df, by_row, [s_ for s_ in members if s_ in by_row])
+            for i_, sym_ in enumerate(sorted(mom, key=lambda k: -mom[k]["score"]), 1):
+                mom[sym_]["rank"] = i_
         for sym, industry in members.items():
             r = by_row.get(sym)
             if r is None:
@@ -1524,10 +1547,13 @@ def compute_index_directory(rows):
                     "rsi_w": r.get("rsi_w"),
                     "market_cap_cr": r.get("market_cap_cr"),
                     "deliv_pct": r.get("deliv_pct"),
+                    "mom_score": (mom.get(sym) or {}).get("score"),
+                    "mom_rank": (mom.get(sym) or {}).get("rank"),
+                    "vol3m": (mom.get(sym) or {}).get("vol3m"),
                     "as_of": r.get("as_of"),
                 }
             )
-        counts[index_name] = {"listed": len(members), "found": n}
+        counts[index_name] = {"listed": len(members), "found": n, "scored": len(mom)}
     return out, counts
 
 
@@ -1730,7 +1756,7 @@ def publish(budget_s=240):
         pb_funnel = {"error": str(e)[:120]}
     dir_rows, dir_counts = [], {}
     try:
-        dir_rows, dir_counts = compute_index_directory(rows)
+        dir_rows, dir_counts = compute_index_directory(rows, df)
     except Exception as e:
         dir_counts = {"error": str(e)[:120]}
     mc_rows, mc_funnel, mc_snap = [], {}, None

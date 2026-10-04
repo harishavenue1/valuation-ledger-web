@@ -40,6 +40,13 @@ const COLS: Col[] = [
   { key: "deliv_pct", label: "Delivery %", render: (r) => fmtNum(r.deliv_pct, 1) },
 ];
 
+// Smallcap 250 / Microcap 250 only: the Microcap Momentum score ((0.7 x 6M% + 0.3 x 1M%) / 63-session volatility) and the rank WITHIN that index
+const MOM_COLS: Col[] = [
+  { key: "mom_rank", label: "Mom Rank", groupStart: true, render: (r) => (r.mom_rank == null ? <span className="text-slate-300">—</span> : <span className="font-semibold">{r.mom_rank}</span>) },
+  { key: "mom_score", label: "Mom Score", render: (r) => (r.mom_score == null ? <span className="text-slate-300">—</span> : fmtNum(r.mom_score, 2)) },
+  { key: "vol3m", label: "3M Volatility %", render: (r) => fmtNum(r.vol3m, 1) },
+];
+
 function median(vals: number[]): number | null {
   const v = vals.filter((x) => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
   if (!v.length) return null;
@@ -53,7 +60,13 @@ function IndexList({ index }: { index: string }) {
   const watchlist = useWatchlist();
   const { ready } = useScreeners(["indexDirectory"]);
   const entry = bundle.momentum_screeners.indexDirectory;
-  const rows = useMemo(() => (entry?.rows ?? []).filter((r: any) => r.index === index), [entry, index]);
+  const withMom = index === "Smallcap 250" || index === "Microcap 250";
+  const rows = useMemo(() => {
+    const r = (entry?.rows ?? []).filter((x: any) => x.index === index);
+    // momentum-ranked first for the lists that carry a score (unranked last)
+    return withMom ? [...r].sort((a: any, b: any) => (a.mom_rank ?? 1e9) - (b.mom_rank ?? 1e9)) : r;
+  }, [entry, index, withMom]);
+  const cols = useMemo(() => (withMom ? [...COLS.slice(0, 3), ...MOM_COLS, ...COLS.slice(3)] : COLS), [withMom]);
 
   const stats = useMemo(() => {
     const pick = (k: string) => median(rows.map((r: any) => r[k]));
@@ -102,11 +115,20 @@ function IndexList({ index }: { index: string }) {
         % vs 200D/33W EMA use OHLC4; % from ATH/52W High come from the store's split-adjusted highs (ATH reaches back to 2020). Market cap is NSE close ×
         share count (blank where the share count isn't known yet). The strip above is the median stock, and the share of members above their 200D EMA / within
         10% of the all-time high — a quick read on how the whole index is behaving. Updates each trading evening.
+        {withMom && (
+          <>
+            <br />
+            <br />
+            <b>Mom Rank / Mom Score</b> (Smallcap 250 and Microcap 250): the Microcap Momentum strategy's score — <code>(0.7 × 6M % + 0.3 × 1M %) ÷ annualised
+            volatility of the last 63 sessions' daily returns</code> — ranked within this index (1 = strongest); the list opens sorted by it. The Microcap 250
+            ranks here are the same as on the Momentum page's <b>Microcap Momentum</b> tab. A stock with under ~6 months of history, or no 1M figure, is unranked.
+          </>
+        )}
       </MethodologyNote>
       <GenericTable
         key={index}
         rows={rows}
-        cols={COLS}
+        cols={cols}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
         emptyMessage="No data yet — the evening NSE publish hasn't produced the index lists."
