@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSeries, LineStyle, PriceScaleMode, Time, UTCTimestamp, createChart } from "lightweight-charts";
 import { ChartBar, ChartLevel } from "../lib/api";
 import { BandSeries } from "./BandSeries";
@@ -127,6 +127,8 @@ export function visibleLevels(levels: ChartLevel[] | undefined, lines: LineVisib
 // attached image with PIL, not eyeballed.
 const UP_COLOR = "#2e796f"; // teal, pixel-sampled from the user's own TradingView screenshot
 const DOWN_COLOR = "#a49077"; // 2026-09-27 ("the grey candle in chart change color to pink lighttone") — CSS's own "lightpink", replacing the earlier tan/beige (which read as grey)
+const UP_TEXT = "#389d8b"; // TradingView legend text colours (sampled)
+const DOWN_TEXT = "#d9894a";
 const VOL_UP = "#1d5553"; // sampled from the TradingView layout
 const VOL_DOWN = "#752e33";
 const EMA1_COLOR = "#d4aa00"; // Pine's own EMA1 color
@@ -214,6 +216,9 @@ function buildMarkerEvents(bars: ChartBar[]): MarkerEvent[] {
 
 export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY, levels }: { bars: ChartBar[]; lines?: LineVisibility; levels?: ChartLevel[] }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // OHLC readout under the cursor (TradingView's top-left legend); the latest bar when the cursor is off the chart
+  const [hoverDate, setHoverDate] = useState<string | null>(null);
+  const byDate = useMemo(() => new Map(bars.map((b, i) => [b.date, i])), [bars]);
   // the zoom/scroll position survives toggling a line in Chart Settings (TradingView keeps its view when an indicator is switched)
   const savedView = useRef<{ sig: string; from: number; to: number } | null>(null);
 
@@ -366,6 +371,14 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
 
     candleSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     candleSeries.attachPrimitive(new MarkersPrimitive(buildMarkerEvents(bars)));
+    chart.subscribeCrosshairMove((param) => {
+      const t = param.time;
+      if (typeof t !== "number" || !param.point) {
+        setHoverDate(null);
+        return;
+      }
+      setHoverDate(new Date(t * 1000).toISOString().slice(0, 10));
+    });
 
     // TradingView's own "High / Low" axis tags for the visible range
     const hi = Math.max(...bars.map((b) => b.high));
@@ -422,5 +435,43 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
     };
   }, [bars, lines, levels]);
 
-  return <div ref={containerRef} className="w-full h-full" />;
+  const idx = hoverDate != null && byDate.has(hoverDate) ? (byDate.get(hoverDate) as number) : bars.length - 1;
+  const cur = bars[idx];
+  const prev = idx > 0 ? bars[idx - 1] : undefined;
+  const chg = cur && prev ? cur.close - prev.close : null;
+  const chgPct = cur && prev && prev.close ? (chg! / prev.close) * 100 : null;
+  const up = (chg ?? 0) >= 0;
+  const fmt = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtVol = (v: number | null) => (v == null ? "—" : v >= 1e7 ? `${(v / 1e7).toFixed(2)} Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(2)} L` : v >= 1e3 ? `${(v / 1e3).toFixed(2)} K` : String(v));
+  return (
+    <div className="relative w-full h-full">
+      <div ref={containerRef} className="w-full h-full" />
+      {cur && (
+        <div className="absolute top-1 left-2 z-10 pointer-events-none text-[11px] tabular-nums flex flex-wrap gap-x-3" style={{ color: "#a4a4a6" }}>
+          <span>
+            O <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>{fmt(cur.open)}</span>
+          </span>
+          <span>
+            H <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>{fmt(cur.high)}</span>
+          </span>
+          <span>
+            L <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>{fmt(cur.low)}</span>
+          </span>
+          <span>
+            C <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>{fmt(cur.close)}</span>
+          </span>
+          {chg != null && chgPct != null && (
+            <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>
+              {chg >= 0 ? "+" : "−"}
+              {fmt(Math.abs(chg))} ({chg >= 0 ? "+" : "−"}
+              {Math.abs(chgPct).toFixed(2)}%)
+            </span>
+          )}
+          <span>
+            Vol <span style={{ color: up ? UP_TEXT : DOWN_TEXT }}>{fmtVol(cur.volume)}</span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
