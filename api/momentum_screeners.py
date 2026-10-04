@@ -3297,6 +3297,20 @@ def _run_bhav_use_yahoo(symbols, name_map, sector_map):
     return _set_price_source("yahoo")
 
 
+def _run_index_directory(symbols, name_map, sector_map):
+    """Rows behind the Directory page's Midcap 150 / Smallcap 250 / Microcap 250
+    lists (api/_bhav.py compute_index_directory)."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_indexdir", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the index directory has not been published yet (bhavTechnicals computes it each evening)"
+    rows = scan.get("rows") or []
+    return {"label": "Index directory", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": scan.get("as_of")}, None
+
+
 def _run_microcap_mom(symbols, name_map, sector_map):
     """The "Microcap Momentum" tab (Techno Charts strategy): reads what
     bhavTechnicals computed for the latest session (api/_bhav.py
@@ -6371,6 +6385,7 @@ SCREENER_RUNNERS = {
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
     "microcapMom": _run_microcap_mom,
+    "indexDirectory": _run_index_directory,
     "bhavUseStore": _run_bhav_use_store,
     "bhavAth": _run_bhav_ath,
     "bhavUseYahoo": _run_bhav_use_yahoo,

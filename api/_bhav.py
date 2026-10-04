@@ -1454,6 +1454,83 @@ def compute_microcap_momentum(df, rows, universe, snapshot):
     return out, snap, funnel
 
 
+# ── Index directory (Midcap 150 / Smallcap 250 / Microcap 250 members) ────────
+
+INDEX_DIR_LISTS = {
+    "Midcap 150": ("bhav_midcap150", ("https://nsearchives.nseindia.com/content/indices/ind_niftymidcap150list.csv", "https://archives.nseindia.com/content/indices/ind_niftymidcap150list.csv"), 120),
+    "Smallcap 250": ("bhav_smallcap250", ("https://nsearchives.nseindia.com/content/indices/ind_niftysmallcap250list.csv", "https://archives.nseindia.com/content/indices/ind_niftysmallcap250list.csv"), 200),
+    "Microcap 250": (MICRO_UNIVERSE_KEY, MICRO_URLS, 200),
+}
+
+
+def load_index_universe(key, urls, min_n):
+    """{symbol: industry} for one NSE index constituent file, cached in meta for
+    a week (reconstitutions are semi-annual); a stale copy beats nothing."""
+    conn = get_conn()
+    try:
+        cached = get_meta(conn, key, None) or {}
+    finally:
+        conn.close()
+    if cached.get("symbols") and cached.get("fetched", "") >= (date.today() - timedelta(days=7)).isoformat():
+        return cached["symbols"]
+    for url in urls:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            if r.status_code != 200 or "Symbol" not in r.text[:200]:
+                continue
+            sy = {x["Symbol"].strip(): x.get("Industry", "").strip() for x in csv.DictReader(io.StringIO(r.text)) if x.get("Symbol")}
+            if len(sy) >= min_n:
+                conn = get_conn()
+                try:
+                    set_meta(conn, key, {"fetched": date.today().isoformat(), "symbols": sy})
+                finally:
+                    conn.close()
+                return sy
+        except Exception:
+            continue
+    return cached.get("symbols") or {}
+
+
+def compute_index_directory(rows):
+    """One row per (index, member) for the Directory page: the member's latest
+    technicals from the published rows plus its NSE industry."""
+    by_row = {r["symbol"]: r for r in rows}
+    out, counts = [], {}
+    for index_name, (key, urls, min_n) in INDEX_DIR_LISTS.items():
+        members = load_index_universe(key, urls, min_n)
+        n = 0
+        for sym, industry in members.items():
+            r = by_row.get(sym)
+            if r is None:
+                continue
+            n += 1
+            out.append(
+                {
+                    "symbol": sym,
+                    "name": r.get("name") or sym,
+                    "sector": industry,
+                    "index": index_name,
+                    "price": r["price"],
+                    "change_pct": r.get("change_pct"),
+                    "weekly_pct": r.get("weekly_pct"),
+                    "monthly_pct": r.get("monthly_pct"),
+                    "three_month_pct": r.get("three_month_pct"),
+                    "six_month_pct": r.get("w_pct_6m"),
+                    "yearly_pct": r.get("yearly_pct"),
+                    "pct_200d_ema": r.get("pct_200d_ema"),
+                    "pct_33w_ema": r.get("pct_33w_ema"),
+                    "pct_from_ath": r.get("pct_from_ath"),
+                    "pct_from_52w_high": r.get("pct_from_52w_high"),
+                    "rsi_w": r.get("rsi_w"),
+                    "market_cap_cr": r.get("market_cap_cr"),
+                    "deliv_pct": r.get("deliv_pct"),
+                    "as_of": r.get("as_of"),
+                }
+            )
+        counts[index_name] = {"listed": len(members), "found": n}
+    return out, counts
+
+
 def verify(rows, ms):
     """Compare this store's numbers with the independent Yahoo-based ones the
     app already shows for the NSE-750 (same conventions, so apples to apples).
@@ -1651,6 +1728,11 @@ def publish(budget_s=240):
         pb_rows, pb_funnel = compute_pullback_mom(df, rows)
     except Exception as e:
         pb_funnel = {"error": str(e)[:120]}
+    dir_rows, dir_counts = [], {}
+    try:
+        dir_rows, dir_counts = compute_index_directory(rows)
+    except Exception as e:
+        dir_counts = {"error": str(e)[:120]}
     mc_rows, mc_funnel, mc_snap = [], {}, None
     try:
         conn = get_conn()
@@ -1676,6 +1758,8 @@ def publish(budget_s=240):
         if ok and ath_levels:
             set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
         if ok:
+            if dir_rows:
+                set_meta(conn, "bhav_scan_indexdir", {"as_of": stats.get("latest_trade_date"), "rows": dir_rows, "counts": dir_counts})
             if mc_snap:
                 set_meta(conn, MICRO_SNAPSHOT_KEY, mc_snap)
                 set_meta(conn, "bhav_scan_microcap", {"as_of": stats.get("latest_trade_date"), "rows": mc_rows, "funnel": mc_funnel, "snapshot": mc_snap, "params": MICRO})
@@ -1684,7 +1768,7 @@ def publish(budget_s=240):
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}, {"item": "microcap momentum rows / funnel", "value": f"{len(mc_rows)} / {mc_funnel}"}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}, {"item": "microcap momentum rows / funnel", "value": f"{len(mc_rows)} / {mc_funnel}"}, {"item": "index directory rows", "value": f"{len(dir_rows)} / {dir_counts}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():

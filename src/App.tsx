@@ -17,7 +17,7 @@ const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
 const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
 const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
 const FIITrend = lazy(() => import("./pages/FIITrend"));
-const SectorDirectory = lazy(() => import("./pages/SectorDirectory"));
+const Directory = lazy(() => import("./pages/Directory"));
 const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
 const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
 const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
@@ -234,7 +234,7 @@ export default function App() {
                 🌊 FII Trend
               </NavLink>
               <NavLink to="/sector-directory" className={({ isActive }) => navClass(isActive)}>
-                🗂️ Sectors
+                📚 Directory
               </NavLink>
               <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
                 📡 Strategic
@@ -293,7 +293,7 @@ export default function App() {
             <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/fii-trend" element={<FIITrend />} />
-            <Route path="/sector-directory" element={<SectorDirectory />} />
+            <Route path="/sector-directory" element={<Directory />} />
             <Route path="/portfolio-charts" element={<PortfolioCharts />} />
             <Route path="/portfolio-charts/:symbol" element={<PortfolioCharts />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
