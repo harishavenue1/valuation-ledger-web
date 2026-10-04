@@ -3,6 +3,7 @@ import { CandlestickSeries, ColorType, CrosshairMode, HistogramSeries, LineSerie
 import { ChartBar, ChartLevel } from "../lib/api";
 import { BandSeries } from "./BandSeries";
 import { MarkerEvent, MarkersPrimitive } from "./ChartMarkers";
+import { AnchorSpec, computeAvwap } from "../lib/avwap";
 
 // 2026-09-27 ("start with the chart") — the app's other charts
 // (StrategicAlpha's TimeSeriesChart, PortfolioAllocation's SectorDonut)
@@ -214,7 +215,24 @@ function buildMarkerEvents(bars: ChartBar[]): MarkerEvent[] {
   return ev;
 }
 
-export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY, levels }: { bars: ChartBar[]; lines?: LineVisibility; levels?: ChartLevel[] }) {
+export default function CandlestickChart({
+  bars,
+  lines = DEFAULT_LINE_VISIBILITY,
+  levels,
+  anchors,
+  pickMode = false,
+  onPick,
+}: {
+  bars: ChartBar[];
+  lines?: LineVisibility;
+  levels?: ChartLevel[];
+  anchors?: AnchorSpec[]; // optional anchored VWAPs — none unless the user switches one on
+  pickMode?: boolean; // next click on a bar sets an anchor date
+  onPick?: (date: string) => void;
+}) {
+  const pickRef = useRef({ pickMode, onPick });
+  pickRef.current = { pickMode, onPick };
+  const anchorsKey = JSON.stringify((anchors ?? []).filter((a) => a.enabled && a.date));
   const containerRef = useRef<HTMLDivElement>(null);
   // OHLC readout under the cursor (TradingView's top-left legend); the latest bar when the cursor is off the chart
   const [hoverDate, setHoverDate] = useState<string | null>(null);
@@ -369,8 +387,34 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       ]);
     }
 
+    // Anchored VWAPs (optional): the VWAP line with its SD bands, one colour per anchor
+    for (const a of (anchors ?? []).filter((x) => x.enabled && x.date)) {
+      const pts = computeAvwap(bars, a.date);
+      if (pts.length === 0) continue;
+      const line = chart.addSeries(LineSeries, { color: a.color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, crosshairMarkerVisible: false });
+      line.setData(pts.map((p) => ({ time: toUnixSeconds(p.date), value: p.vwap })));
+      for (let k = 1; k <= Math.min(3, Math.max(0, a.bands)); k++) {
+        for (const sign of [1, -1]) {
+          const band = chart.addSeries(LineSeries, {
+            color: a.color + (k === 1 ? "cc" : k === 2 ? "88" : "55"),
+            lineWidth: 1,
+            lineStyle: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => null, // a far 3-SD band must not squash the candles
+          });
+          band.setData(pts.map((p) => ({ time: toUnixSeconds(p.date), value: p.vwap + sign * k * p.sd })));
+        }
+      }
+    }
+
     candleSeries.setData(bars.map((b) => ({ time: toUnixSeconds(b.date), open: b.open, high: b.high, low: b.low, close: b.close })));
     candleSeries.attachPrimitive(new MarkersPrimitive(buildMarkerEvents(bars)));
+    chart.subscribeClick((param) => {
+      if (!pickRef.current.pickMode || typeof param.time !== "number") return;
+      pickRef.current.onPick?.(new Date(param.time * 1000).toISOString().slice(0, 10));
+    });
     chart.subscribeCrosshairMove((param) => {
       const t = param.time;
       if (typeof t !== "number" || !param.point) {
@@ -433,7 +477,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
       container.removeEventListener("wheel", onWheel);
       chart?.remove();
     };
-  }, [bars, lines, levels]);
+  }, [bars, lines, levels, anchorsKey]);
 
   const idx = hoverDate != null && byDate.has(hoverDate) ? (byDate.get(hoverDate) as number) : bars.length - 1;
   const cur = bars[idx];
@@ -444,7 +488,7 @@ export default function CandlestickChart({ bars, lines = DEFAULT_LINE_VISIBILITY
   const fmt = (n: number) => n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtVol = (v: number | null) => (v == null ? "—" : v >= 1e7 ? `${(v / 1e7).toFixed(2)} Cr` : v >= 1e5 ? `${(v / 1e5).toFixed(2)} L` : v >= 1e3 ? `${(v / 1e3).toFixed(2)} K` : String(v));
   return (
-    <div className="relative w-full h-full">
+    <div className="relative w-full h-full" style={pickMode ? { cursor: "crosshair" } : undefined}>
       <div ref={containerRef} className="w-full h-full" />
       {cur && (
         <div className="absolute top-1 left-2 z-10 pointer-events-none text-[11px] tabular-nums flex flex-wrap gap-x-3" style={{ color: "#a4a4a6" }}>

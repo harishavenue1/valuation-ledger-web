@@ -5,6 +5,7 @@ import { api, ApiError, ChartResponse } from "../lib/api";
 import CandlestickChart, { DEFAULT_LINE_VISIBILITY, LEVEL_COLORS, LineVisibility, visibleLevels } from "../components/CandlestickChart";
 import { MethodologyNote, Signed, fmtNum } from "../components/ScreenerTable";
 import { ChartSource, loadChartList, loadChartSource, saveChartSource } from "../lib/chartList";
+import { AnchorSpec, DEFAULT_ANCHORS, computeAvwap } from "../lib/avwap";
 
 // 2026-09-27 ("give controls to modify the lines, as I did on trading
 // view") — persisted the same way AllTechnicals' own column picker is
@@ -223,6 +224,39 @@ export default function PortfolioCharts() {
   const [lineVisibility, setLineVisibility] = useState<LineVisibility>(() => loadLineVisibility());
   const [linesOpen, setLinesOpen] = useState(false);
 
+  // Anchored VWAPs (optional — all three slots are OFF until switched on, and
+  // are remembered per stock because an anchor date only means something for
+  // that stock's own top/bottom/event)
+  const anchorKey = `chartAnchors:${symbol}`;
+  const [anchors, setAnchors] = useState<AnchorSpec[]>(DEFAULT_ANCHORS);
+  const [pickIdx, setPickIdx] = useState<number | null>(null);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(anchorKey);
+      setAnchors(raw ? DEFAULT_ANCHORS.map((d, i) => ({ ...d, ...(JSON.parse(raw)[i] ?? {}) })) : DEFAULT_ANCHORS);
+    } catch {
+      setAnchors(DEFAULT_ANCHORS);
+    }
+    setPickIdx(null);
+  }, [anchorKey]);
+  function updateAnchor(i: number, patch: Partial<AnchorSpec>) {
+    setAnchors((prev) => {
+      const next = prev.map((a, j) => (j === i ? { ...a, ...patch } : a));
+      try {
+        localStorage.setItem(anchorKey, JSON.stringify(next));
+      } catch {
+        // best-effort
+      }
+      return next;
+    });
+  }
+  useEffect(() => {
+    if (pickIdx == null) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPickIdx(null);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pickIdx]);
+
   useEffect(() => {
     try {
       localStorage.setItem(LINES_STORAGE_KEY, JSON.stringify(lineVisibility));
@@ -257,6 +291,12 @@ export default function PortfolioCharts() {
   }, [symbol, range, tf]);
 
   const bars = data?.bars ?? [];
+  // an anchor older than the loaded bars needs more history: widen to 5Y
+  useEffect(() => {
+    if (!bars.length || range === "5y") return;
+    const earliest = anchors.filter((a) => a.enabled && a.date).map((a) => a.date).sort()[0];
+    if (earliest && earliest < bars[0].date) setRange("5y");
+  }, [bars, anchors, range]);
   const last = bars[bars.length - 1];
   const prev = bars[bars.length - 2];
   const weekChangePct = last && prev ? ((last.close - prev.close) / prev.close) * 100 : null;
@@ -368,13 +408,47 @@ export default function PortfolioCharts() {
                 ⚙️ Chart Settings {linesOpen ? "▲" : "▼"}
               </button>
               {linesOpen && (
-                <div className="absolute right-0 top-full mt-1 z-20 w-64 p-2 border border-slate-200 rounded-lg bg-white shadow-lg">
+                <div className="absolute right-0 top-full mt-1 z-20 w-72 p-2 border border-slate-200 rounded-lg bg-white shadow-lg">
                   {LINE_TOGGLES.map((t) => (
                     <label key={t.key} className="flex items-center gap-2 text-xs py-1 px-1 cursor-pointer hover:bg-slate-50 rounded">
                       <input type="checkbox" checked={lineVisibility[t.key]} onChange={() => toggleLine(t.key)} />
                       {t.label}
                     </label>
                   ))}
+                  <div className="mt-2 pt-2 border-t border-slate-200">
+                    <div className="text-[11px] font-semibold text-slate-500 px-1 mb-1" title="Average price paid by everyone who bought since the anchor day, with standard-deviation bands. Off until you switch one on.">
+                      Anchored VWAP (optional)
+                    </div>
+                    {anchors.map((a, i) => (
+                      <div key={i} className="flex items-center gap-1 px-1 py-1 text-xs">
+                        <input type="checkbox" checked={a.enabled} onChange={(e) => updateAnchor(i, { enabled: e.target.checked })} disabled={!a.date} title={a.date ? "Show this anchored VWAP" : "Pick a date first"} />
+                        <span className="inline-block w-2 h-2 rounded-full shrink-0" style={{ background: a.color }} />
+                        <input
+                          type="date"
+                          value={a.date}
+                          onChange={(e) => updateAnchor(i, { date: e.target.value, enabled: !!e.target.value })}
+                          className="border border-slate-300 rounded px-1 py-0.5 text-[11px] w-28"
+                        />
+                        <button
+                          onClick={() => {
+                            setPickIdx(i);
+                            setLinesOpen(false);
+                          }}
+                          className="px-1.5 py-0.5 rounded border border-slate-300 hover:border-slate-400"
+                          title="Click a bar on the chart to anchor here"
+                        >
+                          📍
+                        </button>
+                        <select value={a.bands} onChange={(e) => updateAnchor(i, { bands: parseInt(e.target.value, 10) })} className="border border-slate-300 rounded px-0.5 py-0.5 text-[11px]" title="Standard-deviation bands each side">
+                          {[0, 1, 2, 3].map((n) => (
+                            <option key={n} value={n}>
+                              ±{n}σ
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -446,16 +520,44 @@ export default function PortfolioCharts() {
                 {lv.label} {fmtNum(lv.price, 2)}
               </span>
             ))}
+            {anchors.map((a, i) => {
+              if (!a.enabled || !a.date) return null;
+              const pts = computeAvwap(bars, a.date);
+              const lastPt = pts[pts.length - 1];
+              if (!lastPt) return null;
+              return (
+                <span key={`av${i}`} title={`Anchored VWAP from ${a.date} (volume-weighted average typical price since then)`}>
+                  <span className="inline-block w-2 h-0.5 mr-1 align-middle" style={{ background: a.color }} />
+                  AVWAP {a.date} {fmtNum(lastPt.vwap, 2)} ({lastPt.vwap ? ((last.close / lastPt.vwap - 1) * 100).toFixed(1) : "—"}%)
+                </span>
+              );
+            })}
             <span className="ml-auto text-slate-400">{tf === "w" ? "week of" : tf === "m" ? "month of" : "bar"} {last.date}</span>
           </div>
         )}
 
+        {pickIdx != null && (
+          <div className="text-xs px-3 py-1.5 mb-2 rounded border border-indigo-300 bg-indigo-50 text-indigo-700 shrink-0">
+            Click a bar on the chart to anchor VWAP {pickIdx + 1} there — <button onClick={() => setPickIdx(null)} className="underline">cancel</button> (or press Esc)
+          </div>
+        )}
         {loading && <div className="text-sm text-slate-400 text-center py-16 shrink-0">Loading {symbol}…</div>}
         {!loading && error && <div className="text-sm text-red-600 text-center py-16 border border-red-200 rounded-lg bg-red-50 shrink-0">{error}</div>}
         {!loading && !error && bars.length === 0 && <div className="text-sm text-slate-500 text-center py-16 border border-slate-200 rounded-lg shrink-0">No chart data for {symbol}.</div>}
         {!loading && !error && bars.length > 0 && (
           <div className="flex-1 min-h-0 border border-slate-700 rounded-lg p-2" style={{ background: "#14171f" }}>
-            <CandlestickChart bars={bars} lines={lineVisibility} levels={data?.levels} />
+            <CandlestickChart
+              bars={bars}
+              lines={lineVisibility}
+              levels={data?.levels}
+              anchors={anchors}
+              pickMode={pickIdx != null}
+              onPick={(d) => {
+                if (pickIdx == null) return;
+                updateAnchor(pickIdx, { date: d, enabled: true });
+                setPickIdx(null);
+              }}
+            />
           </div>
         )}
 
