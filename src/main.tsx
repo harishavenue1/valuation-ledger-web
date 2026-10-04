@@ -12,6 +12,16 @@ applyTheme();
 if (location.pathname.startsWith("/all-technicals")) {
   api.getBhavTechnicals().catch(() => {});
 }
+// fetch the current page's code chunk in parallel with the app shell instead of after it
+// (React.lazy would otherwise only ask for it once the shell had rendered the route)
+const PRELOAD: [string, () => Promise<unknown>][] = [
+  ["/all-technicals", () => import("./pages/AllTechnicals")],
+  ["/portfolio-charts", () => import("./pages/PortfolioCharts")],
+  ["/portfolio-allocation", () => import("./pages/PortfolioAllocation")],
+  ["/all-fundamentals", () => import("./pages/AllFundamentals")],
+  ["/momentum-screeners", () => import("./pages/MomentumScreeners")],
+];
+PRELOAD.find(([prefix]) => location.pathname.startsWith(prefix))?.[1]().catch(() => {});
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
