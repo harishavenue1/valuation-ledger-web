@@ -2946,8 +2946,12 @@ RFX_TIMEFRAMES = [("1d", 1), ("1w", 7), ("1m", 30), ("1q", 91), ("6m", 182), ("1
 # (display name, NSE's own name in the CSV, TradingView symbol, our symbol key).
 # Nifty Smallcap 250 added the same day ("also NIFTYSMLCAP250").
 RFX_NSE_INDICES = [
+    # Nifty 500 and Nifty Microcap 250 added 2026-10-04 ("under pf page add index
+    # niftyMicroCap250 and nifty500"), broad -> narrow
+    ("Nifty 500", "Nifty 500", "NSE:CNX500", "NIFTY500"),
     ("Nifty MidSmallcap 400", "Nifty MidSmallcap 400", "NSE:NIFTYMIDSML400", "NIFTYMIDSML400"),
     ("Nifty Smallcap 250", "Nifty Smallcap 250", "NSE:NIFTYSMLCAP250", "NIFTYSMLCAP250"),
+    ("Nifty Microcap 250", "Nifty Microcap 250", "NSE:NIFTY_MICROCAP250", "NIFTYMICROCAP250"),
 ]
 RFX_NSE_HISTORY_KEY = "rfx_nse_history"
 RFX_HISTORY_DAYS = 1825  # 5y, same window the ETF/currency tables' "ATH" is bounded by
@@ -3022,10 +3026,16 @@ def _rfx_nse_history_update(time_budget_s=200):
     start = today - timedelta(days=RFX_HISTORY_DAYS)
 
     always = {today, today - timedelta(days=1)}
+    # An index added to RFX_NSE_INDICES after the history was first built has no
+    # bars on the days already stored: re-fetch those days (the same daily file
+    # carries every index) until it does. A day NSE never published stays in
+    # `checked` and is not asked again.
+    wanted = {spec[1] for spec in RFX_NSE_INDICES}
+    incomplete = {k for k, v in days.items() if not wanted.issubset(v)}
     todo = []
     d = today
     while d >= start:
-        if d.weekday() < 5 and (d in always or d.isoformat() not in checked):
+        if d.weekday() < 5 and (d in always or d.isoformat() not in checked or d.isoformat() in incomplete):
             todo.append(d)
         d -= timedelta(days=1)
 
