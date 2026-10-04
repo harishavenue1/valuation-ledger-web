@@ -1323,6 +1323,137 @@ def compute_pullback_mom(df, rows):
     return out, funnel
 
 
+# ── Microcap Momentum (Techno Charts, "Microcap Swing Trading Strategy") ──────
+#
+# As described by the video's own summary (no captions to check against):
+# universe = Nifty Microcap 250; momentum score = a weighted blend of the
+# 6-month return (70%) and 1-month return (30%), adjusted for 3-month price
+# volatility; hold the top 10 equal-weight; rebalance monthly (sell what drops
+# out of the top 10, buy the new entrants). Assumptions used here: score =
+# (0.7*R6m + 0.3*R1m) / annualised volatility of daily returns over the last 63
+# sessions (all in %), R6m/R1m on calendar offsets like the other pages. The
+# month's portfolio is the top 10 on the first publish of each calendar month.
+
+MICRO = {"w6m": 0.7, "w1m": 0.3, "vol_days": 63, "top_n": 10, "show_n": 20, "min_bars": 130}
+MICRO_URLS = (
+    "https://nsearchives.nseindia.com/content/indices/ind_niftymicrocap250_list.csv",
+    "https://archives.nseindia.com/content/indices/ind_niftymicrocap250_list.csv",
+    "https://www.niftyindices.com/IndexConstituent/ind_niftymicrocap250_list.csv",
+)
+MICRO_UNIVERSE_KEY = "bhav_microcap250"
+MICRO_SNAPSHOT_KEY = "bhav_microcap_snapshot"
+
+
+def load_microcap_universe():
+    """{symbol: industry} for the Nifty Microcap 250, cached in meta for a week
+    (index reconstitutions are semi-annual). Falls back to a stale copy."""
+    conn = get_conn()
+    try:
+        cached = get_meta(conn, MICRO_UNIVERSE_KEY, None) or {}
+    finally:
+        conn.close()
+    if cached.get("symbols") and cached.get("fetched", "") >= (date.today() - timedelta(days=7)).isoformat():
+        return cached["symbols"]
+    for url in MICRO_URLS:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=20)
+            if r.status_code != 200 or "Symbol" not in r.text[:200]:
+                continue
+            sy = {x["Symbol"].strip(): x.get("Industry", "").strip() for x in csv.DictReader(io.StringIO(r.text)) if x.get("Symbol")}
+            if len(sy) >= 200:
+                conn = get_conn()
+                try:
+                    set_meta(conn, MICRO_UNIVERSE_KEY, {"fetched": date.today().isoformat(), "symbols": sy})
+                finally:
+                    conn.close()
+                return sy
+        except Exception:
+            continue
+    return cached.get("symbols") or {}
+
+
+def compute_microcap_momentum(df, rows, universe, snapshot):
+    """(rows to show, new snapshot, funnel). snapshot = last stored
+    {month, as_of, top10, entries, exits}."""
+    if df.empty or not rows or not universe:
+        return [], snapshot, {"error": "no universe" if not universe else "no data"}
+    last_date = df["date"].max()
+    month = last_date.strftime("%Y-%m")
+    by_row = {r["symbol"]: r for r in rows if r.get("as_of") == last_date.date().isoformat()}
+    funnel = {"universe": len(universe), "traded_latest_session": 0, "enough_history": 0, "scored": 0}
+    scored = []
+    syms = [s_ for s_ in universe if s_ in by_row]
+    funnel["traded_latest_session"] = len(syms)
+    sub = df[df["symbol"].isin(set(syms))]
+    for sym, g in sub.groupby("symbol", sort=False):
+        c = g["c"].to_numpy(dtype=float)
+        d = g["date"].to_numpy()
+        if len(c) < MICRO["min_bars"]:
+            continue
+        funnel["enough_history"] += 1
+        t6 = np.datetime64(pd.Timestamp(d[-1]) - pd.DateOffset(months=6))
+        j6 = int(np.searchsorted(d, t6, side="right")) - 1
+        if j6 < 0 or c[j6] <= 0:
+            continue
+        r6 = (c[-1] / c[j6] - 1) * 100
+        r1 = by_row[sym].get("monthly_pct")
+        if r1 is None:
+            continue
+        rets = np.diff(np.log(c[-(MICRO["vol_days"] + 1):]))
+        vol = float(np.std(rets, ddof=1) * np.sqrt(252) * 100) if len(rets) > 10 else 0.0
+        if not vol > 0:
+            continue
+        score = (MICRO["w6m"] * r6 + MICRO["w1m"] * r1) / vol
+        v = g["v"].to_numpy(dtype=float)
+        avg_traded = float(np.mean(c[-20:] * v[-20:]) / 1e7)
+        funnel["scored"] += 1
+        r = by_row[sym]
+        scored.append(
+            {
+                "symbol": sym,
+                "name": r.get("name") or sym,
+                "sector": universe.get(sym, ""),
+                "price": r["price"],
+                "change_pct": r.get("change_pct"),
+                "r6m": round(float(r6), 1),
+                "r1m": r1,
+                "vol3m": round(vol, 1),
+                "score": round(float(score), 2),
+                "avg_traded_cr": round(avg_traded, 2),
+                "market_cap_cr": r.get("market_cap_cr"),
+                "pct_from_52w_high": r.get("pct_from_52w_high"),
+                "as_of": r["as_of"],
+            }
+        )
+    scored.sort(key=lambda x: -x["score"])
+    for i, x in enumerate(scored, 1):
+        x["rank"] = i
+    top10 = [x["symbol"] for x in scored[: MICRO["top_n"]]]
+    snap = snapshot or {}
+    if snap.get("month") != month:  # first publish of a new month = the rebalance
+        prev = snap.get("top10") or []
+        snap = {"month": month, "as_of": last_date.date().isoformat(), "top10": top10, "entries": [t for t in top10 if t not in prev], "exits": [t for t in prev if t not in top10], "prev_top10": prev}
+    held, entries, exits = set(snap["top10"]), set(snap.get("entries") or []), set(snap.get("exits") or [])
+    out = []
+    by_sym = {x["symbol"]: x for x in scored}
+    for x in scored:
+        sym, rank = x["symbol"], x["rank"]
+        if sym in held:
+            status = "Fading" if rank > MICRO["top_n"] else ("Entry" if sym in entries else "Hold")
+        elif sym in exits:
+            status = "Exit"
+        elif rank <= MICRO["top_n"]:
+            status = "Rising"
+        else:
+            status = ""
+        x["status"] = status
+        if rank <= MICRO["show_n"] or sym in held or sym in exits:
+            out.append(x)
+    funnel["portfolio_month"] = month
+    funnel["portfolio"] = snap["top10"]
+    return out, snap, funnel
+
+
 def verify(rows, ms):
     """Compare this store's numbers with the independent Yahoo-based ones the
     app already shows for the NSE-750 (same conventions, so apples to apples).
@@ -1520,6 +1651,16 @@ def publish(budget_s=240):
         pb_rows, pb_funnel = compute_pullback_mom(df, rows)
     except Exception as e:
         pb_funnel = {"error": str(e)[:120]}
+    mc_rows, mc_funnel, mc_snap = [], {}, None
+    try:
+        conn = get_conn()
+        try:
+            prev_snap = get_meta(conn, MICRO_SNAPSHOT_KEY, None)
+        finally:
+            conn.close()
+        mc_rows, mc_snap, mc_funnel = compute_microcap_momentum(df, rows, load_microcap_universe(), prev_snap)
+    except Exception as e:
+        mc_funnel = {"error": str(e)[:120]}
     ok, stats = verify(rows, ms)
     payload = {
         "ok": bool(ok),
@@ -1535,12 +1676,15 @@ def publish(budget_s=240):
         if ok and ath_levels:
             set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
         if ok:
+            if mc_snap:
+                set_meta(conn, MICRO_SNAPSHOT_KEY, mc_snap)
+                set_meta(conn, "bhav_scan_microcap", {"as_of": stats.get("latest_trade_date"), "rows": mc_rows, "funnel": mc_funnel, "snapshot": mc_snap, "params": MICRO})
             set_meta(conn, "bhav_scan_pullback", {"as_of": stats.get("latest_trade_date"), "rows": pb_rows, "funnel": pb_funnel, "filters": PB})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}, {"item": "microcap momentum rows / funnel", "value": f"{len(mc_rows)} / {mc_funnel}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():

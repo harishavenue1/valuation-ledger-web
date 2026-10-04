@@ -66,6 +66,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "fourPctScan", label: "4% Scan", emoji: "⚡" },
   { key: "gapHold", label: "Gap-Up Hold", emoji: "🪂" },
   { key: "pullBackMom", label: "Pullback Momentum", emoji: "🎣" },
+  { key: "microcapMom", label: "Microcap Momentum", emoji: "🧲" },
 ];
 
 export default function MomentumScreeners() {
@@ -343,6 +344,29 @@ export default function MomentumScreeners() {
       { key: "score", label: "Score" },
       { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
+    microcapMom: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      {
+        key: "status",
+        label: "This month",
+        render: (r) => {
+          const cls: Record<string, string> = { Entry: "text-emerald-600 font-semibold", Hold: "text-emerald-600", Rising: "text-indigo-600", Fading: "text-amber-600", Exit: "text-red-600 font-semibold" };
+          return r.status ? <span className={cls[r.status] ?? ""}>{r.status}</span> : <span className="text-slate-300">—</span>;
+        },
+      },
+      { key: "score", label: "Score", render: (r) => <span className="font-semibold">{fmtNum(r.score, 2)}</span> },
+      { key: "r6m", label: "6M %", render: (r) => <Signed v={r.r6m} digits={1} /> },
+      { key: "r1m", label: "1M %", render: (r) => <Signed v={r.r1m} digits={1} /> },
+      { key: "vol3m", label: "3M Volatility %", render: (r) => fmtNum(r.vol3m, 1) },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "change_pct", label: "Day Chg %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "avg_traded_cr", label: "Avg Traded (₹ Cr, 20D)", render: (r) => fmtNum(r.avg_traded_cr, 2) },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+    ],
     pullBackMom: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -615,6 +639,20 @@ export default function MomentumScreeners() {
         on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
         than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
         ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
+      </>
+    ),
+    microcapMom: (
+      <>
+        The microcap momentum strategy from Techno Charts' "Microcap Swing Trading Strategy" video, as its description lays it out (the video has
+        no captions, so the formula below is my reading of that summary, not a transcript): universe = the <b>Nifty Microcap 250</b>; score = a
+        blend of the <b>6-month return (70%)</b> and <b>1-month return (30%)</b>, <b>adjusted for 3-month volatility</b> — computed here as{" "}
+        <code>(0.7 × 6M% + 0.3 × 1M%) ÷ annualised volatility of daily returns over the last 63 sessions</code>; hold the <b>top 10</b>
+        equal-weight; <b>rebalance monthly</b> — sell what falls out of the top 10, buy the new entrants. The month's portfolio is the top 10 on
+        the first evening of each calendar month (the first one was taken the day this tab went live); <b>This month</b> shows where each
+        stock stands against it: <b>Entry</b> (bought at this month's rebalance), <b>Hold</b>, <b>Fading</b> (held, but now outside the top 10 —
+        it stays until the next rebalance), <b>Rising</b> (top 10 now, not in the portfolio — would enter next rebalance), <b>Exit</b> (sold at
+        this month's rebalance). Top 20 by score plus every portfolio name and this month's exits are shown. No liquidity filter is applied
+        (the video's rule has none) — check <b>Avg Traded</b>: microcaps can be hard to enter and exit at size. A ranking, not advice.
       </>
     ),
     pullBackMom: (

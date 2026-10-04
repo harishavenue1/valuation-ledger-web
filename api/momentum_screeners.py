@@ -3284,6 +3284,21 @@ def _run_bhav_use_yahoo(symbols, name_map, sector_map):
     return _set_price_source("yahoo")
 
 
+def _run_microcap_mom(symbols, name_map, sector_map):
+    """The "Microcap Momentum" tab (Techno Charts strategy): reads what
+    bhavTechnicals computed for the latest session (api/_bhav.py
+    compute_microcap_momentum) over the Nifty Microcap 250."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_microcap", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the microcap ranking has not been published yet (bhavTechnicals computes it each evening)"
+    funnel = scan.get("funnel") or {}
+    return {"label": "Microcap Momentum", "push_rows": scan.get("rows") or [], "scanned": funnel.get("scored", 0), "skipped": 0, "as_of": scan.get("as_of"), "portfolio_month": funnel.get("portfolio_month")}, None
+
+
 def _run_pullback_mom(symbols, name_map, sector_map):
     """The "Pullback Momentum" tab (@cmagurvinder): reads what bhavTechnicals
     computed for the latest session (api/_bhav.py compute_pullback_mom)."""
@@ -6342,6 +6357,7 @@ SCREENER_RUNNERS = {
     "fourPctScan": _run_four_pct_scan,
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
+    "microcapMom": _run_microcap_mom,
     "bhavUseStore": _run_bhav_use_store,
     "bhavAth": _run_bhav_ath,
     "bhavUseYahoo": _run_bhav_use_yahoo,

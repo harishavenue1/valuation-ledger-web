@@ -42,6 +42,7 @@ const CLOUD_SCREENERS = new Set([
   "fourPctScan",
   "gapHold",
   "pullBackMom",
+  "microcapMom",
   "technicalSummary",
   "globalCountryEtfs",
   "globalCurrencies",
