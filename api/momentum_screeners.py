@@ -3284,6 +3284,21 @@ def _run_bhav_use_yahoo(symbols, name_map, sector_map):
     return _set_price_source("yahoo")
 
 
+def _run_pullback_mom(symbols, name_map, sector_map):
+    """The "Pullback Momentum" tab (@cmagurvinder): reads what bhavTechnicals
+    computed for the latest session (api/_bhav.py compute_pullback_mom)."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_pullback", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the pullback scan has not been published yet (bhavTechnicals computes it each evening)"
+    rows = [{**r, "sector": sector_map.get(r["symbol"], "")} for r in (scan.get("rows") or [])]
+    funnel = scan.get("funnel") or {}
+    return {"label": "Pullback Momentum", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
+
+
 def _run_gap_hold(symbols, name_map, sector_map):
     """The "Gap-Up Hold" tab (@FibTraderR): reads what bhavTechnicals computed
     for the latest session (api/_bhav.py compute_gap_hold) — all NSE stocks."""
@@ -6326,6 +6341,7 @@ SCREENER_RUNNERS = {
     "bhavDiff": _run_bhav_diff,
     "fourPctScan": _run_four_pct_scan,
     "gapHold": _run_gap_hold,
+    "pullBackMom": _run_pullback_mom,
     "bhavUseStore": _run_bhav_use_store,
     "bhavAth": _run_bhav_ath,
     "bhavUseYahoo": _run_bhav_use_yahoo,

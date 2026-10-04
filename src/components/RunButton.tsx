@@ -41,6 +41,7 @@ const CLOUD_SCREENERS = new Set([
   "volumeRockers",
   "fourPctScan",
   "gapHold",
+  "pullBackMom",
   "technicalSummary",
   "globalCountryEtfs",
   "globalCurrencies",

@@ -1223,6 +1223,106 @@ def compute_gap_hold(df, rows):
     return out, funnel
 
 
+# ── "Momentum Pullback Scan" (CMA Gurvinder Malhotra @cmagurvinder, 2026-10-04) ──
+#
+# Key filters as printed in his infographic: Market Cap > Rs1,000 Cr; Close > the
+# close 1 month ago; Avg volume (63 days) > Avg volume (252 days); recent
+# contraction in volume; Close > 10 EMA; 10 EMA > 20 EMA; 20 EMA > 50 EMA; price
+# closed higher than 1 day ago; pullback towards the 10 EMA. "Recent contraction"
+# and "towards" have no numbers in the post, so: the last 5 sessions' average
+# volume is below the last 20's, and the close is within 3% above the 10 EMA.
+# EMAs on OHLC4 and compared with the close (this account's convention). Helper
+# columns for his entry/risk notes: trigger = highest high of the last 5 sessions
+# ("break above pullback high"), stop = lower of the last-5-session low and the
+# 10 EMA ("below recent swing low or 10 EMA, whichever is lower").
+
+PB = {"min_mcap_cr": 1000, "max_above_ema10_pct": 3.0, "vol_fast": 63, "vol_slow": 252, "vol_short": 5, "vol_mid": 20}
+
+
+def compute_pullback_mom(df, rows):
+    if df.empty or not rows:
+        return [], {}
+    last_date = df["date"].max()
+    need = PB["vol_slow"]
+    funnel = {"universe": 0, "mcap_1000cr": 0, "month_up_day_up": 0, "ema_stack": 0, "near_10ema": 0, "vol_trend": 0, "vol_contraction": 0}
+    cand = []
+    for r in rows:
+        if r.get("as_of") != last_date.date().isoformat():
+            continue
+        funnel["universe"] += 1
+        mc = r.get("market_cap_cr")
+        if mc is None or not mc > PB["min_mcap_cr"]:
+            continue
+        funnel["mcap_1000cr"] += 1
+        m1, ch = r.get("monthly_pct"), r.get("change_pct")
+        if m1 is None or ch is None or not (m1 > 0 and ch > 0):
+            continue
+        funnel["month_up_day_up"] += 1
+        p20, p50 = r.get("pct_20d_ema"), r.get("pct_50d_ema")
+        if p20 is None or p50 is None:
+            continue
+        cand.append(r)
+    if not cand:
+        return [], funnel
+    syms = {r["symbol"] for r in cand}
+    tail = df[df["symbol"].isin(syms)].groupby("symbol", sort=False).tail(need + 5)
+    by_sym = {sym: g for sym, g in tail.groupby("symbol", sort=False)}
+    out = []
+    for r in cand:
+        g = by_sym.get(r["symbol"])
+        if g is None or len(g) < need:
+            continue
+        o, h, l, c, v = (g[k].to_numpy(dtype=float) for k in ("o", "h", "l", "c", "v"))
+        price = float(c[-1])
+        ema10 = float(pd.Series((o + h + l + c) / 4).ewm(span=10, adjust=False).mean().iloc[-1])
+        ema20 = price / (1 + r["pct_20d_ema"] / 100)
+        ema50 = price / (1 + r["pct_50d_ema"] / 100)
+        if not (price > ema10 > ema20 > ema50):
+            continue
+        funnel["ema_stack"] += 1
+        above10 = (price / ema10 - 1) * 100
+        if not above10 <= PB["max_above_ema10_pct"]:
+            continue
+        funnel["near_10ema"] += 1
+        v63, v252 = float(np.mean(v[-PB["vol_fast"]:])), float(np.mean(v[-PB["vol_slow"]:]))
+        if not v63 > v252 > 0:
+            continue
+        funnel["vol_trend"] += 1
+        v5, v20 = float(np.mean(v[-PB["vol_short"]:])), float(np.mean(v[-PB["vol_mid"]:]))
+        if not 0 < v5 < v20:
+            continue
+        funnel["vol_contraction"] += 1
+        hi10 = float(np.max(h[-10:]))
+        trigger = float(np.max(h[-5:]))
+        stop = min(float(np.min(l[-5:])), ema10)
+        out.append(
+            {
+                "symbol": r["symbol"],
+                "name": r.get("name") or r["symbol"],
+                "price": round(price, 2),
+                "change_pct": r.get("change_pct"),
+                "monthly_pct": r.get("monthly_pct"),
+                "ema10": round(ema10, 2),
+                "pct_vs_10ema": round(above10, 1),
+                "pct_vs_20ema": r["pct_20d_ema"],
+                "pct_vs_50ema": r["pct_50d_ema"],
+                "vol63_x_252": round(v63 / v252, 2),
+                "vol5_x_20": round(v5 / v20, 2),
+                "off_10d_high_pct": round((price / hi10 - 1) * 100, 1),
+                "trigger_price": round(trigger, 2),
+                "stop_price": round(stop, 2),
+                "risk_pct": round((price - stop) / price * 100, 1),
+                "market_cap_cr": r.get("market_cap_cr"),
+                "pct_from_52w_high": r.get("pct_from_52w_high"),
+                "as_of": r["as_of"],
+            }
+        )
+    out.sort(key=lambda x: -x["monthly_pct"])
+    for i, x in enumerate(out, 1):
+        x["rank"] = i
+    return out, funnel
+
+
 def verify(rows, ms):
     """Compare this store's numbers with the independent Yahoo-based ones the
     app already shows for the NSE-750 (same conventions, so apples to apples).
@@ -1415,6 +1515,11 @@ def publish(budget_s=240):
         gap_rows, gap_funnel = compute_gap_hold(df, rows)
     except Exception as e:
         gap_funnel = {"error": str(e)[:120]}
+    pb_rows, pb_funnel = [], {}
+    try:
+        pb_rows, pb_funnel = compute_pullback_mom(df, rows)
+    except Exception as e:
+        pb_funnel = {"error": str(e)[:120]}
     ok, stats = verify(rows, ms)
     payload = {
         "ok": bool(ok),
@@ -1430,11 +1535,12 @@ def publish(budget_s=240):
         if ok and ath_levels:
             set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
         if ok:
+            set_meta(conn, "bhav_scan_pullback", {"as_of": stats.get("latest_trade_date"), "rows": pb_rows, "funnel": pb_funnel, "filters": PB})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():

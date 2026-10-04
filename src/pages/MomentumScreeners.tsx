@@ -65,6 +65,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "volumeRockers", label: "Volume Rockers", emoji: "🚨" },
   { key: "fourPctScan", label: "4% Scan", emoji: "⚡" },
   { key: "gapHold", label: "Gap-Up Hold", emoji: "🪂" },
+  { key: "pullBackMom", label: "Pullback Momentum", emoji: "🎣" },
 ];
 
 export default function MomentumScreeners() {
@@ -342,6 +343,26 @@ export default function MomentumScreeners() {
       { key: "score", label: "Score" },
       { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
+    pullBackMom: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "change_pct", label: "Day Chg %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "monthly_pct", label: "1M %", render: (r) => <Signed v={r.monthly_pct} digits={1} /> },
+      { key: "pct_vs_10ema", label: "% vs 10 EMA", render: (r) => <Signed v={r.pct_vs_10ema} digits={1} /> },
+      { key: "pct_vs_20ema", label: "% vs 20 EMA", render: (r) => <Signed v={r.pct_vs_20ema} digits={1} /> },
+      { key: "pct_vs_50ema", label: "% vs 50 EMA", render: (r) => <Signed v={r.pct_vs_50ema} digits={1} /> },
+      { key: "vol63_x_252", label: "Vol 63D ÷ 252D", render: (r) => `${fmtNum(r.vol63_x_252, 2)}×` },
+      { key: "vol5_x_20", label: "Vol 5D ÷ 20D", render: (r) => `${fmtNum(r.vol5_x_20, 2)}×` },
+      { key: "off_10d_high_pct", label: "Off 10D High %", render: (r) => <Signed v={r.off_10d_high_pct} digits={1} /> },
+      { key: "trigger_price", label: "Trigger (5D high)", render: (r) => fmtNum(r.trigger_price) },
+      { key: "stop_price", label: "Stop", render: (r) => fmtNum(r.stop_price) },
+      { key: "risk_pct", label: "Risk %", render: (r) => fmtNum(r.risk_pct, 1) },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+    ],
     gapHold: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -594,6 +615,19 @@ export default function MomentumScreeners() {
         on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
         than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
         ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
+      </>
+    ),
+    pullBackMom: (
+      <>
+        The <b>Momentum Pullback Scan</b> from CMA Gurvinder Malhotra (@cmagurvinder, 4 Oct 2026): strong stocks taking a healthy pullback inside
+        an established uptrend. His infographic's filters, over <b>every NSE stock</b> in our daily store: market cap above <b>₹1,000 Cr</b>;
+        close above the close <b>1 month ago</b>; <b>63-day average volume above the 252-day</b>; <b>recent volume contraction</b>; close
+        above the <b>10 EMA</b>; <b>10 EMA &gt; 20 EMA &gt; 50 EMA</b>; closed higher than the day before; <b>pullback towards the 10 EMA</b>.
+        His post gives no numbers for two of them, so: "recent contraction" = the last 5 sessions' average volume is below the last 20's, and
+        "towards the 10 EMA" = the close is within 3% above it. EMAs on OHLC4, compared with the close. <b>Trigger</b> = the last 5 sessions'
+        high (his "break above the pullback high" entry confirmation, which he wants on volume, on the daily chart) and <b>Stop</b> = the lower
+        of the last-5-session low and the 10 EMA (his "below recent swing low or 10 EMA, whichever is lower"); <b>Risk %</b> is price to stop.
+        Those three are helper columns, not part of the scan. Ranked by 1-month gain. Educational — not advice.
       </>
     ),
     gapHold: (
