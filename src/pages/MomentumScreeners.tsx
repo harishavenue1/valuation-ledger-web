@@ -64,6 +64,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "smeMomentum", label: "SME Momentum", emoji: "🌱" },
   { key: "volumeRockers", label: "Volume Rockers", emoji: "🚨" },
   { key: "fourPctScan", label: "4% Scan", emoji: "⚡" },
+  { key: "gapHold", label: "Gap-Up Hold", emoji: "🪂" },
 ];
 
 export default function MomentumScreeners() {
@@ -341,6 +342,25 @@ export default function MomentumScreeners() {
       { key: "score", label: "Score" },
       { key: "verdict", label: "Verdict", render: (r) => <VirajVerdict v={r.verdict} /> },
     ],
+    gapHold: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "change_pct", label: "Day Chg %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "gap_date", label: "Gap Day" },
+      { key: "gap_pct", label: "Gap %", render: (r) => <Signed v={r.gap_pct} digits={1} /> },
+      { key: "gap_zone_low", label: "Gap Zone (₹)", render: (r) => `${fmtNum(r.gap_zone_low, 1)} → ${fmtNum(r.gap_open, 1)}` },
+      { key: "sessions_held", label: "Sessions Held" },
+      { key: "pct_above_gap", label: "% Above Gap Zone", render: (r) => <Signed v={r.pct_above_gap} digits={1} /> },
+      { key: "gap_day_vol_x", label: "Gap-Day Vol ×", render: (r) => (r.gap_day_vol_x == null ? "—" : `${fmtNum(r.gap_day_vol_x, 1)}×`) },
+      { key: "pct_50d_ema", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_50d_ema} digits={1} /> },
+      { key: "pct_200d_ema", label: "% vs 200D EMA", render: (r) => <Signed v={r.pct_200d_ema} digits={1} /> },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "traded_value_cr", label: "Traded Value (₹ Cr)", render: (r) => fmtNum(r.traded_value_cr, 1) },
+    ],
     fourPctScan: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -574,6 +594,20 @@ export default function MomentumScreeners() {
         on Yahoo Finance under their NSE ticker at all (the rest show "—" for C1-C3). A stock missing all of it shows <b>"NO DATA"</b> rather
         than a misleading score. <b>Mkt Cap / ₹ Off High</b> are new context columns — market cap from Screener.in (same ~77% coverage), and
         ₹ Off High is the rupee gap to the 52-week high (year_high − close), alongside the existing % Off High.
+      </>
+    ),
+    gapHold: (
+      <>
+        The <b>Gap-Up Hold</b> setup from @FibTraderR (4 Oct 2026): <i>"When a stock creates a gap-up, sustains that gap for 4 to 5 trading
+        sessions, and the overall trend supports the move, it can signal strong buying interest and the potential beginning of a major
+        rally"</i> (his examples: Morepen Labs, CG Power, Adani Green). The post gives no numbers, so these are the defaults used here, over{" "}
+        <b>every NSE stock</b> in our daily store: <b>Gap</b> = the day's open is at least <b>2%</b> above the previous day's <b>high</b> (a
+        real gap, not just a gain). <b>Held</b> = since the gap day, no session's low has traded back down into the gap (every low stays above
+        that previous high), and the gap day was <b>4 or 5 sessions ago</b>. <b>Trend supports</b> = close above both the 50-day and 200-day
+        EMA (OHLC4). Liquidity floor: price above ₹10 and traded value ≥ ₹1 Cr. <b>Gap Zone</b> is previous high → gap-day open; the
+        <b>% Above Gap Zone</b> column is how far price sits above the bottom of the gap (a small number = close to filling it). Gap-Day Vol ×
+        is the gap day's volume vs its prior 20 sessions. Ranked by gap size. Thresholds are constants in api/_bhav.py (GAP) — easy to widen
+        (e.g. 1–8 sessions held, a 1% minimum gap).
       </>
     ),
     fourPctScan: (

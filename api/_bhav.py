@@ -1131,6 +1131,98 @@ def compute_four_pct_scan(df, rows):
     return out, funnel
 
 
+# ── "Gap-Up Hold" (@FibTraderR, 2026-10-04) ──────────────────────────────────
+#
+# "When a stock creates a gap-up, sustains that gap for 4 to 5 trading sessions,
+# and the overall trend supports the move, it can signal strong buying interest
+# and the potential beginning of a major rally" (examples: Morepen Labs, CG
+# Power, Adani Green). The tweet gives no numbers, so these are explicit,
+# adjustable defaults: a GAP is the day's open above the previous day's HIGH by
+# at least GAP["min_gap_pct"]; it is SUSTAINED while no session since (the gap
+# day included) trades down into the gap, i.e. every low stays above that
+# previous high; it must have held for GAP["sessions"] sessions after the gap
+# day; the TREND supports it when the close is above the 50D and 200D EMA (OHLC4,
+# this account's convention); and a small liquidity floor keeps out untradeable
+# names.
+
+GAP = {"min_gap_pct": 2.0, "sessions": (4, 5), "min_price": 10.0, "min_traded_cr": 1.0}
+
+
+def compute_gap_hold(df, rows):
+    """[matching rows], funnel counts. df = adjusted daily bars, rows = the
+    published technicals (latest bar, EMA distances, market cap...)."""
+    if df.empty or not rows:
+        return [], {}
+    last_date = df["date"].max()
+    need = max(GAP["sessions"]) + 2
+    tail = df.groupby("symbol", sort=False).tail(need + 20)  # +20 for the gap-day volume baseline
+    by_sym = {sym: g for sym, g in tail.groupby("symbol", sort=False)}
+    funnel = {"universe": 0, "gap_in_window": 0, "gap_held": 0, "trend_ok": 0, "liquid": 0}
+    out = []
+    for r in rows:
+        if r.get("as_of") != last_date.date().isoformat():
+            continue
+        funnel["universe"] += 1
+        g = by_sym.get(r["symbol"])
+        if g is None or len(g) < need:
+            continue
+        o, h, l, c, v = (g[k].to_numpy(dtype=float) for k in ("o", "h", "l", "c", "v"))
+        dts = g["date"].dt.date.astype(str).to_numpy()
+        n = len(g)
+        best = None
+        for k in GAP["sessions"]:  # gap day is k sessions before the latest bar
+            gi = n - 1 - k
+            if gi < 1 or not h[gi - 1] > 0:
+                continue
+            gap_pct = (o[gi] / h[gi - 1] - 1) * 100
+            if gap_pct < GAP["min_gap_pct"]:
+                continue
+            funnel["gap_in_window"] += 1
+            if not float(np.min(l[gi:])) > h[gi - 1]:
+                continue  # the gap got filled
+            if best is None or gap_pct > best[1]:
+                best = (gi, gap_pct, k)
+        if best is None:
+            continue
+        funnel["gap_held"] += 1
+        gi, gap_pct, k = best
+        p50, p200 = r.get("pct_50d_ema"), r.get("pct_200d_ema")
+        if p50 is None or p200 is None or not (p50 > 0 and p200 > 0):
+            continue
+        funnel["trend_ok"] += 1
+        price = r["price"]
+        traded = price * v[-1] / 1e7
+        if not (price > GAP["min_price"] and traded >= GAP["min_traded_cr"]):
+            continue
+        funnel["liquid"] += 1
+        base = v[max(0, gi - 20):gi]
+        out.append(
+            {
+                "symbol": r["symbol"],
+                "name": r.get("name") or r["symbol"],
+                "price": price,
+                "change_pct": r.get("change_pct"),
+                "gap_date": dts[gi],
+                "gap_pct": round(float(gap_pct), 1),
+                "gap_zone_low": round(float(h[gi - 1]), 2),
+                "gap_open": round(float(o[gi]), 2),
+                "sessions_held": k,
+                "pct_above_gap": round(float((price / h[gi - 1] - 1) * 100), 1),
+                "gap_day_vol_x": round(float(v[gi] / base.mean()), 1) if len(base) >= 5 and base.mean() > 0 else None,
+                "pct_50d_ema": p50,
+                "pct_200d_ema": p200,
+                "pct_from_52w_high": r.get("pct_from_52w_high"),
+                "market_cap_cr": r.get("market_cap_cr"),
+                "traded_value_cr": round(float(traded), 1),
+                "as_of": r["as_of"],
+            }
+        )
+    out.sort(key=lambda x: -x["gap_pct"])
+    for i, x in enumerate(out, 1):
+        x["rank"] = i
+    return out, funnel
+
+
 def verify(rows, ms):
     """Compare this store's numbers with the independent Yahoo-based ones the
     app already shows for the NSE-750 (same conventions, so apples to apples).
@@ -1318,6 +1410,11 @@ def publish(budget_s=240):
         scan_rows, scan_funnel = compute_four_pct_scan(df, rows)
     except Exception as e:  # the scan must never block the page's own publish
         scan_funnel = {"error": str(e)[:120]}
+    gap_rows, gap_funnel = [], {}
+    try:
+        gap_rows, gap_funnel = compute_gap_hold(df, rows)
+    except Exception as e:
+        gap_funnel = {"error": str(e)[:120]}
     ok, stats = verify(rows, ms)
     payload = {
         "ok": bool(ok),
@@ -1333,10 +1430,11 @@ def publish(budget_s=240):
         if ok and ath_levels:
             set_meta(conn, "bhav_ath_levels", {"as_of": stats.get("latest_trade_date"), "levels": ath_levels})
         if ok:
+            set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():
