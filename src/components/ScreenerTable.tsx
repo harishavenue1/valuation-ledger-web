@@ -191,6 +191,8 @@ export interface WatchlistControl {
   toggle: (symbol: string) => void;
 }
 
+const PAGE_ROWS = 150;
+
 export function GenericTable({
   rows,
   cols,
@@ -228,6 +230,14 @@ export function GenericTable({
   const [sector, setSector] = useState(initialSector ?? "All");
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  // Progressive rendering (2026-10-04, "look more into performance"): All
+  // Technicals has ~3,400 rows x ~12 columns = 84K DOM nodes, and ticking one
+  // filter re-rendered all of it (tens of seconds, tab frozen). Only the first
+  // PAGE_ROWS are in the DOM; more are added as the table is scrolled near its
+  // bottom, and a new filter/sort starts from the top again. Small tables
+  // (under PAGE_ROWS) behave exactly as before. Sorting, filtering and the
+  // "N shown" count still work on the full list.
+  const [visibleCount, setVisibleCount] = useState(PAGE_ROWS);
 
   // Auto-detected — only screeners whose rows carry a sector field
   // (all of them do, as of 2026-08-23) show this filter at all.
@@ -269,6 +279,9 @@ export function GenericTable({
   useEffect(() => {
     onSortedRows?.(sorted);
   }, [sorted, onSortedRows]);
+  useEffect(() => {
+    setVisibleCount(PAGE_ROWS);
+  }, [sorted]);
 
   // 2026-09-20 ("also columns must be equidistant") — previously only
   // switched to fixed/equal-width mode when EVERY column explicitly
@@ -324,7 +337,13 @@ export function GenericTable({
           the browser as the sticky positioning containing block and
           overlaps the first row instead of sticking to the page
           (verified live 2026-08-23 before landing the original fix). */}
-      <div className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200">
+      <div
+        className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200"
+        onScroll={(e) => {
+          const el = e.currentTarget;
+          if (visibleCount < sorted.length && el.scrollTop + el.clientHeight > el.scrollHeight - 600) setVisibleCount((n) => Math.min(sorted.length, n + PAGE_ROWS));
+        }}
+      >
         <table className="w-full text-sm border-collapse" style={{ tableLayout: "fixed" }}>
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
@@ -361,7 +380,7 @@ export function GenericTable({
               // bug again. Purely a React reconciliation identity, never
               // rendered, so this changes no visible behavior.
               const seenKeys = new Map<string, number>();
-              return sorted.map((r, i) => {
+              return sorted.slice(0, visibleCount).map((r, i) => {
               const sym = String(r.symbol ?? i);
               // Symbol alone isn't a safe React key here: sectorStockAlpha
               // (Stocks vs Sector) legitimately pushes the same stock
@@ -430,6 +449,18 @@ export function GenericTable({
             })()}
           </tbody>
         </table>
+        {visibleCount < sorted.length && (
+          <div className="text-center text-xs text-slate-500 py-2 border-t border-slate-100">
+            Showing {visibleCount} of {sorted.length} —{" "}
+            <button onClick={() => setVisibleCount((n) => Math.min(sorted.length, n + PAGE_ROWS * 4))} className="text-indigo-600 hover:underline">
+              show more
+            </button>{" "}
+            ·{" "}
+            <button onClick={() => setVisibleCount(sorted.length)} className="text-indigo-600 hover:underline">
+              show all (slow)
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

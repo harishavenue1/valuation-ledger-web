@@ -320,6 +320,8 @@ async function req(path: string, opts: RequestInit = {}) {
 
 export { ApiError };
 
+let bhavCache: { at: number; p: Promise<any> } | null = null;
+
 export const api = {
   login: (password: string) => req("/api/login", { method: "POST", body: JSON.stringify({ password }) }),
   logout: () => req("/api/login", { method: "DELETE" }),
@@ -332,7 +334,19 @@ export const api = {
   // 2026-10-02 — all-stocks technicals from the NSE bhavcopy store (see
   // api/_bhav.py). {ok, as_of, rows}; ok=false (or rows empty) means "use the
   // existing Yahoo-based NSE-750 universe" — All Technicals falls back on it.
-  getBhavTechnicals: (): Promise<{ ok: boolean; as_of?: string; reason?: string; rows: any[] }> => req("/api/momentum_screeners?bhav_technicals=1"),
+  // one shared in-flight/recent request: main.tsx starts it before the app has even
+  // finished loading its bundle, and the All Technicals page then reuses it
+  getBhavTechnicals: (): Promise<{ ok: boolean; as_of?: string; reason?: string; rows: any[] }> => {
+    const now = Date.now();
+    if (!bhavCache || now - bhavCache.at > 60_000) {
+      const p: Promise<any> = req("/api/momentum_screeners?bhav_technicals=1");
+      bhavCache = { at: now, p };
+      p.catch(() => {
+        if (bhavCache && bhavCache.p === p) bhavCache = null;
+      });
+    }
+    return bhavCache.p;
+  },
 
   getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
     req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),

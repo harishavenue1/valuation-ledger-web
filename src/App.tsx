@@ -1,33 +1,33 @@
-import { useEffect, useState, createContext, useContext } from "react";
+import { Suspense, lazy, useEffect, useState, createContext, useContext } from "react";
 import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
 import { api, ApiError, Bundle } from "./lib/api";
 import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
 import Summary from "./pages/Summary";
-import Companies from "./pages/Companies";
-import Detail from "./pages/Detail";
-import GuidanceTracker from "./pages/GuidanceTracker";
-import VirajScreen from "./pages/VirajScreen";
-import MomentumScreeners from "./pages/MomentumScreeners";
-import TechnicalSummary from "./pages/TechnicalSummary";
-import AllTechnicals from "./pages/AllTechnicals";
-import AllFundamentals from "./pages/AllFundamentals";
-import FixedAssetChange from "./pages/FixedAssetChange";
-import PortfolioAllocation from "./pages/PortfolioAllocation";
-import PortfolioPerformance from "./pages/PortfolioPerformance";
-import GlobalMacro from "./pages/GlobalMacro";
-import FIITrend from "./pages/FIITrend";
-import SectorDirectory from "./pages/SectorDirectory";
-import PortfolioCharts from "./pages/PortfolioCharts";
-import StrategicAlpha from "./pages/StrategicAlpha";
-import Top100UsStocks from "./pages/Top100UsStocks";
-import ReverseDCF from "./pages/ReverseDCF";
-import ReverseDCFScan from "./pages/ReverseDCFScan";
-import MTFCalculator from "./pages/MTFCalculator";
-import TurtleWealth from "./pages/TurtleWealth";
-import Watchlist from "./pages/Watchlist";
-import Guide from "./pages/Guide";
-import Settings from "./pages/Settings";
+const Companies = lazy(() => import("./pages/Companies"));
+const Detail = lazy(() => import("./pages/Detail"));
+const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
+const VirajScreen = lazy(() => import("./pages/VirajScreen"));
+const MomentumScreeners = lazy(() => import("./pages/MomentumScreeners"));
+const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
+const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
+const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
+const FixedAssetChange = lazy(() => import("./pages/FixedAssetChange"));
+const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
+const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
+const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
+const FIITrend = lazy(() => import("./pages/FIITrend"));
+const SectorDirectory = lazy(() => import("./pages/SectorDirectory"));
+const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
+const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
+const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
+const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
+const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
+const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
+const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
+const Watchlist = lazy(() => import("./pages/Watchlist"));
+const Guide = lazy(() => import("./pages/Guide"));
+const Settings = lazy(() => import("./pages/Settings"));
 
 // Status of an in-flight/last "Run now" click for a cloud screener
 // (see RunButton.tsx's CloudRunButton). Lives here rather than as
@@ -276,6 +276,8 @@ export default function App() {
           </div>
         </header>
         <main className="flex-1 max-w-[2000px] w-full mx-auto px-4 py-6">
+          {/* every page except the landing one is its own chunk (2026-10-04): the first load no longer pays for the charting library, the 20+ other pages... */}
+          <Suspense fallback={<div className="text-sm text-slate-400 text-center py-16">Loading…</div>}>
           <Routes>
             <Route path="/" element={<Summary />} />
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
@@ -304,6 +306,7 @@ export default function App() {
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </Ctx.Provider>
