@@ -4865,7 +4865,7 @@ def _nse750t_fetch_weekly_bars(yahoo_ticker):
     same shape as PortfolioAllocation's own _fetch_weekly_bars."""
     try:
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
-                          params={"range": "5y", "interval": interval}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                          params={"range": "5y", "interval": "1wk"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         result = r.json()["chart"]["result"]
         if not result:
             return None
@@ -4955,6 +4955,67 @@ def _fetch_nse750_technicals_one(symbol):
     out["pct_200d_ema"] = _nse750t_ema_pct_distance(daily_ohlc4, NSE750T_EMA200D_PERIOD, current_price)
 
     return out
+
+
+def _run_nse750_tech_daily(symbols, name_map, sector_map):
+    """DAILY refresh of nse750Technicals from the Yahoo price cache (the
+    nse750PriceCache job, ~3:35 pm IST) — the page's fallback when the NSE store
+    isn't available (2026-10-08, "if NSE fails then data should at least be loaded
+    from NSE750 stocks from yfinance"). The weekly per-symbol Yahoo job below is
+    the only other writer of these rows and runs Sundays, so on its own the
+    fallback was up to six days old. Same definitions as that job (bar-count
+    1W/1M/3M/6M on weekly closes, 33W EMA on weekly OHLC4, 200D EMA on daily OHLC4,
+    52W high off weekly highs); ATH = the highest high in the 5y cache, never lower
+    than the weekly job's own ATH. Reads the cache only — no network, ~10s."""
+    cache = _price_cache_raw_data_yahoo()
+    conn = get_conn()
+    try:
+        all_screeners = get_meta(conn, "momentum_screeners", {})
+    finally:
+        conn.close()
+    existing = {r["symbol"]: r for r in all_screeners.get("nse750Technicals", {}).get("rows", [])}
+    today = date.today().isoformat()
+    updated = 0
+    for sym in symbols:
+        rows = cache.get(sym)
+        if not rows or len(rows) < 60:
+            continue
+        df = pd.DataFrame(rows, columns=["date", "o", "h", "l", "c", "v"])
+        df = df.dropna(subset=["o", "h", "l", "c"])
+        if len(df) < 60:
+            continue
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
+        price = float(df["c"].iloc[-1])
+        ohlc4_d = ((df["o"] + df["h"] + df["l"] + df["c"]) / 4).tolist()
+        wk = df.groupby(df["date"].dt.to_period("W-FRI")).agg(o=("o", "first"), h=("h", "max"), l=("l", "min"), c=("c", "last"))
+        closes, highs = wk["c"].tolist(), wk["h"].tolist()
+        ohlc4_w = ((wk["o"] + wk["h"] + wk["l"] + wk["c"]) / 4).tolist()
+        out = dict(existing.get(sym) or {})
+        out.update({"symbol": sym, "as_of": today, "price": round(price, 2)})
+        for key, back in (("pct_1w", 1), ("pct_1m", 4), ("pct_3m", 13), ("pct_6m", 26)):
+            out[key] = round((price / closes[-1 - back] - 1) * 100, 2) if len(closes) > back and closes[-1 - back] else None
+        out["pct_33w_ema"] = _nse750t_ema_pct_distance(ohlc4_w, NSE750T_EMA33W_PERIOD, price)
+        out["pct_200d_ema"] = _nse750t_ema_pct_distance(ohlc4_d, NSE750T_EMA200D_PERIOD, price)
+        h52 = max(highs[-52:])
+        ath = max(max(highs), out.get("ath_price") or 0)  # the weekly job reaches further back than this cache
+        out["ath_price"], out["high_52w_price"] = ath, h52
+        out["pct_from_ath"] = round((price / ath - 1) * 100, 2) if ath else None
+        out["pct_from_52w_high"] = round((price / h52 - 1) * 100, 2) if h52 else None
+        existing[sym] = out
+        updated += 1
+    if updated:
+        # written straight into nse750Technicals (the page's key) — the dispatcher only
+        # files this runner's own small summary under "nse750TechDaily"
+        conn = get_conn()
+        try:
+            blob = get_meta(conn, "momentum_screeners", {})
+            blob["nse750Technicals"] = {"label": "NSE 750 Technicals Cache", "as_of": today, "rows": list(existing.values())}
+            set_meta(conn, "momentum_screeners", blob)
+        finally:
+            conn.close()
+    summary = [{"item": "stocks refreshed from the Yahoo price cache", "value": updated}, {"item": "skipped (no/short history)", "value": len(symbols) - updated}]
+    return {"label": "NSE 750 Technicals daily refresh", "push_rows": summary, "scanned": updated, "skipped": len(symbols) - updated}, None
 
 
 def _run_nse750_technicals_cache(symbols, name_map, sector_map):
@@ -5365,7 +5426,7 @@ def _chart_fetch_weekly_bars(yahoo_ticker, interval="1wk"):
     discard it — they only ever needed values, not dates)."""
     try:
         r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_ticker}",
-                          params={"range": "5y", "interval": "1wk"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+                          params={"range": "5y", "interval": interval}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
         result = r.json()["chart"]["result"]
         if not result:
             return None
@@ -6397,6 +6458,7 @@ SCREENER_RUNNERS = {
     "benchmarkNse500": _run_benchmark_nse500_cache,
     "nse750Fundamentals": _run_nse750_fundamentals_cache,
     "nse750Technicals": _run_nse750_technicals_cache,
+    "nse750TechDaily": _run_nse750_tech_daily,
     "nse750PriceCache": _run_nse750_price_cache,
     "top100UsStocks": _run_top100_us_stocks,
     "countryYields": _run_country_yields,
