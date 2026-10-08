@@ -2953,6 +2953,17 @@ RFX_NSE_INDICES = [
     ("Nifty Smallcap 250", "Nifty Smallcap 250", "NSE:NIFTYSMLCAP250", "NIFTYSMLCAP250"),
     ("Nifty Microcap 250", "Nifty Microcap 250", "NSE:NIFTY_MICROCAP250", "NIFTYMICROCAP250"),
 ]
+# NSE publishes an index's daily file only after ~6 pm IST, so from the close until then the
+# NSE history is a session behind (2026-10-08: the table said "as of 2026-10-08" while showing
+# the 7 Oct closes — Smallcap 250 +0.09% when it was -2.4%). Yahoo already carries the live /
+# closing level for these four (their .NS tickers give one quote point, no history), so that
+# quote is appended as a provisional bar until NSE's official file arrives and replaces it.
+RFX_YAHOO_LIVE = {
+    "Nifty 500": "^CRSLDX",
+    "Nifty MidSmallcap 400": "NIFTYMIDSML400.NS",
+    "Nifty Smallcap 250": "NIFTYSMLCAP250.NS",
+    "Nifty Microcap 250": "NIFTY_MICROCAP250.NS",
+}
 RFX_NSE_HISTORY_KEY = "rfx_nse_history"
 RFX_HISTORY_DAYS = 1825  # 5y, same window the ETF/currency tables' "ATH" is bounded by
 
@@ -3078,6 +3089,45 @@ def _rfx_nse_history_update(time_budget_s=200):
     return days
 
 
+def _rfx_live_quote(ticker):
+    """(IST date, last price, previous close) from Yahoo's chart meta, or None."""
+    try:
+        r = requests.get(f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}", params={"range": "5d", "interval": "1d"}, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
+        res = r.json()["chart"]["result"][0]
+        m = res["meta"]
+        price, prev, ts = m.get("regularMarketPrice"), m.get("chartPreviousClose"), m.get("regularMarketTime")
+        # chartPreviousClose is the close BEFORE the 5-day range when Yahoo returns several bars
+        # (Smallcap 250: 17,655 = 3 sessions back, not yesterday's 17,918) — yesterday is the
+        # second-to-last bar then; with a single bar it is the real previous close
+        closes = [c for c in (res["indicators"]["quote"][0].get("close") or []) if c]
+        if len(closes) >= 2:
+            prev = closes[-2]
+        if not (price and prev and ts):
+            return None
+        d = (datetime.utcfromtimestamp(ts) + timedelta(hours=5, minutes=30)).date()
+        return d, float(price), float(prev)
+    except Exception:
+        return None
+
+
+def _rfx_with_live_bar(frame, nse_name):
+    """The NSE history frame, plus today's provisional bar from Yahoo when NSE's file
+    for today isn't out yet. Skipped unless Yahoo's previous close matches NSE's last
+    close (so a mismatched series can never splice in a wrong level)."""
+    ticker = RFX_YAHOO_LIVE.get(nse_name)
+    if frame is None or not ticker:
+        return frame
+    q = _rfx_live_quote(ticker)
+    if not q:
+        return frame
+    d, price, prev = q
+    last_date, last_close = frame.index[-1].date(), float(frame["Close"].iloc[-1])
+    if d <= last_date or not last_close or abs(prev / last_close - 1) > 0.005:
+        return frame
+    ext = pd.DataFrame([[price, price, price, price]], index=pd.to_datetime([d]), columns=["Open", "High", "Low", "Close"])
+    return pd.concat([frame, ext])
+
+
 def _rfx_nse_frame(days, nse_name):
     """The stored daily bars for one NSE index as an Open/High/Low/Close
     DataFrame (DatetimeIndex), the same shape _gxc_fetch_history returns."""
@@ -3187,7 +3237,7 @@ def _run_rates_fx(symbols, name_map, sector_map):
     except Exception:
         days = {}
     for offset, (name, csv_name, tv, symbol) in enumerate(RFX_NSE_INDICES):
-        row = _rfx_row(name, symbol, "index", tv, _rfx_nse_frame(days, csv_name))
+        row = _rfx_row(name, symbol, "index", tv, _rfx_with_live_bar(_rfx_nse_frame(days, csv_name), csv_name))
         if row is None:
             skipped.append(name)
         else:
