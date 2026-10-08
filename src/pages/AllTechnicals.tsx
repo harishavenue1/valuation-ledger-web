@@ -541,15 +541,21 @@ export default function AllTechnicals() {
         // different screener. Caught live 2026-09-26 building Sector
         // Directory: this column silently showed "—" for all 750 rows
         // in production before the mismatch was found.
-        nt_market_cap: fund?.marketcap ?? bh?.market_cap_cr ?? null,
-        nt_1w_pct: nt?.pct_1w ?? bh?.w_pct_1w ?? null,
-        nt_1m_pct: nt?.pct_1m ?? bh?.w_pct_1m ?? null,
-        nt_3m_pct: nt?.pct_3m ?? bh?.w_pct_3m ?? null,
-        nt_6m_pct: nt?.pct_6m ?? bh?.w_pct_6m ?? null,
-        nt_pct_200d_ema: nt?.pct_200d_ema ?? bh?.pct_200d_ema ?? null,
-        nt_pct_33w_ema: nt?.pct_33w_ema ?? bh?.pct_33w_ema ?? null,
-        nt_pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? bh?.pct_from_ath ?? null),
-        nt_pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? bh?.pct_from_52w_high ?? null),
+        // 2026-10-08 ("why is all technical page not updating on daily basis") — the
+        // NSE-750's dense columns read nse750Technicals FIRST (a weekly Yahoo
+        // snapshot, still the Sunday run's numbers on a Thursday) and only fell back to the
+        // daily NSE store for the other ~2,600 stocks. The store is verified and fresh every
+        // trading evening, so it now wins wherever it has a value; the weekly snapshot is
+        // just the fallback (store missing/not ok).
+        nt_market_cap: bh?.market_cap_cr ?? fund?.marketcap ?? null,
+        nt_1w_pct: bh?.w_pct_1w ?? nt?.pct_1w ?? null,
+        nt_1m_pct: bh?.w_pct_1m ?? nt?.pct_1m ?? null,
+        nt_3m_pct: bh?.w_pct_3m ?? nt?.pct_3m ?? null,
+        nt_6m_pct: bh?.w_pct_6m ?? nt?.pct_6m ?? null,
+        nt_pct_200d_ema: bh?.pct_200d_ema ?? nt?.pct_200d_ema ?? null,
+        nt_pct_33w_ema: bh?.pct_33w_ema ?? nt?.pct_33w_ema ?? null,
+        nt_pct_from_ath: bh?.pct_from_ath ?? (nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? null)),
+        nt_pct_from_52w_high: bh?.pct_from_52w_high ?? (nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? null)),
 
         // 2026-09-18 ("instead of only show records matching it show
         // all but results are none") — presence flags, one per

@@ -1602,9 +1602,21 @@ def verify(rows, ms):
     for mine, theirs, tol in core:
         s, n = share([(by_sym[sym].get(mine), t.get(theirs)) for sym, t in nse.items() if sym in by_sym and t.get("as_of") == by_sym[sym]["as_of"]], tol)
         shares[mine] = {"within": s, "n": n, "tol_pp": tol, "vs": "nseScreener"}
+    # nse750Technicals is a WEEKLY snapshot (refreshed Sundays): by midweek its numbers
+    # are days old and a fresh store legitimately disagrees with it (2026-10-07: 33W EMA
+    # 80%, 52W high 77% "within tolerance" -> the gate failed and the page fell back to
+    # that same stale snapshot). Compare against it only while it is no older than 2
+    # days (right after its own refresh) — otherwise report the figures but do not gate on them.
+    nt_asof = (ms.get("nse750Technicals", {}) or {}).get("as_of")
+    try:
+        nt_age = (date.today() - date.fromisoformat(nt_asof)).days if nt_asof else 999
+    except ValueError:
+        nt_age = 999
+    stats["nse750Technicals_age_days"] = nt_age
+    gate_nt = nt_age <= 2
     for mine, theirs, tol in mapping:
         s, n = share([(by_sym[sym].get(mine), t.get(theirs)) for sym, t in nt.items() if sym in by_sym], tol)
-        shares[mine] = {"within": s, "n": n, "tol_pp": tol, "vs": "nse750Technicals"}
+        shares[mine] = {"within": s, "n": n, "tol_pp": tol, "vs": "nse750Technicals", "gated": gate_nt}
     stats["vs_yahoo"] = shares
 
     checks = [
@@ -1613,6 +1625,8 @@ def verify(rows, ms):
         (stats["price_within_0.5pct"] is None) or stats["price_within_0.5pct"] >= 0.97,
     ]
     for mine in shares:
+        if not shares[mine].get("gated", True):
+            continue
         s = shares[mine]["within"]
         checks.append(s is None or s >= 0.85)
     stats["checks_passed"] = f"{sum(checks)}/{len(checks)}"
