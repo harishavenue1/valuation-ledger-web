@@ -46,6 +46,7 @@ interface ColumnDef extends Col {
 // 2026-10-02 ("if successful then only populate all technicals page for all
 // stocks pulled from nse") — columns only meaningful once the NSE bhavcopy
 // store has published (see api/_bhav.py); hidden from the picker otherwise.
+const LONG_FRESH_WKS = 26; // the 'longer' filters only count a latest trigger at most this many weeks old
 const DENSE_GROUP = "Technicals (Dense)"; // one group for the dense block; its bh_* columns only exist once the NSE bhavcopy store has published
 
 const ALL_COLUMNS: ColumnDef[] = [
@@ -717,9 +718,10 @@ export default function AllTechnicals() {
     const num = (v: any) => (typeof v === "number" ? v : null);
     if (fDcRecent) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= vDcRecent);
     const months = (w: number) => (w * 7) / 30.44;
-    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && (r.bh_dc_prev_trig_weeks == null || months(r.bh_dc_prev_trig_weeks) >= vDcLong));
+    // "longer" also needs the latest trigger to be current (<= LONG_FRESH_WKS old), else a stale trigger from years ago qualifies
+    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= LONG_FRESH_WKS && (r.bh_dc_prev_trig_weeks == null || months(r.bh_dc_prev_trig_weeks) >= vDcLong));
     if (fRsiRecent) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= vRsiRecent);
-    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && (r.bh_rsi_prev_cross_weeks == null || months(r.bh_rsi_prev_cross_weeks) >= vRsiLong));
+    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= LONG_FRESH_WKS && (r.bh_rsi_prev_cross_weeks == null || months(r.bh_rsi_prev_cross_weeks) >= vRsiLong));
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
@@ -825,9 +827,9 @@ export default function AllTechnicals() {
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
           [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
-          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: the gap between the previous squeeze-trigger week and the latest one is at least this many months (also passes if there was no earlier trigger in the stored ~2 years)"],
+          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: the gap between the previous squeeze-trigger week and the latest one is at least this many months (also passes if there was no earlier trigger in the history). The latest trigger must be within the last 26 weeks."],
           [fRsiRecent, setFRsiRecent, "wRSI>66 recent ≤", vRsiRecent, setVRsiRecent, "wks", "Weekly RSI crossed above 66 within this many weeks"],
-          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI>66 cross: the gap between the previous cross week and the latest one is at least this many months (also passes if no earlier cross in the stored ~2 years)"],
+          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI>66 cross: the gap between the previous cross week and the latest one is at least this many months (also passes if no earlier cross in the history). The latest cross must be within the last 26 weeks."],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
