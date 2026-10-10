@@ -3275,6 +3275,13 @@ def _run_bhav_technicals(symbols, name_map, sector_map):
     return {"label": "Bhavcopy technicals", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+def _run_weekly_patterns(symbols, name_map, sector_map):
+    from _bhav import patch_patterns
+
+    rows = patch_patterns()
+    return {"label": "Weekly DC/RSI patterns (deep history)", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_resolve(symbols, name_map, sector_map):
     from _bhav import resolve_deep_actions
 
@@ -6489,6 +6496,7 @@ SCREENER_RUNNERS = {
     "ratesFx": _run_rates_fx,
     "bhavStore": _run_bhav_store,
     "bhavTechnicals": _run_bhav_technicals,
+    "weeklyPatterns": _run_weekly_patterns,
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,

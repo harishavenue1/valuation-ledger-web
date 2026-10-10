@@ -1170,6 +1170,81 @@ def compute_technicals(df, names, ath_extra=None):
     return rows
 
 
+# ── weekly pattern fields from deep Yahoo history ───────────────────────────
+# The store holds ~2 years of dailies, too short for the weekly 27-bar channel plus
+# the "distance to the previous trigger" (an 18-month gap needs ~3 years of weekly
+# bars). This job recomputes the DC27W / weekly-RSI>66 pattern fields from 10 years
+# of Yahoo dailies (resampled W-FRI, same as the store) and patches them into the
+# already-published bhav_technicals rows. Symbols Yahoo can't serve keep the
+# store-derived values.
+
+def _yahoo_weekly_for_patterns(sym, session):
+    r = session.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}.NS",
+        params={"range": "10y", "interval": "1d"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=25,
+    )
+    res = r.json()["chart"]["result"][0]
+    q = res["indicators"]["quote"][0]
+    df = pd.DataFrame({"date": pd.to_datetime(res["timestamp"], unit="s").normalize(), "h": q["high"], "l": q["low"], "c": q["close"]}).dropna()
+    if len(df) < 200:
+        return None
+    df["wk"] = df["date"].dt.to_period("W-FRI")
+    wk = df.groupby("wk").agg(h=("h", "max"), l=("l", "min"), c=("c", "last")).reset_index()
+    wk["symbol"] = sym
+    wk["rsi_w"] = _wilder_rsi(wk, "c")
+    return wk
+
+
+def patch_patterns(budget_s=240):
+    from concurrent.futures import ThreadPoolExecutor
+
+    t0 = time.monotonic()
+    conn = get_conn()
+    try:
+        payload = get_meta(conn, TECH_KEY, None)
+    finally:
+        conn.close()
+    if not payload or not payload.get("rows"):
+        return [{"item": "RESULT", "value": "bhav_technicals not published yet"}]
+    rows = payload["rows"]
+    order = sorted(range(len(rows)), key=lambda i: -(rows[i].get("market_cap_cr") or 0))
+    session = requests.Session()
+    done = failed = 0
+
+    def one(i):
+        if time.monotonic() - t0 > budget_s - 40:
+            return i, "skipped", None
+        try:
+            wk = _yahoo_weekly_for_patterns(rows[i]["symbol"], session)
+            if wk is None:
+                return i, "short", None
+            close_now = float(rows[i]["price"])
+            return i, "ok", {**dc_fields(wk, close_now), **rsi66_fields(wk)}
+        except Exception:
+            return i, "fail", None
+
+    skipped = 0
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        for i, status, fields in pool.map(one, order):
+            if status == "ok":
+                rows[i].update(fields)
+                done += 1
+            elif status == "skipped":
+                skipped += 1
+            else:
+                failed += 1
+    payload["rows"] = rows
+    payload["patterns_as_of"] = date.today().isoformat()
+    conn = get_conn()
+    try:
+        set_meta(conn, TECH_KEY, payload)
+    finally:
+        conn.close()
+    return [{"item": "patched from Yahoo weekly history", "value": done}, {"item": "no/short Yahoo data (kept store values)", "value": failed}, {"item": "skipped (time budget)", "value": skipped}, {"item": "elapsed_s", "value": round(time.monotonic() - t0, 1)}]
+
+
 # ── verification + publishing ────────────────────────────────────────────────
 
 # ── the "4% Scan" (Arthon Advisors / @thechartist26, #IEC2026) ────────────────
