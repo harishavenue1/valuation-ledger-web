@@ -53,8 +53,8 @@ SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
 # upper edge stays flat for a while, then a close above that flat edge is the trigger.
 DC_LEN = 27
 DC_FLAT_WEEKS = 8  # the upper band must have been this flat ...
-DC_FLAT_PCT = 5.0  # ... within this many %
-DC_NARROW_PCT = 45.0  # channel width (upper-lower)/mid must be below this ...
+DC_FLAT_PCT = 10.0  # ... within this many %
+DC_NARROW_PCT = 50.0  # channel width (upper-lower)/mid must be below this ...
 DC_TIGHT_LOOKBACK = 13  # ... and no wider than it was this many weeks ago (x slack)
 DC_TIGHT_SLACK = 1.05
 DC_MIN_WIDTH_PCT = 8.0  # below this the 'channel' is a liquid fund / pegged instrument, not a stock coiling
