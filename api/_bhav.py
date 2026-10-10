@@ -1000,8 +1000,11 @@ def dc_fields(wdf, close_now):
     out["dc_width"] = round(float(width.iloc[-1]), 1)
     out["dc_breakout"] = bool(close_now > upprev[-1]) if upprev[-1] == upprev[-1] else None
     # trigger = a close above the previous week's upper band while the squeeze held that week
+    brk = np.zeros(n, bool)  # any week closing above the previous week's upper band
+    brk[1:] = c[1:] > np.nan_to_num(upprev[1:], nan=np.inf)
     trig = np.zeros(n, bool)
-    trig[1:] = (c[1:] > upprev[1:]) & sq[:-1]
+    # only the FIRST week of a breakout run counts as the trigger (the following weeks are continuation)
+    trig[1:] = brk[1:] & sq[:-1] & ~brk[:-1]
     ks = np.flatnonzero(trig[max(0, n - DC_TRIG_HORIZON):]) + max(0, n - DC_TRIG_HORIZON)
     k = int(ks[-1]) if len(ks) else None
     if k is not None and n - 1 - k <= 4:
@@ -1009,9 +1012,10 @@ def dc_fields(wdf, close_now):
     elif sq[-1]:
         out["dc_state"] = "Coiled" if close_now >= u * (1 - DC_NEAR_PCT / 100) else "Squeeze"
     if k is not None:
-        # weeks between this trigger and the one before it (any age): a repeat trigger inside ~26w is
-        # a stock already breaking out, not a fresh break from a long base (the backtest kept first triggers only)
-        before = np.flatnonzero(trig[:k])
+        # weeks between this trigger and the previous time the close broke above the 27-week upper band
+        # (ANY breakout, squeeze or not): a stock that keeps clearing its band is already trending, so a
+        # long gap here means a fresh break after a long quiet stretch
+        before = np.flatnonzero(brk[:k])
         out["dc_prev_trig_weeks"] = int(k - before[-1]) if len(before) else None
         level = float(upprev[k])
         d = wdf["wk"].iloc[k]
@@ -1058,7 +1062,9 @@ def rsi66_fields(wdf):
     prev = np.flatnonzero(above[:k])
     first_valid = int(np.argmax(~np.isnan(r)))
     out["rsi_gap_weeks"] = int(k - prev[-1]) if len(prev) else int(k - first_valid)
-    out["rsi_prev_cross_weeks"] = int(k - ks[-2]) if len(ks) > 1 else None  # weeks between the previous cross above 66 and this one
+    # weeks since the RSI was last above 66 before this cross (i.e. how long it stayed at/below 66); a
+    # stock that keeps dipping under 66 and re-crossing has a short gap here even if its first cross was long ago
+    out["rsi_prev_cross_weeks"] = int(k - prev[-1]) if len(prev) else None
     return out
 
 
