@@ -48,7 +48,16 @@ BHAV_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_
 NAMES_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 SME_NAMES_URL = "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv"
 SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
-DC_LEN = 27  # Donchian channel length (user's choice; TradingView default is 20)
+# Donchian channel on WEEKLY bars (the user's chart is 1W, length 27) and the
+# "squeeze then trigger" pattern built on it: the 27-week band tightens and its
+# upper edge stays flat for a while, then a close above that flat edge is the trigger.
+DC_LEN = 27
+DC_FLAT_WEEKS = 8  # the upper band must have been this flat ...
+DC_FLAT_PCT = 3.0  # ... within this many %
+DC_NARROW_PCT = 40.0  # channel width (upper-lower)/mid must be below this ...
+DC_TIGHT_LOOKBACK = 13  # ... and narrower than it was this many weeks ago
+DC_NEAR_PCT = 5.0  # "coiled" = squeeze in place and the close within this % of the upper band
+DC_TRIG_HORIZON = 104  # trigger history kept for this many weeks
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
 DEEP_DAYS = 1830  # the NSE-750 keep 5y (what the Yahoo nse750PriceCache holds), so the store can replace it
 STATE_KEY = "bhav_state"
@@ -960,7 +969,66 @@ def _r2(x):
     return None if x is None or x != x else round(float(x), 2)
 
 
-def compute_technicals(df, names, ath_extra=None):
+def dc_fields(wdf, older_peak, older_peak_date, close_now):
+    """Weekly Donchian channel + squeeze-trigger pattern for one symbol.
+    wdf: its weekly bars (wk period, h, l, c; the in-progress week is the last).
+    older_peak / older_peak_date: highest high from before the stored window and its
+    date (the ATH backfill's state), so a prior peak older than the store is still dated."""
+    out = {k: None for k in ("dc_upper", "dc_lower", "dc_pct_from_upper", "dc_pos", "dc_width", "dc_breakout", "dc_state",
+                             "dc_trig_date", "dc_trig_weeks_ago", "dc_trig_level", "dc_since_trig_pct", "dc_flat_weeks",
+                             "dc_peak_months", "dc_peak_date", "dc_trig_rsi", "dc_rsi66")}
+    if wdf is None or len(wdf) < DC_LEN + 2:
+        return out
+    h, l, c = wdf["h"].to_numpy(float), wdf["l"].to_numpy(float), wdf["c"].to_numpy(float)
+    n = len(c)
+    up = pd.Series(h).rolling(DC_LEN).max()
+    lo = pd.Series(l).rolling(DC_LEN).min()
+    upv, lov = up.to_numpy(), lo.to_numpy()
+    upprev = up.shift(1).to_numpy()
+    width = ((up - lo) / ((up + lo) / 2) * 100)
+    flat = ((up.rolling(DC_FLAT_WEEKS).max() / up.rolling(DC_FLAT_WEEKS).min() - 1) * 100 <= DC_FLAT_PCT).to_numpy()
+    sq = flat & (width <= DC_NARROW_PCT).to_numpy() & (width < width.shift(DC_TIGHT_LOOKBACK)).to_numpy()
+    u, lw = upv[-1], lov[-1]
+    if u != u or lw != lw:
+        return out
+    out["dc_upper"], out["dc_lower"] = round(float(u), 2), round(float(lw), 2)
+    out["dc_pct_from_upper"] = round((close_now / u - 1) * 100, 2)
+    out["dc_pos"] = round((close_now - lw) / (u - lw) * 100, 1) if u != lw else None
+    out["dc_width"] = round(float(width.iloc[-1]), 1)
+    out["dc_breakout"] = bool(close_now > upprev[-1]) if upprev[-1] == upprev[-1] else None
+    # trigger = a close above the previous week's upper band while the squeeze held that week
+    trig = np.zeros(n, bool)
+    trig[1:] = (c[1:] > upprev[1:]) & sq[:-1]
+    ks = np.flatnonzero(trig[max(0, n - DC_TRIG_HORIZON):]) + max(0, n - DC_TRIG_HORIZON)
+    k = int(ks[-1]) if len(ks) else None
+    if k is not None and n - 1 - k <= 4:
+        out["dc_state"] = "Triggered"
+    elif sq[-1]:
+        out["dc_state"] = "Coiled" if close_now >= u * (1 - DC_NEAR_PCT / 100) else "Squeeze"
+    if k is not None:
+        level = float(upprev[k])
+        d = wdf["wk"].iloc[k]
+        out["dc_trig_date"] = d.end_time.date().isoformat()
+        out["dc_trig_weeks_ago"] = n - 1 - k
+        out["dc_trig_level"] = round(level, 2)
+        out["dc_since_trig_pct"] = round((close_now / level - 1) * 100, 1)
+        win = h[max(0, k - DC_LEN):k]
+        out["dc_flat_weeks"] = int(len(win) - int(np.argmax(win))) if len(win) else None  # weeks since the high that set the flat upper band
+        if k > 0:
+            p = int(np.argmax(h[:k]))
+            peak_end = wdf["wk"].iloc[p].end_time
+            if older_peak is not None and older_peak == older_peak and older_peak_date and older_peak > h[p]:
+                peak_end = pd.Timestamp(older_peak_date)  # the real peak predates the stored window
+            out["dc_peak_months"] = round((d.end_time - peak_end).days / 30.44, 1)
+            out["dc_peak_date"] = peak_end.date().isoformat()
+        rsi = wdf["rsi_w"].iloc[k]
+        if rsi == rsi:
+            out["dc_trig_rsi"] = round(float(rsi), 1)
+            out["dc_rsi66"] = bool(rsi > 66)
+    return out
+
+
+def compute_technicals(df, names, ath_extra=None, ath_dates=None):
     """One row per symbol with its latest bar: price, % changes, EMA/high
     distances, RSI and delivery. EMAs on OHLC4, compared with the latest close
     (this account's standing convention); weekly bars are resampled from the
@@ -974,13 +1042,6 @@ def compute_technicals(df, names, ath_extra=None):
     for span in (20, 50, 200):
         df[f"e{span}"] = g["o4"].transform(lambda s, span=span: s.ewm(span=span, adjust=False).mean())
     df["n"] = g.cumcount() + 1
-    # Donchian channel, length DC_LEN as on TradingView (the window includes
-    # today's bar); dc_up_prev is the same channel one bar earlier, which is what
-    # a close has to clear to count as a breakout (a close can never exceed the
-    # channel that already contains it)
-    df["dc_up"] = g["h"].transform(lambda s: s.rolling(DC_LEN).max())
-    df["dc_lo"] = g["l"].transform(lambda s: s.rolling(DC_LEN).min())
-    df["dc_up_prev"] = df.groupby("symbol", sort=False)["dc_up"].shift(1)
     df["rsi_d"] = _wilder_rsi(df, "c")
     df["prev_c"] = g["c"].shift(1)
 
@@ -1002,6 +1063,7 @@ def compute_technicals(df, names, ath_extra=None):
     for k in (1, 4, 13, 26, 52):
         wk[f"c{k}"] = wg["c"].shift(k)
     wlast = wk.groupby("symbol", sort=False).tail(1).set_index("symbol")
+    wk_sym = {k: v for k, v in wk.groupby("symbol", sort=False)[["wk", "h", "l", "c", "rsi_w"]]}
 
     # Core Day/Week/Month/3M/Year % use nseScreener's own definitions (5 trading
     # bars back; 1 month / 3 months / 1 year back by calendar, the latest bar on
@@ -1061,19 +1123,7 @@ def compute_technicals(df, names, ath_extra=None):
             "pct_33w_ema": pct(c, w["e33"]) if w is not None and w["n"] >= 33 else None,
             "pct_from_ath": pct(c, ath.get(sym)),
             "pct_from_52w_high": pct(c, high52.get(sym)),
-            "dc_upper": _r2(r["dc_up"]),
-            "dc_lower": _r2(r["dc_lo"]),
-            "dc_pct_from_upper": pct(c, r["dc_up"]),
-            "dc_pos": round((c - float(r["dc_lo"])) / (float(r["dc_up"]) - float(r["dc_lo"])) * 100, 1)
-            if r["dc_up"] == r["dc_up"] and r["dc_up"] != r["dc_lo"] else None,
-            "dc_width": round((float(r["dc_up"]) - float(r["dc_lo"])) / ((float(r["dc_up"]) + float(r["dc_lo"])) / 2) * 100, 1)
-            if r["dc_up"] == r["dc_up"] and (r["dc_up"] + r["dc_lo"]) else None,
-            "dc_breakout": bool(c > r["dc_up_prev"]) if r["dc_up_prev"] == r["dc_up_prev"] else None,
-            "deliv_pct": round(float(r["dp"]), 1) if r["dp"] == r["dp"] else None,
-            "deliv_pct_avg20": round(float(dp20.get(sym)), 1) if sym in dp20.index and dp20.get(sym) == dp20.get(sym) else None,
-            "volume": int(r["v"]) if r["v"] == r["v"] else None,
-            "turnover_cr": round(c * float(r["v"]) / 1e7, 2) if r["v"] == r["v"] else None,
-            "vol_x": round(float(r["v"]) / float(vol20.get(sym)), 2) if sym in vol20.index and vol20.get(sym) and vol20.get(sym) == vol20.get(sym) and r["v"] == r["v"] else None,
+            **dc_fields(wk_sym.get(sym), ath_extra.get(sym) if ath_extra else None, (ath_dates or {}).get(sym), c),
         }
         # a symbol with <53 weekly bars has no honest 1Y change — already None via NaN shift
         rows.append(row)
@@ -1747,7 +1797,7 @@ def publish(budget_s=240):
         known_ex = {(s_, ex) for s_, rws in actions.items() for ex, _f_, src in rws if src != "nodata"}
         cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}  # history cut at an unresolved jump: old highs can't be trusted either
         ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
-    rows = compute_technicals(df, state.get("names") or {}, ath_extra=ath_extra)
+    rows = compute_technicals(df, state.get("names") or {}, ath_extra=ath_extra, ath_dates={k: v[1] for k, v in (ath_state.get("ath") or {}).items() if isinstance(v, (list, tuple)) and len(v) > 1})
     ath_levels = {}
     try:  # {symbol: [ATH price, date]} for the Charts page's ATH line (kept out of the big rows payload)
         win = df.loc[df.groupby("symbol", sort=False)["h"].idxmax()].set_index("symbol")

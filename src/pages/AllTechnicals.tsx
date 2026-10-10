@@ -202,12 +202,21 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "nt_pct_from_ath", label: "% from ATH", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
   { key: "nt_pct_from_52w_high", label: "% from 52W High", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
 
-  { key: "bh_dc_upper", label: "DC27 Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
-  { key: "bh_dc_lower", label: "DC27 Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
-  { key: "bh_dc_pct_from_upper", label: "% from DC27 High", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_dc_pct_from_upper} digits={1} /> },
-  { key: "bh_dc_pos", label: "DC27 Position %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_pos, 0) },
-  { key: "bh_dc_width", label: "DC27 Width %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_width, 1) },
-  { key: "bh_dc_breakout", label: "DC27 Breakout", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_breakout) },
+  { key: "bh_dc_state", label: "DC27W Setup", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_state ? <span className={r.bh_dc_state === "Triggered" ? "text-emerald-700 font-medium" : "text-amber-700"}>{r.bh_dc_state}</span> : "" },
+  { key: "bh_dc_trig_date", label: "DC27W Trigger Week", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_trig_date ?? "" },
+  { key: "bh_dc_trig_weeks_ago", label: "Weeks Since Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_weeks_ago, 0) },
+  { key: "bh_dc_trig_level", label: "Trigger Level", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_level, 1) },
+  { key: "bh_dc_since_trig_pct", label: "% Since Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_dc_since_trig_pct} digits={0} /> },
+  { key: "bh_dc_flat_weeks", label: "Weeks Since Band High", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_flat_weeks, 0) },
+  { key: "bh_dc_peak_months", label: "Months Since Prior Peak", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_peak_months, 1) },
+  { key: "bh_dc_peak_date", label: "Prior Peak Date", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_peak_date ?? "" },
+  { key: "bh_dc_trig_rsi", label: "Weekly RSI at Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_rsi, 1) },
+  { key: "bh_dc_upper", label: "DC27W Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
+  { key: "bh_dc_lower", label: "DC27W Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
+  { key: "bh_dc_pct_from_upper", label: "% from DC27W High", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_dc_pct_from_upper} digits={1} /> },
+  { key: "bh_dc_pos", label: "DC27W Position %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_pos, 0) },
+  { key: "bh_dc_width", label: "DC27W Width %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_width, 1) },
+  { key: "bh_dc_breakout", label: "DC27W Breakout (this wk)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_breakout) },
   { key: "bh_deliv", label: "Delivery %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv, 1) },
   { key: "bh_deliv_avg20", label: "Delivery % (20D avg)", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv_avg20, 1) },
   { key: "bh_turnover", label: "Turnover ₹Cr", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_turnover, 1) },
@@ -590,6 +599,16 @@ export default function AllTechnicals() {
         _has_smartmoney: !!sm,
         _has_quality: fund?.roce_1y_chg != null,
         _has_nt: !!nt || !!bh,
+        bh_dc_state: bh?.dc_state ?? null,
+        bh_dc_trig_date: bh?.dc_trig_date ?? null,
+        bh_dc_trig_weeks_ago: bh?.dc_trig_weeks_ago ?? null,
+        bh_dc_trig_level: bh?.dc_trig_level ?? null,
+        bh_dc_since_trig_pct: bh?.dc_since_trig_pct ?? null,
+        bh_dc_flat_weeks: bh?.dc_flat_weeks ?? null,
+        bh_dc_peak_months: bh?.dc_peak_months ?? null,
+        bh_dc_peak_date: bh?.dc_peak_date ?? null,
+        bh_dc_trig_rsi: bh?.dc_trig_rsi ?? null,
+        bh_dc_rsi66: bh?.dc_rsi66 ?? null,
         bh_dc_upper: bh?.dc_upper ?? null,
         bh_dc_lower: bh?.dc_lower ?? null,
         bh_dc_pct_from_upper: bh?.dc_pct_from_upper ?? null,
@@ -630,11 +649,14 @@ export default function AllTechnicals() {
   const [emaLo, setEmaLo] = useState(0);
   const [emaHi, setEmaHi] = useState(10);
   // Donchian (27-bar) channel: fresh breakout, near the upper band, narrow channel
+  // Weekly 27-bar Donchian channel: squeeze (narrow, flat upper band) then a close above it = trigger
+  const [fDcTrig, setFDcTrig] = useState(false);
+  const [vDcTrig, setVDcTrig] = useState(8); // triggered within this many weeks
+  const [fDcCoiled, setFDcCoiled] = useState(false); // squeeze in place, price within 5% of the upper band
+  const [fDcRsi, setFDcRsi] = useState(false); // weekly RSI > 66 in the trigger week
+  const [fDcPeak, setFDcPeak] = useState(false);
+  const [vDcPeak, setVDcPeak] = useState(12); // prior peak at least this many months before the trigger
   const [fDcBrk, setFDcBrk] = useState(false);
-  const [fDcNear, setFDcNear] = useState(false);
-  const [vDcNear, setVDcNear] = useState(3);
-  const [fDcNarrow, setFDcNarrow] = useState(false);
-  const [vDcNarrow, setVDcNarrow] = useState(15);
   // the table's rows as shown (name/sector filter + header sort applied) —
   // read when "Open in Charts" is clicked; a ref so it never causes a re-render
   const visibleRef = useRef<Record<string, any>[]>([]);
@@ -650,9 +672,11 @@ export default function AllTechnicals() {
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
-    if (fDcBrk) parts.push("DC27 breakout");
-    if (fDcNear) parts.push(`DC27 high within ${vDcNear}%`);
-    if (fDcNarrow) parts.push(`DC27 width < ${vDcNarrow}%`);
+    if (fDcTrig) parts.push(`DC27W trigger ≤ ${vDcTrig}w`);
+    if (fDcCoiled) parts.push("DC27W coiled");
+    if (fDcRsi) parts.push("RSI>66 at trigger");
+    if (fDcPeak) parts.push(`prior peak ≥ ${vDcPeak}m`);
+    if (fDcBrk) parts.push("DC27W breakout");
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -680,14 +704,16 @@ export default function AllTechnicals() {
       return typeof v === "number" && v > v3m;
     });
     if (fEma) base = base.filter((r: any) => typeof r.nt_pct_33w_ema === "number" && r.nt_pct_33w_ema >= emaLo && r.nt_pct_33w_ema <= emaHi);
+    if (fDcTrig) base = base.filter((r: any) => typeof r.bh_dc_trig_weeks_ago === "number" && r.bh_dc_trig_weeks_ago <= vDcTrig);
+    if (fDcCoiled) base = base.filter((r: any) => r.bh_dc_state === "Coiled");
+    if (fDcRsi) base = base.filter((r: any) => r.bh_dc_rsi66 === true);
+    if (fDcPeak) base = base.filter((r: any) => typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
     if (fDcBrk) base = base.filter((r: any) => r.bh_dc_breakout === true);
-    if (fDcNear) base = base.filter((r: any) => within(r.bh_dc_pct_from_upper, vDcNear));
-    if (fDcNarrow) base = base.filter((r: any) => typeof r.bh_dc_width === "number" && r.bh_dc_width < vDcNarrow);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcBrk, fDcNear, vDcNear, fDcNarrow, vDcNarrow]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcTrig, vDcTrig, fDcCoiled, fDcRsi, fDcPeak, vDcPeak, fDcBrk]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -787,8 +813,8 @@ export default function AllTechnicals() {
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
-          [fDcNear, setFDcNear, "DC27 high within", vDcNear, setVDcNear, "%", "Within this % of the 27-day Donchian upper band (the highest high of the last 27 sessions, today included)"],
-          [fDcNarrow, setFDcNarrow, "DC27 width <", vDcNarrow, setVDcNarrow, "%", "27-day channel (upper − lower) as a % of its midpoint is below this: a contracted, low-volatility range"],
+          [fDcTrig, setFDcTrig, "DC27W trigger ≤", vDcTrig, setVDcTrig, "wks", "A weekly close above the flat upper band of a narrowed 27-week Donchian channel (squeeze) happened within this many weeks"],
+          [fDcPeak, setFDcPeak, "Prior peak ≥", vDcPeak, setVDcPeak, "mo", "At the trigger, the stock's previous high was at least this many months earlier (the longer the stock sat below its old high, the bigger the base)"],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
@@ -813,15 +839,22 @@ export default function AllTechnicals() {
             {unit}
           </label>
         ))}
-        <label
-          title="Today's close is above the highest high of the 27 sessions before today (a fresh 27-day Donchian breakout)"
-          className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
-            fDcBrk ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
-          }`}
-        >
-          <input type="checkbox" checked={fDcBrk} onChange={(e) => setFDcBrk(e.target.checked)} />
-          DC27 breakout
-        </label>
+        {([
+          [fDcCoiled, setFDcCoiled, "DC27W coiled", "Squeeze in place (27-week band narrow and tightening, upper edge flat) with price within 5% of the upper band: waiting for the trigger"],
+          [fDcRsi, setFDcRsi, "RSI>66 at trigger", "Weekly RSI was above 66 in the trigger week"],
+          [fDcBrk, setFDcBrk, "DC27W breakout now", "This week's close is above the highest high of the previous 27 weeks"],
+        ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
+          <label
+            key={label}
+            title={tip}
+            className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
+              on ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
+            }`}
+          >
+            <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />
+            {label}
+          </label>
+        ))}
         <label
           title="Price vs its 33-week EMA (OHLC4), in %: 0 to 10 = above the 33W EMA but within 10% of it. Use a negative low end to include stocks just below it."
           className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
