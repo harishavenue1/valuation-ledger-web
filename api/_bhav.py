@@ -980,7 +980,7 @@ def dc_fields(wdf, close_now):
     week (HFCL, BSE and PFC all match the user's hand-marked reference highs)."""
     out = {k: None for k in ("dc_upper", "dc_lower", "dc_pct_from_upper", "dc_pos", "dc_width", "dc_breakout", "dc_state",
                              "dc_trig_date", "dc_trig_weeks_ago", "dc_trig_level", "dc_since_trig_pct", "dc_flat_weeks",
-                             "dc_peak_months", "dc_peak_date", "dc_trig_rsi", "dc_rsi66", "dc_prev_trig_weeks")}
+                             "dc_peak_months", "dc_peak_date", "dc_trig_rsi", "dc_rsi66", "dc_prev_trig_weeks", "dc_hist_weeks")}
     if wdf is None or len(wdf) < DC_LEN + 2:
         return out
     h, l, c = wdf["h"].to_numpy(float), wdf["l"].to_numpy(float), wdf["c"].to_numpy(float)
@@ -1022,6 +1022,7 @@ def dc_fields(wdf, close_now):
         d = wdf["wk"].iloc[k]
         out["dc_trig_date"] = d.end_time.date().isoformat()
         out["dc_trig_weeks_ago"] = n - 1 - k
+        out["dc_hist_weeks"] = k  # weeks of history before the trigger: a missing 'previous' only means a long gap if this is long enough
         out["dc_trig_level"] = round(level, 2)
         out["dc_since_trig_pct"] = round((close_now / level - 1) * 100, 1)
         win = h[max(0, k - DC_LEN):k]
@@ -1047,7 +1048,7 @@ def rsi66_fields(wdf):
     rsi_cross_weeks_ago = how many weeks ago; rsi_gap_weeks = how long RSI had been at/below 66 before that
     cross (weeks since the previous week above 66; if none in the stored history, the weeks of history
     available, i.e. a lower bound)."""
-    out = {"rsi_cross_weeks_ago": None, "rsi_gap_weeks": None, "rsi_prev_cross_weeks": None}
+    out = {"rsi_cross_weeks_ago": None, "rsi_gap_weeks": None, "rsi_prev_cross_weeks": None, "rsi_hist_weeks": None}
     if wdf is None or len(wdf) < 20:
         return out
     r = wdf["rsi_w"].to_numpy(float)
@@ -1058,8 +1059,10 @@ def rsi66_fields(wdf):
     ks = np.flatnonzero(cross)
     if not len(ks):
         return out
+    first_valid_idx = int(np.argmax(~np.isnan(r)))
     k = int(ks[-1])
     out["rsi_cross_weeks_ago"] = n - 1 - k
+    out["rsi_hist_weeks"] = k - first_valid_idx
     prev = np.flatnonzero(above[:k])
     first_valid = int(np.argmax(~np.isnan(r)))
     out["rsi_gap_weeks"] = int(k - prev[-1]) if len(prev) else int(k - first_valid)

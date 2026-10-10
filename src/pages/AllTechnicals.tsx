@@ -615,6 +615,8 @@ export default function AllTechnicals() {
         bh_dc_prev_trig_weeks: bh?.dc_prev_trig_weeks ?? null,
         bh_rsi_cross_weeks_ago: bh?.rsi_cross_weeks_ago ?? null,
         bh_rsi_prev_cross_weeks: bh?.rsi_prev_cross_weeks ?? null,
+        bh_rsi_hist_weeks: bh?.rsi_hist_weeks ?? null,
+        bh_dc_hist_weeks: bh?.dc_hist_weeks ?? null,
         bh_dc_rsi66: bh?.dc_rsi66 ?? null,
         bh_dc_upper: bh?.dc_upper ?? null,
         bh_dc_lower: bh?.dc_lower ?? null,
@@ -719,9 +721,9 @@ export default function AllTechnicals() {
     if (fDcRecent) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= vDcRecent);
     const months = (w: number) => (w * 7) / 30.44;
     // "longer" also needs the latest trigger to be current (<= LONG_FRESH_WKS old), else a stale trigger from years ago qualifies
-    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= LONG_FRESH_WKS && (r.bh_dc_prev_trig_weeks == null || months(r.bh_dc_prev_trig_weeks) >= vDcLong));
+    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= LONG_FRESH_WKS && (r.bh_dc_prev_trig_weeks != null ? months(r.bh_dc_prev_trig_weeks) >= vDcLong : months(r.bh_dc_hist_weeks ?? 0) >= vDcLong));
     if (fRsiRecent) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= vRsiRecent);
-    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= LONG_FRESH_WKS && (r.bh_rsi_prev_cross_weeks == null || months(r.bh_rsi_prev_cross_weeks) >= vRsiLong));
+    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= LONG_FRESH_WKS && (r.bh_rsi_prev_cross_weeks != null ? months(r.bh_rsi_prev_cross_weeks) >= vRsiLong : months(r.bh_rsi_hist_weeks ?? 0) >= vRsiLong));
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
@@ -827,9 +829,9 @@ export default function AllTechnicals() {
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
           [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
-          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: the gap between the previous squeeze-trigger week and the latest one is at least this many months (also passes if there was no earlier trigger in the history). The latest trigger must be within the last 26 weeks."],
+          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: the gap between the previous squeeze-trigger week and the latest one is at least this many months (with no earlier breakout on record it passes only if the stock has at least that much history, so recent IPOs don't qualify). The latest trigger must be within the last 26 weeks."],
           [fRsiRecent, setFRsiRecent, "wRSI>66 recent ≤", vRsiRecent, setVRsiRecent, "wks", "Weekly RSI crossed above 66 within this many weeks"],
-          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI>66 cross: the gap between the previous cross week and the latest one is at least this many months (also passes if no earlier cross in the history). The latest cross must be within the last 26 weeks."],
+          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI>66 cross: the gap between the previous cross week and the latest one is at least this many months (with no earlier cross on record it passes only if the stock has at least that much history). The latest cross must be within the last 26 weeks."],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
