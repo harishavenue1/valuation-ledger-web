@@ -1042,7 +1042,7 @@ def rsi66_fields(wdf):
     rsi_cross_weeks_ago = how many weeks ago; rsi_gap_weeks = how long RSI had been at/below 66 before that
     cross (weeks since the previous week above 66; if none in the stored history, the weeks of history
     available, i.e. a lower bound)."""
-    out = {"rsi_cross_weeks_ago": None, "rsi_gap_weeks": None}
+    out = {"rsi_cross_weeks_ago": None, "rsi_gap_weeks": None, "rsi_prev_cross_weeks": None}
     if wdf is None or len(wdf) < 20:
         return out
     r = wdf["rsi_w"].to_numpy(float)
@@ -1058,6 +1058,7 @@ def rsi66_fields(wdf):
     prev = np.flatnonzero(above[:k])
     first_valid = int(np.argmax(~np.isnan(r)))
     out["rsi_gap_weeks"] = int(k - prev[-1]) if len(prev) else int(k - first_valid)
+    out["rsi_prev_cross_weeks"] = int(k - ks[-2]) if len(ks) > 1 else None  # weeks between the previous cross above 66 and this one
     return out
 
 

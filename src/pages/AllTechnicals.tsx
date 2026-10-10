@@ -210,10 +210,9 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "bh_dc_flat_weeks", label: "Weeks Since Band High", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_flat_weeks, 0) },
   { key: "bh_dc_peak_months", label: "Months Since Prior Peak", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_peak_months, 1) },
   { key: "bh_dc_peak_date", label: "Prior Peak Date", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_peak_date ?? "" },
-  { key: "bh_dc_long66", label: "RSI>66 + Long Distance (≥12m)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_rsi66 === true && (r.bh_dc_peak_months ?? 0) >= 12 && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26)) },
-  { key: "bh_dc_prev_trig_weeks", label: "Weeks Since Previous Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_prev_trig_weeks, 0) },
+  { key: "bh_dc_prev_trig_weeks", label: "Weeks Between Previous & Latest DC27W Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_prev_trig_weeks, 0) },
   { key: "bh_rsi_cross_weeks_ago", label: "Weeks Since Weekly RSI Crossed 66", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_rsi_cross_weeks_ago, 0) },
-  { key: "bh_rsi_gap_weeks", label: "Weeks RSI Was Below 66 Before Cross", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_rsi_gap_weeks, 0) },
+  { key: "bh_rsi_prev_cross_weeks", label: "Weeks Between Previous & Latest RSI>66 Cross", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_rsi_prev_cross_weeks, 0) },
   { key: "bh_dc_trig_rsi", label: "Weekly RSI at Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_rsi, 1) },
   { key: "bh_dc_upper", label: "DC27W Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
   { key: "bh_dc_lower", label: "DC27W Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
@@ -614,7 +613,7 @@ export default function AllTechnicals() {
         bh_dc_trig_rsi: bh?.dc_trig_rsi ?? null,
         bh_dc_prev_trig_weeks: bh?.dc_prev_trig_weeks ?? null,
         bh_rsi_cross_weeks_ago: bh?.rsi_cross_weeks_ago ?? null,
-        bh_rsi_gap_weeks: bh?.rsi_gap_weeks ?? null,
+        bh_rsi_prev_cross_weeks: bh?.rsi_prev_cross_weeks ?? null,
         bh_dc_rsi66: bh?.dc_rsi66 ?? null,
         bh_dc_upper: bh?.dc_upper ?? null,
         bh_dc_lower: bh?.dc_lower ?? null,
@@ -658,13 +657,13 @@ export default function AllTechnicals() {
   // Donchian (27-bar) channel: fresh breakout, near the upper band, narrow channel
   // Four weekly-timeframe pattern filters, one field each (all weekly bars):
   //  DC  recent: a 27-week Donchian squeeze breakout happened within N weeks
-  //  DC  longer: that breakout was a first trigger after the prior peak was >= N months back
+  //  DC  longer: the gap between the previous DC trigger week and the latest one is >= N months (or no earlier trigger in the stored ~2y)
   //  RSI recent: weekly RSI crossed above 66 within N weeks
-  //  RSI longer: the cross came after RSI had been <= 66 for >= N months
+  //  RSI longer: the gap between the previous weekly-RSI>66 cross week and the latest one is >= N months (or no earlier cross in the stored ~2y)
   const [fDcRecent, setFDcRecent] = useState(false);
   const [vDcRecent, setVDcRecent] = useState(8);
   const [fDcLong, setFDcLong] = useState(false);
-  const [vDcLong, setVDcLong] = useState(12);
+  const [vDcLong, setVDcLong] = useState(6);
   const [fRsiRecent, setFRsiRecent] = useState(false);
   const [vRsiRecent, setVRsiRecent] = useState(8);
   const [fRsiLong, setFRsiLong] = useState(false);
@@ -685,9 +684,9 @@ export default function AllTechnicals() {
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
     if (fDcRecent) parts.push(`DC27W trigger ≤ ${vDcRecent}w`);
-    if (fDcLong) parts.push(`DC27W trigger after ≥ ${vDcLong}m`);
+    if (fDcLong) parts.push(`DC27W prev trigger ≥ ${vDcLong}m earlier`);
     if (fRsiRecent) parts.push(`wRSI>66 cross ≤ ${vRsiRecent}w`);
-    if (fRsiLong) parts.push(`wRSI>66 cross after ≥ ${vRsiLong}m`);
+    if (fRsiLong) parts.push(`wRSI>66 prev cross ≥ ${vRsiLong}m earlier`);
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -717,10 +716,10 @@ export default function AllTechnicals() {
     if (fEma) base = base.filter((r: any) => typeof r.nt_pct_33w_ema === "number" && r.nt_pct_33w_ema >= emaLo && r.nt_pct_33w_ema <= emaHi);
     const num = (v: any) => (typeof v === "number" ? v : null);
     if (fDcRecent) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= vDcRecent);
-    // first trigger only (no trigger in the 26 weeks before it), prior peak at least N months before it
-    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_peak_months) != null && r.bh_dc_peak_months >= vDcLong && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26));
+    const months = (w: number) => (w * 7) / 30.44;
+    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && (r.bh_dc_prev_trig_weeks == null || months(r.bh_dc_prev_trig_weeks) >= vDcLong));
     if (fRsiRecent) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= vRsiRecent);
-    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_gap_weeks) != null && (r.bh_rsi_gap_weeks * 7) / 30.44 >= vRsiLong);
+    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && (r.bh_rsi_prev_cross_weeks == null || months(r.bh_rsi_prev_cross_weeks) >= vRsiLong));
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
@@ -826,9 +825,9 @@ export default function AllTechnicals() {
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
           [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
-          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: first squeeze trigger (none in the prior 26 weeks) where the previous peak was at least this many months before it"],
+          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: the gap between the previous squeeze-trigger week and the latest one is at least this many months (also passes if there was no earlier trigger in the stored ~2 years)"],
           [fRsiRecent, setFRsiRecent, "wRSI>66 recent ≤", vRsiRecent, setVRsiRecent, "wks", "Weekly RSI crossed above 66 within this many weeks"],
-          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI crossed above 66 after having been at or below 66 for at least this many months"],
+          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI>66 cross: the gap between the previous cross week and the latest one is at least this many months (also passes if no earlier cross in the stored ~2 years)"],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
