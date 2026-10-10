@@ -1200,6 +1200,16 @@ def _yahoo_weekly_for_patterns(sym, session):
     df = pd.DataFrame({"date": pd.to_datetime(res["timestamp"], unit="s").normalize(), "h": q["high"], "l": q["low"], "c": q["close"]}).dropna()
     if len(df) < 200:
         return None
+    # Yahoo adjusts for splits/bonuses but not demergers/consolidations (Allcargo's Nov-2025 demerger shows as
+    # 35 -> 13 overnight). NSE circuit bands cap a normal one-day move well inside 35%, so a daily close ratio
+    # outside 0.65..1.6 is treated as an unadjusted corporate action and every earlier bar is rescaled by it,
+    # which is what a split-adjusted chart (TradingView ADJ) shows.
+    ratio = (df["c"] / df["c"].shift(1)).to_numpy()
+    adj = np.ones(len(df))
+    for g in np.flatnonzero((ratio < 0.65) | (ratio > 1.6)):
+        adj[:g] *= ratio[g]
+    for col in ("h", "l", "c"):
+        df[col] = df[col].to_numpy() * adj
     df["wk"] = df["date"].dt.to_period("W-FRI")
     wk = df.groupby("wk").agg(h=("h", "max"), l=("l", "min"), c=("c", "last")).reset_index()
     wk["symbol"] = sym
