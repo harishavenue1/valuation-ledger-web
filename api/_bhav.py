@@ -60,6 +60,7 @@ DC_TIGHT_SLACK = 1.05
 DC_MIN_WIDTH_PCT = 8.0  # below this the 'channel' is a liquid fund / pegged instrument, not a stock coiling
 DC_NEAR_PCT = 5.0  # "coiled" = squeeze in place and the close within this % of the upper band
 DC_PEAK_WEEKS = 104  # the prior peak = highest high in this many weeks before the trigger
+DC_SAME_EFFORT_WEEKS = 8  # earlier breakouts closer than this to the trigger don't count as the 'previous' one
 DC_TRIG_HORIZON = 104  # trigger history kept for this many weeks
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
 DEEP_DAYS = 1830  # the NSE-750 keep 5y (what the Yahoo nse750PriceCache holds), so the store can replace it
@@ -1015,7 +1016,7 @@ def dc_fields(wdf, close_now):
         # weeks between this trigger and the previous time the close broke above the 27-week upper band
         # (ANY breakout, squeeze or not): a stock that keeps clearing its band is already trending, so a
         # long gap here means a fresh break after a long quiet stretch
-        before = np.flatnonzero(brk[:k])
+        before = np.flatnonzero(brk[:max(0, k - DC_SAME_EFFORT_WEEKS)])  # breakouts within a couple of months before are the same push, not a previous trigger
         out["dc_prev_trig_weeks"] = int(k - before[-1]) if len(before) else None
         level = float(upprev[k])
         d = wdf["wk"].iloc[k]
