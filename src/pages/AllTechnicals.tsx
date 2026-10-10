@@ -202,6 +202,12 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "nt_pct_from_ath", label: "% from ATH", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_ath} digits={1} /> },
   { key: "nt_pct_from_52w_high", label: "% from 52W High", group: DENSE_GROUP, source: "nt", render: (r) => <Signed v={r.nt_pct_from_52w_high} digits={1} /> },
 
+  { key: "bh_dc_upper", label: "DC27 Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
+  { key: "bh_dc_lower", label: "DC27 Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
+  { key: "bh_dc_pct_from_upper", label: "% from DC27 High", group: DENSE_GROUP, source: "bhav", render: (r) => <Signed v={r.bh_dc_pct_from_upper} digits={1} /> },
+  { key: "bh_dc_pos", label: "DC27 Position %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_pos, 0) },
+  { key: "bh_dc_width", label: "DC27 Width %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_width, 1) },
+  { key: "bh_dc_breakout", label: "DC27 Breakout", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_breakout) },
   { key: "bh_deliv", label: "Delivery %", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv, 1) },
   { key: "bh_deliv_avg20", label: "Delivery % (20D avg)", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_deliv_avg20, 1) },
   { key: "bh_turnover", label: "Turnover ₹Cr", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_turnover, 1) },
@@ -584,6 +590,12 @@ export default function AllTechnicals() {
         _has_smartmoney: !!sm,
         _has_quality: fund?.roce_1y_chg != null,
         _has_nt: !!nt || !!bh,
+        bh_dc_upper: bh?.dc_upper ?? null,
+        bh_dc_lower: bh?.dc_lower ?? null,
+        bh_dc_pct_from_upper: bh?.dc_pct_from_upper ?? null,
+        bh_dc_pos: bh?.dc_pos ?? null,
+        bh_dc_width: bh?.dc_width ?? null,
+        bh_dc_breakout: bh?.dc_breakout ?? null,
         bh_deliv: bh?.deliv_pct ?? null,
         bh_deliv_avg20: bh?.deliv_pct_avg20 ?? null,
         bh_turnover: bh?.turnover_cr ?? null,
@@ -617,6 +629,12 @@ export default function AllTechnicals() {
   const [fEma, setFEma] = useState(false);
   const [emaLo, setEmaLo] = useState(0);
   const [emaHi, setEmaHi] = useState(10);
+  // Donchian (27-bar) channel: fresh breakout, near the upper band, narrow channel
+  const [fDcBrk, setFDcBrk] = useState(false);
+  const [fDcNear, setFDcNear] = useState(false);
+  const [vDcNear, setVDcNear] = useState(3);
+  const [fDcNarrow, setFDcNarrow] = useState(false);
+  const [vDcNarrow, setVDcNarrow] = useState(15);
   // the table's rows as shown (name/sector filter + header sort applied) —
   // read when "Open in Charts" is clicked; a ref so it never causes a re-render
   const visibleRef = useRef<Record<string, any>[]>([]);
@@ -632,6 +650,9 @@ export default function AllTechnicals() {
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
+    if (fDcBrk) parts.push("DC27 breakout");
+    if (fDcNear) parts.push(`DC27 high within ${vDcNear}%`);
+    if (fDcNarrow) parts.push(`DC27 width < ${vDcNarrow}%`);
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -659,11 +680,14 @@ export default function AllTechnicals() {
       return typeof v === "number" && v > v3m;
     });
     if (fEma) base = base.filter((r: any) => typeof r.nt_pct_33w_ema === "number" && r.nt_pct_33w_ema >= emaLo && r.nt_pct_33w_ema <= emaHi);
+    if (fDcBrk) base = base.filter((r: any) => r.bh_dc_breakout === true);
+    if (fDcNear) base = base.filter((r: any) => within(r.bh_dc_pct_from_upper, vDcNear));
+    if (fDcNarrow) base = base.filter((r: any) => typeof r.bh_dc_width === "number" && r.bh_dc_width < vDcNarrow);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcBrk, fDcNear, vDcNear, fDcNarrow, vDcNarrow]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -763,6 +787,8 @@ export default function AllTechnicals() {
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
+          [fDcNear, setFDcNear, "DC27 high within", vDcNear, setVDcNear, "%", "Within this % of the 27-day Donchian upper band (the highest high of the last 27 sessions, today included)"],
+          [fDcNarrow, setFDcNarrow, "DC27 width <", vDcNarrow, setVDcNarrow, "%", "27-day channel (upper − lower) as a % of its midpoint is below this: a contracted, low-volatility range"],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
@@ -787,6 +813,15 @@ export default function AllTechnicals() {
             {unit}
           </label>
         ))}
+        <label
+          title="Today's close is above the highest high of the 27 sessions before today (a fresh 27-day Donchian breakout)"
+          className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
+            fDcBrk ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
+          }`}
+        >
+          <input type="checkbox" checked={fDcBrk} onChange={(e) => setFDcBrk(e.target.checked)} />
+          DC27 breakout
+        </label>
         <label
           title="Price vs its 33-week EMA (OHLC4), in %: 0 to 10 = above the 33W EMA but within 10% of it. Use a negative low end to include stocks just below it."
           className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${

@@ -48,6 +48,7 @@ BHAV_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_
 NAMES_URL = "https://nsearchives.nseindia.com/content/equities/EQUITY_L.csv"
 SME_NAMES_URL = "https://nsearchives.nseindia.com/emerge/corporates/content/SME_EQUITY_L.csv"
 SERIES_PRIORITY = {"EQ": 0, "BE": 1, "SM": 2}
+DC_LEN = 27  # Donchian channel length (user's choice; TradingView default is 20)
 STORE_DAYS = 740  # ~2y of calendar days: enough for a converged 200D EMA and a 33W EMA
 DEEP_DAYS = 1830  # the NSE-750 keep 5y (what the Yahoo nse750PriceCache holds), so the store can replace it
 STATE_KEY = "bhav_state"
@@ -973,6 +974,13 @@ def compute_technicals(df, names, ath_extra=None):
     for span in (20, 50, 200):
         df[f"e{span}"] = g["o4"].transform(lambda s, span=span: s.ewm(span=span, adjust=False).mean())
     df["n"] = g.cumcount() + 1
+    # Donchian channel, length DC_LEN as on TradingView (the window includes
+    # today's bar); dc_up_prev is the same channel one bar earlier, which is what
+    # a close has to clear to count as a breakout (a close can never exceed the
+    # channel that already contains it)
+    df["dc_up"] = g["h"].transform(lambda s: s.rolling(DC_LEN).max())
+    df["dc_lo"] = g["l"].transform(lambda s: s.rolling(DC_LEN).min())
+    df["dc_up_prev"] = df.groupby("symbol", sort=False)["dc_up"].shift(1)
     df["rsi_d"] = _wilder_rsi(df, "c")
     df["prev_c"] = g["c"].shift(1)
 
@@ -1053,6 +1061,14 @@ def compute_technicals(df, names, ath_extra=None):
             "pct_33w_ema": pct(c, w["e33"]) if w is not None and w["n"] >= 33 else None,
             "pct_from_ath": pct(c, ath.get(sym)),
             "pct_from_52w_high": pct(c, high52.get(sym)),
+            "dc_upper": _r2(r["dc_up"]),
+            "dc_lower": _r2(r["dc_lo"]),
+            "dc_pct_from_upper": pct(c, r["dc_up"]),
+            "dc_pos": round((c - float(r["dc_lo"])) / (float(r["dc_up"]) - float(r["dc_lo"])) * 100, 1)
+            if r["dc_up"] == r["dc_up"] and r["dc_up"] != r["dc_lo"] else None,
+            "dc_width": round((float(r["dc_up"]) - float(r["dc_lo"])) / ((float(r["dc_up"]) + float(r["dc_lo"])) / 2) * 100, 1)
+            if r["dc_up"] == r["dc_up"] and (r["dc_up"] + r["dc_lo"]) else None,
+            "dc_breakout": bool(c > r["dc_up_prev"]) if r["dc_up_prev"] == r["dc_up_prev"] else None,
             "deliv_pct": round(float(r["dp"]), 1) if r["dp"] == r["dp"] else None,
             "deliv_pct_avg20": round(float(dp20.get(sym)), 1) if sym in dp20.index and dp20.get(sym) == dp20.get(sym) else None,
             "volume": int(r["v"]) if r["v"] == r["v"] else None,
