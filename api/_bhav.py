@@ -979,7 +979,7 @@ def dc_fields(wdf, close_now):
     week (HFCL, BSE and PFC all match the user's hand-marked reference highs)."""
     out = {k: None for k in ("dc_upper", "dc_lower", "dc_pct_from_upper", "dc_pos", "dc_width", "dc_breakout", "dc_state",
                              "dc_trig_date", "dc_trig_weeks_ago", "dc_trig_level", "dc_since_trig_pct", "dc_flat_weeks",
-                             "dc_peak_months", "dc_peak_date", "dc_trig_rsi", "dc_rsi66")}
+                             "dc_peak_months", "dc_peak_date", "dc_trig_rsi", "dc_rsi66", "dc_prev_trig_weeks")}
     if wdf is None or len(wdf) < DC_LEN + 2:
         return out
     h, l, c = wdf["h"].to_numpy(float), wdf["l"].to_numpy(float), wdf["c"].to_numpy(float)
@@ -1009,6 +1009,10 @@ def dc_fields(wdf, close_now):
     elif sq[-1]:
         out["dc_state"] = "Coiled" if close_now >= u * (1 - DC_NEAR_PCT / 100) else "Squeeze"
     if k is not None:
+        # weeks between this trigger and the one before it (any age): a repeat trigger inside ~26w is
+        # a stock already breaking out, not a fresh break from a long base (the backtest kept first triggers only)
+        before = np.flatnonzero(trig[:k])
+        out["dc_prev_trig_weeks"] = int(k - before[-1]) if len(before) else None
         level = float(upprev[k])
         d = wdf["wk"].iloc[k]
         out["dc_trig_date"] = d.end_time.date().isoformat()

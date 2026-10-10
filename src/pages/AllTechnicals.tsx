@@ -210,7 +210,8 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "bh_dc_flat_weeks", label: "Weeks Since Band High", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_flat_weeks, 0) },
   { key: "bh_dc_peak_months", label: "Months Since Prior Peak", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_peak_months, 1) },
   { key: "bh_dc_peak_date", label: "Prior Peak Date", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_peak_date ?? "" },
-  { key: "bh_dc_long66", label: "RSI>66 + Long Distance (≥12m)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_rsi66 === true && (r.bh_dc_peak_months ?? 0) >= 12) },
+  { key: "bh_dc_long66", label: "RSI>66 + Long Distance (≥12m)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_rsi66 === true && (r.bh_dc_peak_months ?? 0) >= 12 && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26)) },
+  { key: "bh_dc_prev_trig_weeks", label: "Weeks Since Previous Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_prev_trig_weeks, 0) },
   { key: "bh_dc_trig_rsi", label: "Weekly RSI at Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_rsi, 1) },
   { key: "bh_dc_upper", label: "DC27W Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
   { key: "bh_dc_lower", label: "DC27W Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
@@ -609,6 +610,7 @@ export default function AllTechnicals() {
         bh_dc_peak_months: bh?.dc_peak_months ?? null,
         bh_dc_peak_date: bh?.dc_peak_date ?? null,
         bh_dc_trig_rsi: bh?.dc_trig_rsi ?? null,
+        bh_dc_prev_trig_weeks: bh?.dc_prev_trig_weeks ?? null,
         bh_dc_rsi66: bh?.dc_rsi66 ?? null,
         bh_dc_upper: bh?.dc_upper ?? null,
         bh_dc_lower: bh?.dc_lower ?? null,
@@ -712,7 +714,8 @@ export default function AllTechnicals() {
     if (fDcRsi) base = base.filter((r: any) => r.bh_dc_rsi66 === true);
     if (fDcPeak) base = base.filter((r: any) => typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
     if (fDcBrk) base = base.filter((r: any) => r.bh_dc_breakout === true);
-    if (fDcLong66) base = base.filter((r: any) => r.bh_dc_rsi66 === true && typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
+    // first trigger only: a previous trigger within 26 weeks means the stock was already breaking out (what the backtest excluded)
+    if (fDcLong66) base = base.filter((r: any) => r.bh_dc_rsi66 === true && typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26));
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
@@ -845,7 +848,7 @@ export default function AllTechnicals() {
         ))}
         {([
           [fDcCoiled, setFDcCoiled, "DC27W coiled", "Squeeze in place (27-week band narrow and tightening, upper edge flat) with price within 5% of the upper band: waiting for the trigger"],
-          [fDcLong66, setFDcLong66, "RSI>66 + long distance", "Weekly RSI above 66 in the trigger week AND the prior peak at least the 'Prior peak ≥' months before the trigger (default 12)"],
+          [fDcLong66, setFDcLong66, "RSI>66 + long distance", "Weekly RSI above 66 in the trigger week AND the prior peak at least the 'Prior peak ≥' months before the trigger (default 12), AND no earlier trigger in the 26 weeks before it (a fresh break, not a stock already trending)"],
           [fDcRsi, setFDcRsi, "RSI>66 at trigger", "Weekly RSI was above 66 in the trigger week"],
           [fDcBrk, setFDcBrk, "DC27W breakout now", "This week's close is above the highest high of the previous 27 weeks"],
         ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
