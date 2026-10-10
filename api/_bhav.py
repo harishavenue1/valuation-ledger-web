@@ -57,6 +57,7 @@ DC_FLAT_PCT = 5.0  # ... within this many %
 DC_NARROW_PCT = 45.0  # channel width (upper-lower)/mid must be below this ...
 DC_TIGHT_LOOKBACK = 13  # ... and no wider than it was this many weeks ago (x slack)
 DC_TIGHT_SLACK = 1.05
+DC_MIN_WIDTH_PCT = 8.0  # below this the 'channel' is a liquid fund / pegged instrument, not a stock coiling
 DC_NEAR_PCT = 5.0  # "coiled" = squeeze in place and the close within this % of the upper band
 DC_PEAK_WEEKS = 104  # the prior peak = highest high in this many weeks before the trigger
 DC_TRIG_HORIZON = 104  # trigger history kept for this many weeks
@@ -989,7 +990,7 @@ def dc_fields(wdf, close_now):
     upprev = up.shift(1).to_numpy()
     width = ((up - lo) / ((up + lo) / 2) * 100)
     flat = ((up.rolling(DC_FLAT_WEEKS).max() / up.rolling(DC_FLAT_WEEKS).min() - 1) * 100 <= DC_FLAT_PCT).to_numpy()
-    sq = flat & (width <= DC_NARROW_PCT).to_numpy() & (width <= width.shift(DC_TIGHT_LOOKBACK) * DC_TIGHT_SLACK).to_numpy()
+    sq = flat & (width <= DC_NARROW_PCT).to_numpy() & (width >= DC_MIN_WIDTH_PCT).to_numpy() & (width <= width.shift(DC_TIGHT_LOOKBACK) * DC_TIGHT_SLACK).to_numpy()
     u, lw = upv[-1], lov[-1]
     if u != u or lw != lw:
         return out
