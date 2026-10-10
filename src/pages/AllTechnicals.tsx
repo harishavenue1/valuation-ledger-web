@@ -210,6 +210,7 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "bh_dc_flat_weeks", label: "Weeks Since Band High", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_flat_weeks, 0) },
   { key: "bh_dc_peak_months", label: "Months Since Prior Peak", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_peak_months, 1) },
   { key: "bh_dc_peak_date", label: "Prior Peak Date", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_peak_date ?? "" },
+  { key: "bh_dc_long66", label: "RSI>66 + Long Distance (≥12m)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_rsi66 === true && (r.bh_dc_peak_months ?? 0) >= 12) },
   { key: "bh_dc_trig_rsi", label: "Weekly RSI at Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_rsi, 1) },
   { key: "bh_dc_upper", label: "DC27W Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
   { key: "bh_dc_lower", label: "DC27W Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
@@ -657,6 +658,7 @@ export default function AllTechnicals() {
   const [fDcPeak, setFDcPeak] = useState(false);
   const [vDcPeak, setVDcPeak] = useState(12); // prior peak at least this many months before the trigger
   const [fDcBrk, setFDcBrk] = useState(false);
+  const [fDcLong66, setFDcLong66] = useState(false); // RSI>66 at trigger AND prior peak >= vDcPeak months back
   // the table's rows as shown (name/sector filter + header sort applied) —
   // read when "Open in Charts" is clicked; a ref so it never causes a re-render
   const visibleRef = useRef<Record<string, any>[]>([]);
@@ -677,6 +679,7 @@ export default function AllTechnicals() {
     if (fDcRsi) parts.push("RSI>66 at trigger");
     if (fDcPeak) parts.push(`prior peak ≥ ${vDcPeak}m`);
     if (fDcBrk) parts.push("DC27W breakout");
+    if (fDcLong66) parts.push(`RSI>66 + peak ≥ ${vDcPeak}m`);
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -709,11 +712,12 @@ export default function AllTechnicals() {
     if (fDcRsi) base = base.filter((r: any) => r.bh_dc_rsi66 === true);
     if (fDcPeak) base = base.filter((r: any) => typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
     if (fDcBrk) base = base.filter((r: any) => r.bh_dc_breakout === true);
+    if (fDcLong66) base = base.filter((r: any) => r.bh_dc_rsi66 === true && typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcTrig, vDcTrig, fDcCoiled, fDcRsi, fDcPeak, vDcPeak, fDcBrk]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcTrig, vDcTrig, fDcCoiled, fDcRsi, fDcPeak, vDcPeak, fDcBrk, fDcLong66]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -841,6 +845,7 @@ export default function AllTechnicals() {
         ))}
         {([
           [fDcCoiled, setFDcCoiled, "DC27W coiled", "Squeeze in place (27-week band narrow and tightening, upper edge flat) with price within 5% of the upper band: waiting for the trigger"],
+          [fDcLong66, setFDcLong66, "RSI>66 + long distance", "Weekly RSI above 66 in the trigger week AND the prior peak at least the 'Prior peak ≥' months before the trigger (default 12)"],
           [fDcRsi, setFDcRsi, "RSI>66 at trigger", "Weekly RSI was above 66 in the trigger week"],
           [fDcBrk, setFDcBrk, "DC27W breakout now", "This week's close is above the highest high of the previous 27 weeks"],
         ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
