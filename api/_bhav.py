@@ -1034,6 +1034,33 @@ def dc_fields(wdf, close_now):
     return out
 
 
+RSI_LEVEL = 66  # the user's weekly RSI threshold
+
+
+def rsi66_fields(wdf):
+    """Weekly RSI>66 pattern: the trigger is the latest week RSI crossed above 66 (previous week <= 66).
+    rsi_cross_weeks_ago = how many weeks ago; rsi_gap_weeks = how long RSI had been at/below 66 before that
+    cross (weeks since the previous week above 66; if none in the stored history, the weeks of history
+    available, i.e. a lower bound)."""
+    out = {"rsi_cross_weeks_ago": None, "rsi_gap_weeks": None}
+    if wdf is None or len(wdf) < 20:
+        return out
+    r = wdf["rsi_w"].to_numpy(float)
+    n = len(r)
+    above = r > RSI_LEVEL
+    cross = np.zeros(n, bool)
+    cross[1:] = above[1:] & ~above[:-1] & ~np.isnan(r[:-1])
+    ks = np.flatnonzero(cross)
+    if not len(ks):
+        return out
+    k = int(ks[-1])
+    out["rsi_cross_weeks_ago"] = n - 1 - k
+    prev = np.flatnonzero(above[:k])
+    first_valid = int(np.argmax(~np.isnan(r)))
+    out["rsi_gap_weeks"] = int(k - prev[-1]) if len(prev) else int(k - first_valid)
+    return out
+
+
 def compute_technicals(df, names, ath_extra=None):
     """One row per symbol with its latest bar: price, % changes, EMA/high
     distances, RSI and delivery. EMAs on OHLC4, compared with the latest close
@@ -1135,6 +1162,7 @@ def compute_technicals(df, names, ath_extra=None):
             "turnover_cr": round(c * float(r["v"]) / 1e7, 2) if r["v"] == r["v"] else None,
             "vol_x": round(float(r["v"]) / float(vol20.get(sym)), 2) if sym in vol20.index and vol20.get(sym) and vol20.get(sym) == vol20.get(sym) and r["v"] == r["v"] else None,
             **dc_fields(wk_sym.get(sym), c),
+            **rsi66_fields(wk_sym.get(sym)),
         }
         # a symbol with <53 weekly bars has no honest 1Y change — already None via NaN shift
         rows.append(row)

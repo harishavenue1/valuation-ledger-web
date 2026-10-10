@@ -212,6 +212,8 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "bh_dc_peak_date", label: "Prior Peak Date", group: DENSE_GROUP, source: "bhav", render: (r) => r.bh_dc_peak_date ?? "" },
   { key: "bh_dc_long66", label: "RSI>66 + Long Distance (≥12m)", group: DENSE_GROUP, source: "bhav", render: (r) => boolCell(r.bh_dc_rsi66 === true && (r.bh_dc_peak_months ?? 0) >= 12 && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26)) },
   { key: "bh_dc_prev_trig_weeks", label: "Weeks Since Previous Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_prev_trig_weeks, 0) },
+  { key: "bh_rsi_cross_weeks_ago", label: "Weeks Since Weekly RSI Crossed 66", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_rsi_cross_weeks_ago, 0) },
+  { key: "bh_rsi_gap_weeks", label: "Weeks RSI Was Below 66 Before Cross", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_rsi_gap_weeks, 0) },
   { key: "bh_dc_trig_rsi", label: "Weekly RSI at Trigger", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_trig_rsi, 1) },
   { key: "bh_dc_upper", label: "DC27W Upper", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_upper, 1) },
   { key: "bh_dc_lower", label: "DC27W Lower", group: DENSE_GROUP, source: "bhav", render: (r) => fmtNum(r.bh_dc_lower, 1) },
@@ -611,6 +613,8 @@ export default function AllTechnicals() {
         bh_dc_peak_date: bh?.dc_peak_date ?? null,
         bh_dc_trig_rsi: bh?.dc_trig_rsi ?? null,
         bh_dc_prev_trig_weeks: bh?.dc_prev_trig_weeks ?? null,
+        bh_rsi_cross_weeks_ago: bh?.rsi_cross_weeks_ago ?? null,
+        bh_rsi_gap_weeks: bh?.rsi_gap_weeks ?? null,
         bh_dc_rsi66: bh?.dc_rsi66 ?? null,
         bh_dc_upper: bh?.dc_upper ?? null,
         bh_dc_lower: bh?.dc_lower ?? null,
@@ -652,15 +656,19 @@ export default function AllTechnicals() {
   const [emaLo, setEmaLo] = useState(0);
   const [emaHi, setEmaHi] = useState(10);
   // Donchian (27-bar) channel: fresh breakout, near the upper band, narrow channel
-  // Weekly 27-bar Donchian channel: squeeze (narrow, flat upper band) then a close above it = trigger
-  const [fDcTrig, setFDcTrig] = useState(false);
-  const [vDcTrig, setVDcTrig] = useState(8); // triggered within this many weeks
-  const [fDcCoiled, setFDcCoiled] = useState(false); // squeeze in place, price within 5% of the upper band
-  const [fDcRsi, setFDcRsi] = useState(false); // weekly RSI > 66 in the trigger week
-  const [fDcPeak, setFDcPeak] = useState(false);
-  const [vDcPeak, setVDcPeak] = useState(12); // prior peak at least this many months before the trigger
-  const [fDcBrk, setFDcBrk] = useState(false);
-  const [fDcLong66, setFDcLong66] = useState(false); // RSI>66 at trigger AND prior peak >= vDcPeak months back
+  // Four weekly-timeframe pattern filters, one field each (all weekly bars):
+  //  DC  recent: a 27-week Donchian squeeze breakout happened within N weeks
+  //  DC  longer: that breakout was a first trigger after the prior peak was >= N months back
+  //  RSI recent: weekly RSI crossed above 66 within N weeks
+  //  RSI longer: the cross came after RSI had been <= 66 for >= N months
+  const [fDcRecent, setFDcRecent] = useState(false);
+  const [vDcRecent, setVDcRecent] = useState(8);
+  const [fDcLong, setFDcLong] = useState(false);
+  const [vDcLong, setVDcLong] = useState(12);
+  const [fRsiRecent, setFRsiRecent] = useState(false);
+  const [vRsiRecent, setVRsiRecent] = useState(8);
+  const [fRsiLong, setFRsiLong] = useState(false);
+  const [vRsiLong, setVRsiLong] = useState(6);
   // the table's rows as shown (name/sector filter + header sort applied) —
   // read when "Open in Charts" is clicked; a ref so it never causes a re-render
   const visibleRef = useRef<Record<string, any>[]>([]);
@@ -676,12 +684,10 @@ export default function AllTechnicals() {
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
-    if (fDcTrig) parts.push(`DC27W trigger ≤ ${vDcTrig}w`);
-    if (fDcCoiled) parts.push("DC27W coiled");
-    if (fDcRsi) parts.push("RSI>66 at trigger");
-    if (fDcPeak) parts.push(`prior peak ≥ ${vDcPeak}m`);
-    if (fDcBrk) parts.push("DC27W breakout");
-    if (fDcLong66) parts.push(`RSI>66 + peak ≥ ${vDcPeak}m`);
+    if (fDcRecent) parts.push(`DC27W trigger ≤ ${vDcRecent}w`);
+    if (fDcLong) parts.push(`DC27W trigger after ≥ ${vDcLong}m`);
+    if (fRsiRecent) parts.push(`wRSI>66 cross ≤ ${vRsiRecent}w`);
+    if (fRsiLong) parts.push(`wRSI>66 cross after ≥ ${vRsiLong}m`);
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -709,18 +715,17 @@ export default function AllTechnicals() {
       return typeof v === "number" && v > v3m;
     });
     if (fEma) base = base.filter((r: any) => typeof r.nt_pct_33w_ema === "number" && r.nt_pct_33w_ema >= emaLo && r.nt_pct_33w_ema <= emaHi);
-    if (fDcTrig) base = base.filter((r: any) => typeof r.bh_dc_trig_weeks_ago === "number" && r.bh_dc_trig_weeks_ago <= vDcTrig);
-    if (fDcCoiled) base = base.filter((r: any) => r.bh_dc_state === "Coiled");
-    if (fDcRsi) base = base.filter((r: any) => r.bh_dc_rsi66 === true);
-    if (fDcPeak) base = base.filter((r: any) => typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak);
-    if (fDcBrk) base = base.filter((r: any) => r.bh_dc_breakout === true);
-    // first trigger only: a previous trigger within 26 weeks means the stock was already breaking out (what the backtest excluded)
-    if (fDcLong66) base = base.filter((r: any) => r.bh_dc_rsi66 === true && typeof r.bh_dc_peak_months === "number" && r.bh_dc_peak_months >= vDcPeak && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26));
+    const num = (v: any) => (typeof v === "number" ? v : null);
+    if (fDcRecent) base = base.filter((r: any) => num(r.bh_dc_trig_weeks_ago) != null && r.bh_dc_trig_weeks_ago <= vDcRecent);
+    // first trigger only (no trigger in the 26 weeks before it), prior peak at least N months before it
+    if (fDcLong) base = base.filter((r: any) => num(r.bh_dc_peak_months) != null && r.bh_dc_peak_months >= vDcLong && (r.bh_dc_prev_trig_weeks == null || r.bh_dc_prev_trig_weeks > 26));
+    if (fRsiRecent) base = base.filter((r: any) => num(r.bh_rsi_cross_weeks_ago) != null && r.bh_rsi_cross_weeks_ago <= vRsiRecent);
+    if (fRsiLong) base = base.filter((r: any) => num(r.bh_rsi_gap_weeks) != null && (r.bh_rsi_gap_weeks * 7) / 30.44 >= vRsiLong);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcTrig, vDcTrig, fDcCoiled, fDcRsi, fDcPeak, vDcPeak, fDcBrk, fDcLong66]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcRecent, vDcRecent, fDcLong, vDcLong, fRsiRecent, vRsiRecent, fRsiLong, vRsiLong]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -820,8 +825,10 @@ export default function AllTechnicals() {
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
-          [fDcTrig, setFDcTrig, "DC27W trigger ≤", vDcTrig, setVDcTrig, "wks", "A weekly close above the flat upper band of a narrowed 27-week Donchian channel (squeeze) happened within this many weeks"],
-          [fDcPeak, setFDcPeak, "Prior peak ≥", vDcPeak, setVDcPeak, "mo", "At the trigger, the stock's previous high was at least this many months earlier (the longer the stock sat below its old high, the bigger the base)"],
+          [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
+          [fDcLong, setFDcLong, "DC27W longer ≥", vDcLong, setVDcLong, "mo", "Weekly chart: first squeeze trigger (none in the prior 26 weeks) where the previous peak was at least this many months before it"],
+          [fRsiRecent, setFRsiRecent, "wRSI>66 recent ≤", vRsiRecent, setVRsiRecent, "wks", "Weekly RSI crossed above 66 within this many weeks"],
+          [fRsiLong, setFRsiLong, "wRSI>66 longer ≥", vRsiLong, setVRsiLong, "mo", "Weekly RSI crossed above 66 after having been at or below 66 for at least this many months"],
         ] as [boolean, (v: boolean) => void, string, number, (v: number) => void, string, string][]).map(([on, set, label, val, setVal, unit, tip]) => (
           <label
             key={label}
@@ -844,23 +851,6 @@ export default function AllTechnicals() {
               className="w-14 px-1 py-0 text-sm text-right border border-slate-300 rounded bg-white font-normal text-slate-800"
             />
             {unit}
-          </label>
-        ))}
-        {([
-          [fDcCoiled, setFDcCoiled, "DC27W coiled", "Squeeze in place (27-week band narrow and tightening, upper edge flat) with price within 5% of the upper band: waiting for the trigger"],
-          [fDcLong66, setFDcLong66, "RSI>66 + long distance", "Weekly RSI above 66 in the trigger week AND the prior peak at least the 'Prior peak ≥' months before the trigger (default 12), AND no earlier trigger in the 26 weeks before it (a fresh break, not a stock already trending)"],
-          [fDcRsi, setFDcRsi, "RSI>66 at trigger", "Weekly RSI was above 66 in the trigger week"],
-          [fDcBrk, setFDcBrk, "DC27W breakout now", "This week's close is above the highest high of the previous 27 weeks"],
-        ] as [boolean, (v: boolean) => void, string, string][]).map(([on, set, label, tip]) => (
-          <label
-            key={label}
-            title={tip}
-            className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
-              on ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
-            }`}
-          >
-            <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} />
-            {label}
           </label>
         ))}
         <label
