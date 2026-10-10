@@ -612,6 +612,11 @@ export default function AllTechnicals() {
   const [v52w, setV52w] = useState(10);
   const [vMcap, setVMcap] = useState(500);
   const [v3m, setV3m] = useState(27);
+  // distance from the 33-week EMA: price is between lo% and hi% vs it
+  // (default 0..10 = above it but within 10%); negative lo allows below it
+  const [fEma, setFEma] = useState(false);
+  const [emaLo, setEmaLo] = useState(0);
+  const [emaHi, setEmaHi] = useState(10);
   // the table's rows as shown (name/sector filter + header sort applied) —
   // read when "Open in Charts" is clicked; a ref so it never causes a re-render
   const visibleRef = useRef<Record<string, any>[]>([]);
@@ -626,6 +631,7 @@ export default function AllTechnicals() {
     if (f52w) parts.push(`52WH within ${v52w}%`);
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
     if (f3m) parts.push(`3M > ${v3m}%`);
+    if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
     saveChartList({
       label: parts.length ? parts.join(" · ") : "no quick filters",
       savedAt: new Date().toISOString(),
@@ -652,11 +658,12 @@ export default function AllTechnicals() {
       const v = r.three_month_pct ?? r.nt_3m_pct;
       return typeof v === "number" && v > v3m;
     });
+    if (fEma) base = base.filter((r: any) => typeof r.nt_pct_33w_ema === "number" && r.nt_pct_33w_ema >= emaLo && r.nt_pct_33w_ema <= emaHi);
     // rank recomputed here (1..N of what's actually shown), not baked in
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -780,6 +787,31 @@ export default function AllTechnicals() {
             {unit}
           </label>
         ))}
+        <label
+          title="Price vs its 33-week EMA (OHLC4), in %: 0 to 10 = above the 33W EMA but within 10% of it. Use a negative low end to include stocks just below it."
+          className={`flex items-center gap-1.5 text-sm cursor-pointer px-2.5 py-1 rounded-full border ${
+            fEma ? "bg-emerald-50 border-emerald-400 text-emerald-800 font-medium" : "border-slate-300 text-slate-600"
+          }`}
+        >
+          <input type="checkbox" checked={fEma} onChange={(e) => setFEma(e.target.checked)} />
+          vs 33W EMA
+          {([[emaLo, setEmaLo], [emaHi, setEmaHi]] as [number, (v: number) => void][]).map(([val, setVal], i) => (
+            <span key={i} className="flex items-center gap-1.5">
+              {i === 1 && "to"}
+              <input
+                type="number"
+                value={val}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
+                  if (!Number.isNaN(n)) setVal(n);
+                }}
+                className="w-14 px-1 py-0 text-sm text-right border border-slate-300 rounded bg-white font-normal text-slate-800"
+              />
+            </span>
+          ))}
+          %
+        </label>
       </div>
       {pickerOpen && (
         <div className="mb-4 p-3 border border-slate-200 rounded-lg bg-slate-50 space-y-3">
