@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
-import { Item, TAG_CLASS, TAG_ORDER, chartPath, fmtCr, storyStats, tvUrl, useBusinessData } from "../lib/businessData";
+import { Item, TAG_CLASS, TAG_ORDER, TIER_CLASS, buildStories, chartPath, fmtCr, storyStats, tvUrl, useBusinessData } from "../lib/businessData";
 
 // Company tab — one company's business in one place: what it does (Screener.in's About + Key Points),
 // growth record, strengths/watch-outs, concall + presentation links, and the recent catalysts from the Radar.
@@ -71,7 +71,8 @@ export default function CompanyProfile() {
   }
 
   const t = tech.get(symbol);
-  const st = useMemo(() => (items ? storyStats(items, 0, 120, Date.now()) : null), [items]);
+  const st = useMemo(() => (items ? storyStats(items, 0, 120, Date.now(), t?.market_cap_cr ?? null, "Medium") : null), [items, t]);
+  const stories = useMemo(() => (items ? buildStories(items, t?.market_cap_cr ?? null).sort((a, b) => (a.last < b.last ? 1 : -1)) : null), [items, t]);
   const sector = radar?.sectors?.[symbol] || profile?.classification?.[0] || "";
   const keyPts = profile?.key_points?.trim();
 
@@ -215,7 +216,7 @@ export default function CompanyProfile() {
             <h3 className="text-sm font-semibold mb-1">Recent catalysts</h3>
             {st && (
               <div className="flex flex-wrap items-center gap-1.5 mb-2 text-xs text-slate-500">
-                <span>Last 120 days: {st.stories} stories · score {st.score.toFixed(1)}{st.valueCr ? ` · ₹${fmtCr(st.valueCr)} Cr in orders/capex/deals` : ""}</span>
+                <span>Last 120 days: {st.nStories} worthwhile stories (Medium or better) · score {st.score.toFixed(1)}{st.valueCr ? ` · ₹${fmtCr(st.valueCr)} Cr in orders/capex/deals` : ""}</span>
                 {TAG_ORDER.filter((g) => st.tagCounts[g]).map((g) => (
                   <span key={g} className={`px-1.5 py-0.5 rounded border ${TAG_CLASS[g]}`}>
                     {g} {st.tagCounts[g]}
@@ -223,31 +224,34 @@ export default function CompanyProfile() {
                 ))}
               </div>
             )}
-            {items === null ? (
+            {stories === null ? (
               <div className="text-sm text-slate-500">Loading…</div>
-            ) : items.length === 0 ? (
+            ) : stories.length === 0 ? (
               <div className="text-sm text-slate-500">Nothing collected for this company yet.</div>
             ) : (
-              <ul className="space-y-1.5">
-                {items.map((i, k) => (
-                  <li key={k} className="flex gap-2 items-baseline text-sm">
-                    <span className="text-xs text-slate-400 w-20 shrink-0">{i.d}</span>
-                    <span className="flex flex-wrap gap-1 shrink-0">
-                      {i.g.map((g) => (
-                        <span key={g} className={`text-[10px] px-1 rounded border ${TAG_CLASS[g]}`}>
-                          {g}
-                        </span>
-                      ))}
+              <ul className="space-y-2">
+                {stories.map((st2, k) => (
+                  <li key={k} className={`text-sm flex gap-2 items-baseline ${st2.tier === "Low" ? "opacity-60" : ""}`}>
+                    <span className="text-xs text-slate-400 w-20 shrink-0">{st2.last}</span>
+                    <span className={`text-[10px] px-1 rounded border shrink-0 ${TIER_CLASS[st2.tier]}`} title={`Worth ${st2.worth}: ${st2.why.join(" · ")}`}>
+                      {st2.tier} {st2.worth}
                     </span>
-                    {i.u ? (
-                      <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
-                        {i.t}
-                      </a>
-                    ) : (
-                      <span>{i.t}</span>
-                    )}
-                    {i.a != null && <span className="text-xs text-slate-500 shrink-0">₹{fmtCr(i.a)} Cr</span>}
-                    <span className="text-xs text-slate-400 shrink-0">{i.s}</span>
+                    <span className={`text-[10px] px-1 rounded border shrink-0 ${TAG_CLASS[st2.tag]}`}>{st2.tag}</span>
+                    <span>
+                      {st2.lead.u ? (
+                        <a href={st2.lead.u} target="_blank" rel="noreferrer" className="hover:underline">
+                          {st2.lead.t}
+                        </a>
+                      ) : (
+                        st2.lead.t
+                      )}
+                      <span className="text-xs text-slate-400">
+                        {" "}
+                        · {st2.lead.s}
+                        {st2.sources > 1 ? ` · ${st2.sources} outlets` : ""}
+                        {st2.amount != null ? ` · ₹${fmtCr(st2.amount)} Cr${st2.pct != null ? ` (${st2.pct.toFixed(1)}% of mcap)` : ""}` : ""}
+                      </span>
+                    </span>
                   </li>
                 ))}
               </ul>

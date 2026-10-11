@@ -6,6 +6,11 @@ import { Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
 import {
   Item,
+  Story,
+  TIER_CLASS,
+  Tier,
+  buildStories,
+  useMinTier,
   TAG_CLASS,
   TAG_ORDER,
   ageDays,
@@ -51,10 +56,40 @@ interface Row extends Stats {
   wrsi: number | null;
 }
 
+function StoryLine({ st, link, wide }: { st: Story; link?: string; wide?: boolean }) {
+  return (
+    <div className={wide ? "flex gap-2 items-baseline" : ""}>
+      {wide && <span className="text-xs text-slate-400 w-20 shrink-0">{st.last}</span>}
+      <div>
+        <div className="flex gap-1.5 items-baseline">
+          <span className={`text-[10px] px-1 rounded border shrink-0 ${TIER_CLASS[st.tier]}`} title={`Worth ${st.worth}: ${st.why.join(" · ")}`}>
+            {st.tier} {st.worth}
+          </span>
+          <span className={`text-[10px] px-1 rounded border shrink-0 ${TAG_CLASS[st.tag]}`}>{st.tag}</span>
+          {link ? (
+            <a href={link} target="_blank" rel="noreferrer" className={`text-slate-800 hover:underline ${wide ? "" : "line-clamp-2"}`}>
+              {st.lead.t}
+            </a>
+          ) : (
+            <span className={wide ? "" : "line-clamp-2"}>{st.lead.t}</span>
+          )}
+        </div>
+        <div className="text-xs text-slate-400">
+          {st.last} · {st.lead.s}
+          {st.sources > 1 ? ` · ${st.sources} outlets` : ""}
+          {st.amount != null ? ` · ₹${fmtCr(st.amount)} Cr${st.pct != null ? ` (${st.pct.toFixed(1)}% of mcap)` : ""}` : ""}
+          {st.confirmed === false ? " · planned" : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function BusinessRadar() {
   const { bundle } = useData();
   useScreeners(["portfolioAllocation"]);
   const { radar, tech, err } = useBusinessData();
+  const [minTier, setMinTier] = useMinTier();
   const [days, setDays] = useState(30);
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [minMcap, setMinMcap] = useState(0);
@@ -100,10 +135,10 @@ export default function BusinessRadar() {
     const now = Date.now();
     const out: Row[] = [];
     for (const [sym, all] of Object.entries(radar.items)) {
-      const st = storyStats(all, 0, days, now);
-      if (!st) continue;
       const t = tech.get(sym);
       const mcap = t?.market_cap_cr ?? null;
+      const st = storyStats(all, 0, days, now, mcap, minTier);
+      if (!st) continue;
       out.push({
         ...st,
         symbol: sym,
@@ -118,7 +153,7 @@ export default function BusinessRadar() {
       });
     }
     return out;
-  }, [radar, days, tech]);
+  }, [radar, days, tech, minTier]);
 
   const view = useMemo(() => {
     let r = rows;
@@ -174,8 +209,9 @@ export default function BusinessRadar() {
         <summary className="cursor-pointer text-slate-500">How is this calculated?</summary>
         <div className="mt-2 space-y-1 max-w-4xl">
           <p>
-            <b>Catalyst score</b> = for each distinct story in the window, its strongest tag's weight (Order 3, Capex 3, M&A/JV 2, Approval/Launch 2, Partnership 1.5, Funding 1, Outlook 1, Concall 0.5,
-            Risk −2) halved every 30 days of age. Several outlets reporting the same order or capex count once.
+            <b>Catalyst score</b> = the sum of each story's <b>worth</b>, halved every 30 days of age (Risk stories subtract). A story is every headline about one event. Its worth starts from the tag weight
+            (Order/Capex 3, M&amp;A/Approval 2, Partnership 1.5, Funding/Outlook 1) and is multiplied by: size against market cap (≥10% ×2 … under 0.3% ×0.4), done ×1 / unclear ×0.8 / planned ×0.6,
+            number of outlets (3+ ×1.3, 2 ×1.1, 1 ×0.8) and a major outlet (×1.1). High ≥ 4, Medium ≥ 2. Hover a badge for the arithmetic. Stock-tip, price-target and results-date headlines are dropped.
           </p>
           <p>
             <b>Value ₹Cr</b> = the ₹ amounts on distinct Order, Capex and M&A stories (dollar amounts at a flat ₹88; order-book totals are not counted). <b>% mcap</b> compares it with the market cap: an
@@ -194,6 +230,20 @@ export default function BusinessRadar() {
             className={`text-sm px-2.5 py-1 rounded-full border ${days === d ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600"}`}
           >
             {d}d
+          </button>
+        ))}
+        <span className="mx-1 text-slate-300">|</span>
+        <span className="text-xs text-slate-500" title="How material a story must be to count. Size against market cap, done vs planned, number of outlets and source quality all feed it; hover a badge to see why.">
+          Worth
+        </span>
+        {(["High", "Medium", "Low"] as Tier[]).map((t) => (
+          <button
+            key={t}
+            onClick={() => setMinTier(t)}
+            className={`text-sm px-2.5 py-1 rounded-full border ${minTier === t ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600"}`}
+            title={t === "High" ? "Only stories that clearly matter for the company's size" : t === "Medium" ? "High and Medium (default)" : "Everything, including minor and single-source items"}
+          >
+            {t === "Low" ? "All" : t === "Medium" ? "Medium+" : "High only"}
           </button>
         ))}
         <span className="mx-1 text-slate-300">|</span>
@@ -338,44 +388,34 @@ export default function BusinessRadar() {
                     <td className="py-2 px-2 text-right">{r.m3 != null ? <Signed v={r.m3} digits={0} /> : ""}</td>
                     <td className="py-2 px-2 text-right text-slate-600">{r.wrsi != null ? r.wrsi.toFixed(0) : ""}</td>
                     <td className="py-2 px-2 max-w-[28rem]">
-                      {r.items[0].u ? (
-                        <a href={r.items[0].u} target="_blank" rel="noreferrer" className="text-slate-800 hover:underline line-clamp-2">
-                          {r.items[0].t}
-                        </a>
-                      ) : (
-                        <span className="line-clamp-2">{r.items[0].t}</span>
-                      )}
-                      <div className="text-xs text-slate-400">
-                        {r.items[0].d} · {r.items[0].s}
-                      </div>
+                      <StoryLine st={r.stories[0]} link={r.stories[0].lead.u ?? r.items.find((i) => i.u)?.u} />
                     </td>
                   </tr>
                   {open === r.symbol && (
                     <tr>
                       <td colSpan={11} className="pl-8 pr-2 pb-3 pt-1">
                         <div className="border-l-2 border-slate-300 pl-4">
-                          <ul className="space-y-1.5">
-                            {(full[r.symbol] ?? r.items).filter((i) => ageDays(i.d, Date.now()) <= Math.max(days, 90)).map((i, k) => (
-                              <li key={k} className="flex gap-2 items-baseline">
-                                <span className="text-xs text-slate-400 w-20 shrink-0">{i.d}</span>
-                                <span className="flex flex-wrap gap-1 shrink-0">
-                                  {i.g.map((g) => (
-                                    <span key={g} className={`text-[10px] px-1 rounded border ${TAG_CLASS[g]}`}>
-                                      {g}
-                                    </span>
-                                  ))}
-                                </span>
-                                {i.u ? (
-                                  <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
-                                    {i.t}
-                                  </a>
-                                ) : (
-                                  <span>{i.t}</span>
-                                )}
-                                {i.a != null && <span className="text-xs text-slate-500 shrink-0">₹{fmtCr(i.a)} Cr</span>}
-                                <span className="text-xs text-slate-400 shrink-0">{i.s}</span>
-                              </li>
-                            ))}
+                          <ul className="space-y-2">
+                            {buildStories(full[r.symbol] ?? r.items, r.mcap)
+                              .filter((st) => ageDays(st.last, Date.now()) <= Math.max(days, 90))
+                              .sort((a, b) => (a.last < b.last ? 1 : -1))
+                              .map((st, k) => (
+                                <li key={k} className={st.tier === "Low" ? "opacity-60" : ""}>
+                                  <StoryLine st={st} link={st.lead.u} wide />
+                                  {st.items.length > 1 && (
+                                    <details className="ml-24 text-xs text-slate-500">
+                                      <summary className="cursor-pointer">{st.items.length} headlines</summary>
+                                      <ul className="mt-1 space-y-0.5">
+                                        {st.items.map((i, n) => (
+                                          <li key={n}>
+                                            {i.d} · {i.s} · {i.u ? <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">{i.t}</a> : i.t}
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </details>
+                                  )}
+                                </li>
+                              ))}
                           </ul>
                         </div>
                       </td>

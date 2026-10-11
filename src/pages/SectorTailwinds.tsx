@@ -1,7 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Signed } from "../components/ScreenerTable";
-import { TAG_CLASS, companyPath, fmtCr, storyStats, useBusinessData, Stats } from "../lib/businessData";
+import { TAG_CLASS, TIER_CLASS, Tier, companyPath, fmtCr, storyStats, useBusinessData, useMinTier, Stats } from "../lib/businessData";
 
 // Sectors tab — which sectors are collecting the most orders, capex and approvals this month
 // compared with the month before, from the same accumulated headlines as the Radar.
@@ -29,6 +29,7 @@ interface SectorRow {
 
 export default function SectorTailwinds() {
   const { radar, tech, err } = useBusinessData();
+  const [minTier, setMinTier] = useMinTier();
   const [sortKey, setSortKey] = useState<Key>("raw");
   const [dir, setDir] = useState<1 | -1>(-1);
   const [open, setOpen] = useState<string | null>(null);
@@ -42,8 +43,9 @@ export default function SectorTailwinds() {
     let histFrom = "9999";
     for (const [sym, all] of Object.entries(radar.items)) {
       for (const i of all) if (i.d < histFrom) histFrom = i.d;
-      const cur = storyStats(all, 0, 30, now);
-      const prev = storyStats(all, 30, 60, now);
+      const mcap = tech.get(sym)?.market_cap_cr ?? null;
+      const cur = storyStats(all, 0, 30, now, mcap, minTier);
+      const prev = storyStats(all, 30, 60, now, mcap, minTier);
       if (!cur && !prev) continue;
       const sector = radar.sectors?.[sym] || "Unclassified";
       let r = by.get(sector);
@@ -54,7 +56,7 @@ export default function SectorTailwinds() {
       r.prevRaw += prev?.raw ?? 0;
       if (cur) {
         r.companies++;
-        r.stories += cur.stories;
+        r.stories += cur.nStories;
         r.raw += cur.raw;
         r.valueCr += cur.valueCr;
         r.orders += cur.tagCounts["Order"] ?? 0;
@@ -72,7 +74,7 @@ export default function SectorTailwinds() {
       r.raw = Math.round(r.raw * 10) / 10;
     }
     return { rows: out, histFrom };
-  }, [radar, tech]);
+  }, [radar, tech, minTier]);
 
   const view = useMemo(() => {
     let r = rows.filter((x) => x.companies >= minCompanies);
@@ -128,6 +130,14 @@ export default function SectorTailwinds() {
           />
         </label>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter sector" className="px-2 py-1 text-sm border border-slate-300 rounded bg-white w-44" />
+        <span className="flex items-center gap-1.5 text-slate-600">
+          Worth
+          {(["High", "Medium", "Low"] as Tier[]).map((t) => (
+            <button key={t} onClick={() => setMinTier(t)} className={`text-sm px-2.5 py-1 rounded-full border ${minTier === t ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600"}`}>
+              {t === "Low" ? "All" : t === "Medium" ? "Medium+" : "High only"}
+            </button>
+          ))}
+        </span>
         <span className="text-xs text-slate-500">{view.length} sectors</span>
       </div>
       {err && <div className="text-sm text-red-600">Could not load: {err}</div>}
@@ -182,7 +192,7 @@ export default function SectorTailwinds() {
                                     </span>
                                   ))}
                                 </span>
-                                <span className="text-xs text-slate-500 truncate max-w-[34rem]">{t.st.items[0].t}</span>
+                                <span className="text-xs text-slate-500 truncate max-w-[34rem]">{t.st.stories[0].lead.t}</span>
                               </li>
                             ))}
                           </ul>

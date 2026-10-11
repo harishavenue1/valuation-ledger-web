@@ -6623,10 +6623,10 @@ class handler(BaseHTTPRequestHandler):
                 send_json(self, 200, {"items": ((payload or {}).get("items") or {}).get(one, [])})
                 return
             if payload:
-                # the list view gets the newest 15 per company and only the newest one's link: the links dominate the size
+                # the list view gets the newest 25 per company and only the newest one's link: the links dominate the size
                 slim = {}
                 for s_, its in (payload.get("items") or {}).items():
-                    slim[s_] = [({**i} if k == 0 else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:15])]
+                    slim[s_] = [({**i} if k == 0 else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
                 payload = {k: v for k, v in payload.items() if k not in ("checked", "items", "sector_cache")}
                 payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
