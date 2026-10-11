@@ -184,7 +184,7 @@ export default function Tweets() {
       {feed && feed.tweets.length === 0 && (
         <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4 max-w-3xl">
           No tweets stored yet. X no longer offers a free way for a server to read tweets. Add an X API bearer token as the Vercel environment variable <code>X_BEARER_TOKEN</code> and this feed
-          fills itself three times a day (press "Run now" for the first pull).
+          fills itself once a day (press "Run now" for the first pull).
         </div>
       )}
 
