@@ -415,10 +415,13 @@ export default function Guidance() {
                         <button onClick={() => toggleOpen(r.symbol)} className="text-slate-400 mr-1 w-4" title="Concall transcripts & presentations">
                           {open === r.symbol ? "▾" : "▸"}
                         </button>
-                        <Link to={companyPath(r.symbol)} className="font-medium text-indigo-600 hover:underline" title="Business profile">
+                        <Link to={`/company/${encodeURIComponent(r.symbol)}`} className="font-medium text-indigo-600 hover:underline" title="Open the valuation page (Base / Bull / Bear cases)">
                           {r.symbol}
                         </Link>
                         <ScreenerInLink symbol={r.symbol} />
+                        <Link to={companyPath(r.symbol)} className="ml-1 text-slate-300 hover:text-indigo-600 no-underline" title="Business profile (what it does, growth record, concalls)">
+                          ⓘ
+                        </Link>
                         {holdings.has(r.symbol) && <span title="In your holdings"> ★</span>}
                         <div className="text-xs text-slate-500 ml-5 max-w-[13rem] truncate">{r.name}</div>
                       </td>
