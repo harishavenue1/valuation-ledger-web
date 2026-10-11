@@ -38,6 +38,17 @@ interface Row {
   prevFyGrowth: number | null; // that year's growth over the one before, %
   baseFy: number | null; // the completed FY those sales belong to, e.g. 26 for FY26
   revQLabel: string; // which quarter revQ is, e.g. "Jun 2026"
+  g: Guided | null; // the headline revenue guidance for the company: FY and growth %
+}
+
+interface Guided {
+  fy: string | null; // FY29
+  pct: number; // midpoint when a range
+  label: string; // "15–20%" or "62%"
+  kind: "CAGR" | "stated"; // CAGR = worked out from a revenue target vs last FY's sales; stated = management/news gave a growth rate
+  tip: string;
+  link: string | null;
+  who: string;
 }
 
 /** Implied sales CAGR when a statement is a revenue TARGET: target ₹ amount vs the last completed FY's sales, over the years to the target FY. */
@@ -53,6 +64,58 @@ function impliedCagr(e: Entry, r: Row): { cagr: number; tip: string } | null {
 }
 
 // the table sits in a height-capped scroll area so the sticky header and frozen Company column stick to IT (an uncapped overflow wrapper would not)
+const GROWTH_RANGE = /(\d+(?:\.\d+)?)\s?(?:-|–|to)\s?(\d+(?:\.\d+)?)\s?(?:%|per ?cent)/i;
+const GROWTH_ONE = /(\d+(?:\.\d+)?)\s?(?:%|per ?cent)/i;
+/** A growth RATE the statement itself gives for revenue ("~20% growth in revenue in FY27", "15-20% top-line growth"). */
+function statedGrowth(e: Entry): { pct: number; label: string } | null {
+  if (!e.types.includes("Revenue")) return null;
+  const t = e.text;
+  const mentionsRevenue = /revenue|sales|top.?line|turnover/i.test(t) || (e.src === "Concall" && /grow|growth|cagr/i.test(t));
+  if (!mentionsRevenue || !/growth|grow|cagr|increase/i.test(t)) return null;
+  if (/ebitda|profit|\bpat\b|margin|\beps\b|market share|industry|market (is|will|to) grow/i.test(t.replace(/revenue growth|sales growth/gi, ""))) return null;
+  // the % must sit next to the growth word, not be a margin or share figure elsewhere in the sentence
+  const near = t.match(/(\d+(?:\.\d+)?\s?(?:-|–|to)?\s?\d*(?:\.\d+)?\s?(?:%|per ?cent)[^.;]{0,40}?(?:growth|cagr|increase|grow)|(?:grow(?:th|ing)?|cagr)[^.;]{0,25}?\d+(?:\.\d+)?\s?(?:-|–|to)?\s?\d*(?:\.\d+)?\s?(?:%|per ?cent))/i);
+  if (!near) return null;
+  const rg = near[0].match(GROWTH_RANGE);
+  if (rg) {
+    const lo = parseFloat(rg[1]);
+    const hi = parseFloat(rg[2]);
+    if (hi > lo && hi <= 200) return { pct: (lo + hi) / 2, label: `${lo}–${hi}%` };
+  }
+  const one = near[0].match(GROWTH_ONE);
+  if (!one) return null;
+  const v = parseFloat(one[1]);
+  return v > 0 && v <= 300 ? { pct: v, label: `${v}%` } : null;
+}
+
+/** The headline revenue guidance of a company: its newest statement that gives either a revenue target (-> implied CAGR) or a growth rate. */
+function guidedGrowth(entries: Entry[], r: { prevFy: number | null; baseFy: number | null }): Guided | null {
+  let best: { g: Guided; rank: (string | number)[] } | null = null;
+  for (const e of entries) {
+    let g: Guided | null = null;
+    const c = impliedCagr(e, r as Row);
+    if (c) g = { fy: e.horizon, pct: c.cagr, label: `${c.cagr.toFixed(0)}%`, kind: "CAGR", tip: c.tip, link: e.link, who: e.who };
+    else {
+      const s = statedGrowth(e);
+      if (s) g = { fy: e.horizon, pct: s.pct, label: s.label, kind: "stated", tip: `Stated: "${e.text.slice(0, 160)}"`, link: e.link, who: e.who };
+    }
+    if (!g) continue;
+    // prefer a statement that names a year, then the newest, then the most specific, then the computed CAGR
+    const rank: (string | number)[] = [g.fy ? 1 : 0, e.date, e.strength, g.kind === "CAGR" ? 1 : 0];
+    if (!best) best = { g, rank };
+    else {
+      for (let i = 0; i < rank.length; i++) {
+        if (rank[i] > best.rank[i]) {
+          best = { g, rank };
+          break;
+        }
+        if (rank[i] < best.rank[i]) break;
+      }
+    }
+  }
+  return best ? best.g : null;
+}
+
 const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
 const PAGE_ROWS = 100;
 
@@ -71,7 +134,7 @@ export default function Guidance() {
   const [minMcap, setMinMcap] = useState(0);
   const [minStrength, setMinStrength] = useState(3);
   const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<"latest" | "symbol" | "mcap" | "n" | "best" | "revQ" | "prevFy">("latest");
+  const [sortKey, setSortKey] = useState<"latest" | "symbol" | "mcap" | "n" | "best" | "revQ" | "prevFy" | "gPct" | "gFy">("latest");
   const [dir, setDir] = useState<1 | -1>(-1);
   const [open, setOpen] = useState<string | null>(null);
   const [concalls, setConcalls] = useState<Record<string, any>>({});
@@ -187,6 +250,7 @@ export default function Guidance() {
         prevFyGrowth: sf.fyG,
         baseFy: sf.baseFy,
         revQLabel: sf.qLabel,
+        g: guidedGrowth(es, { prevFy: sf.prevFy, baseFy: sf.baseFy }),
       });
     }
     return out;
@@ -199,7 +263,7 @@ export default function Guidance() {
     if (onlyWatch) r = r.filter((x) => watch.has(x.symbol));
     const needle = q.trim().toLowerCase();
     if (needle) r = r.filter((x) => x.symbol.toLowerCase().includes(needle) || x.name.toLowerCase().includes(needle) || x.entries.some((e) => e.text.toLowerCase().includes(needle)));
-    const val = (x: Row): number | string | null => (sortKey === "symbol" ? x.symbol : sortKey === "mcap" ? x.mcap : sortKey === "revQ" ? x.revQ : sortKey === "prevFy" ? x.prevFy : sortKey === "n" ? x.entries.length : sortKey === "best" ? x.best : x.latest);
+    const val = (x: Row): number | string | null => (sortKey === "symbol" ? x.symbol : sortKey === "mcap" ? x.mcap : sortKey === "revQ" ? x.revQ : sortKey === "gPct" ? (x.g ? x.g.pct : null) : sortKey === "gFy" ? (x.g?.fy ?? null) : sortKey === "prevFy" ? x.prevFy : sortKey === "n" ? x.entries.length : sortKey === "best" ? x.best : x.latest);
     return r.slice().sort((a, b) => {
       const va = val(a);
       const vb = val(b);
@@ -318,6 +382,12 @@ export default function Guidance() {
                 <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("revQ")} title="Sales of the latest reported quarter vs the same quarter a year earlier (the quarter is shown under the number). Not a full-year figure.">
                   Qtr rev growth % (YoY){sortMark("revQ")}
                 </th>
+                <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700 whitespace-nowrap sticky top-0 z-20 bg-slate-50" onClick={() => click("gFy")} title="The financial year the company's revenue guidance is about">
+                  Guidance FY{sortMark("gFy")}
+                </th>
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 whitespace-nowrap sticky top-0 z-20 bg-slate-50" onClick={() => click("gPct")} title="Guided revenue growth. CAGR = worked out from a revenue target against the last completed FY's sales; stated = a growth rate management or the news gave directly. Hover a value for the basis.">
+                  Guided growth %{sortMark("gPct")}
+                </th>
                 <th className="py-2 px-2 text-right sticky top-0 z-20 bg-slate-50">3M %</th>
                 <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("best")} title="Most specific statement first">
                   Guidance{sortMark("best")}
@@ -390,6 +460,29 @@ export default function Guidance() {
                           ""
                         )}
                       </td>
+                      <td className="py-2 px-2 whitespace-nowrap text-slate-700">{r.g?.fy ?? ""}</td>
+                      <td className="py-2 px-2 text-right whitespace-nowrap">
+                        {r.g ? (
+                          <>
+                            <span className="font-medium text-emerald-600" title={r.g.tip}>
+                              {r.g.label}
+                            </span>
+                            <div className="text-[10px] text-slate-400">
+                              {r.g.kind === "CAGR" ? `CAGR FY${r.baseFy}→${r.g.fy}` : "stated"}
+                              {r.g.link ? (
+                                <>
+                                  {" "}
+                                  <a href={r.g.link} target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline" title={r.g.who}>
+                                    ↗
+                                  </a>
+                                </>
+                              ) : null}
+                            </div>
+                          </>
+                        ) : (
+                          ""
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-right">{r.m3 != null ? <Signed v={r.m3} digits={0} /> : ""}</td>
                       <td className="py-2 px-2 max-w-[44rem]">
                         <ul className="space-y-1.5">
@@ -450,7 +543,7 @@ export default function Guidance() {
                     </tr>
                     {open === r.symbol && (
                       <tr>
-                        <td colSpan={10} className="pl-8 pr-2 pb-3 pt-1">
+                        <td colSpan={12} className="pl-8 pr-2 pb-3 pt-1">
                           <div className="border-l-2 border-slate-300 pl-4 text-sm">
                             <div className="text-xs text-slate-500 mb-1">Concall transcripts &amp; presentations (filed on BSE; from the company's Screener.in page)</div>
                             {!concalls[r.symbol] ? (
