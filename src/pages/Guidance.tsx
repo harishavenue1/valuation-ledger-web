@@ -300,11 +300,12 @@ export default function Guidance() {
       {radar && view.length === 0 && <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">No guidance statements match these filters.</div>}
 
       {view.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
+        {/* a height-capped scroll area makes the sticky header/first column stick to IT (an uncapped overflow-x wrapper would not) */}
+        <div className="overflow-auto max-h-[78vh] rounded-lg border border-slate-200">
+          <table className="w-full text-sm border-separate border-spacing-0">
+            <thead className="sticky top-0 z-20 bg-slate-50">
               <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                <th className="py-2 pr-2 cursor-pointer select-none hover:text-slate-700" onClick={() => click("symbol")}>
+                <th className="py-2 pl-2 pr-2 cursor-pointer select-none hover:text-slate-700 sticky left-0 z-30 bg-slate-50" onClick={() => click("symbol")}>
                   Company{sortMark("symbol")}
                 </th>
                 <th className="py-2 px-2 text-right">Price</th>
@@ -338,7 +339,7 @@ export default function Guidance() {
                 return (
                   <Fragment key={r.symbol}>
                     <tr className="border-b border-slate-100 align-top hover:bg-slate-50/60">
-                      <td className="py-2 pr-2 whitespace-nowrap">
+                      <td className="py-2 pl-2 pr-2 whitespace-nowrap sticky left-0 z-10 bg-white">
                         <button onClick={() => toggleOpen(r.symbol)} className="text-slate-400 mr-1 w-4" title="Concall transcripts & presentations">
                           {open === r.symbol ? "▾" : "▸"}
                         </button>
