@@ -4,6 +4,7 @@ import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
 import { Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
+import { useBusinessAlerts } from "../lib/businessAlerts";
 import {
   Item,
   Story,
@@ -90,6 +91,7 @@ export default function BusinessRadar() {
   useScreeners(["portfolioAllocation"]);
   const { radar, tech, err } = useBusinessData();
   const [minTier, setMinTier] = useMinTier();
+  const { alerts, unseen, markSeen } = useBusinessAlerts();
   const [days, setDays] = useState(30);
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [minMcap, setMinMcap] = useState(0);
@@ -294,6 +296,39 @@ export default function BusinessRadar() {
         />
         <span className="text-xs text-slate-500">{view.length} companies</span>
       </div>
+
+      {alerts.length > 0 && (
+        <div className="mb-4 border border-amber-300/60 rounded p-3">
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="font-semibold text-sm">🔔 High-worth news on your holdings &amp; watchlist</span>
+            <span className="text-xs text-slate-500">last 7 days · {alerts.length} {alerts.length === 1 ? "story" : "stories"}{unseen ? ` · ${unseen} new` : ""}</span>
+            {unseen > 0 && (
+              <button onClick={markSeen} className="ml-auto text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:border-slate-400">
+                Mark as seen
+              </button>
+            )}
+          </div>
+          <ul className="space-y-2">
+            {alerts.slice(0, 15).map((a, k) => (
+              <li key={k} className="flex gap-2 items-baseline text-sm">
+                <span className="w-24 shrink-0">
+                  <Link to={companyPath(a.symbol)} className="font-medium text-indigo-600 hover:underline">
+                    {a.symbol}
+                  </Link>
+                  <span className="text-xs text-slate-400" title={a.mine === "holding" ? "In your holdings" : a.mine === "both" ? "Holding and on your watchlist" : "On your watchlist"}>
+                    {a.mine === "watchlist" ? " ☆" : " ★"}
+                  </span>
+                </span>
+                {a.isNew && <span className="text-[10px] px-1 rounded bg-red-600 text-white shrink-0">NEW</span>}
+                <div className="min-w-0">
+                  <StoryLine st={a.story} link={a.story.lead.u} />
+                </div>
+              </li>
+            ))}
+          </ul>
+          {alerts.length > 15 && <div className="text-xs text-slate-500 mt-2">+ {alerts.length - 15} more — filter the table below with My holdings / Watchlist</div>}
+        </div>
+      )}
 
       {err && <div className="text-sm text-red-600 mb-3">Could not load: {err}</div>}
       {!radar && !err && <div className="text-sm text-slate-500">Loading…</div>}

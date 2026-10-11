@@ -19,6 +19,7 @@ const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
 const FIITrend = lazy(() => import("./pages/FIITrend"));
 const Directory = lazy(() => import("./pages/Directory"));
 const Business = lazy(() => import("./pages/Business"));
+import { BusinessNavBadge } from "./lib/businessAlerts";
 const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
 const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
 const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
@@ -239,6 +240,7 @@ export default function App() {
               </NavLink>
               <NavLink to="/business-radar" className={({ isActive }) => navClass(isActive)}>
                 🧭 Business
+                <BusinessNavBadge />
               </NavLink>
               <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
                 📡 Strategic

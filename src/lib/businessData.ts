@@ -247,12 +247,14 @@ export function useMinTier(): [Tier, (t: Tier) => void] {
 let radarP: Promise<Radar> | null = null;
 let techP: Promise<Map<string, any>> | null = null;
 
-export function useBusinessData(): { radar: Radar | null; tech: Map<string, any>; err: string | null } {
+export function useBusinessData(delayMs = 0): { radar: Radar | null; tech: Map<string, any>; err: string | null } {
   const [radar, setRadar] = useState<Radar | null>(null);
   const [tech, setTech] = useState<Map<string, any>>(new Map());
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => {
     let off = false;
+    let timer: any = null;
+    const go = () => {
     radarP = radarP ?? api.getBusinessRadar();
     radarP.then((r) => !off && setRadar(r)).catch((e: any) => {
       radarP = null;
@@ -262,8 +264,12 @@ export function useBusinessData(): { radar: Radar | null; tech: Map<string, any>
     techP.then((m) => !off && setTech(m)).catch(() => {
       techP = null;
     });
+    };
+    if (delayMs > 0) timer = setTimeout(go, delayMs);
+    else go();
     return () => {
       off = true;
+      clearTimeout(timer);
     };
   }, []);
   return { radar, tech, err };

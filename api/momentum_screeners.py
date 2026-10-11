@@ -6616,6 +6616,8 @@ class handler(BaseHTTPRequestHandler):
             conn = get_conn()
             try:
                 payload = get_meta(conn, "business_radar", None)
+                wl_syms = set((get_meta(conn, "watchlist", {"tickers": []}) or {}).get("tickers") or [])
+                hold_syms = {r.get("symbol") for r in (((get_meta(conn, "momentum_screeners", {}) or {}).get("portfolioAllocation") or {}).get("rows") or [])}
             finally:
                 conn.close()
             one = (query.get("symbol") or [None])[0]
@@ -6626,7 +6628,8 @@ class handler(BaseHTTPRequestHandler):
                 # the list view gets the newest 25 per company and only the newest one's link: the links dominate the size
                 slim = {}
                 for s_, its in (payload.get("items") or {}).items():
-                    slim[s_] = [({**i} if k == 0 else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
+                    keep_links = s_ in wl_syms or s_ in hold_syms  # alerts need the links of the stocks you own/watch
+                    slim[s_] = [({**i} if (k == 0 or keep_links) else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
                 payload = {k: v for k, v in payload.items() if k not in ("checked", "items", "sector_cache")}
                 payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
