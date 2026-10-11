@@ -98,6 +98,26 @@ function jaccard(a: Set<string>, b: Set<string>): number {
   return u ? n / u : 0;
 }
 
+// Every ₹/$ amount in a headline (the stored `a` is only the largest). A headline can mention the deal AND
+// something bigger ("₹412 crore order win; intake crosses ₹2,000 crore"), so stories are matched on any of them.
+const AMT_RX = /(?:₹|rs\.?|inr)\s?([\d,]+(?:\.\d+)?)\s?(lakh crore|crores?|cr\b|lakh|bn\b|billion|mn\b|million)|(?:us ?\$|\$|usd)\s?([\d,]+(?:\.\d+)?)\s?(bn\b|billion|mn\b|million)/gi;
+const NOT_A_DEAL_SIZE = /order ?book|backlog|pipeline|market ?cap|m-?cap|valuation|turnover|revenue|\bsales\b|net worth|\bdebt\b|borrowing|\bprofit|\bpat\b|ebitda|\bcash\b|\bgdv\b|intake/i;
+const UNIT_CR: Record<string, number> = { "lakh crore": 1e5, crore: 1, crores: 1, cr: 1, lakh: 0.01, bn: 100, billion: 100, mn: 0.1, million: 0.1 };
+function amountsOf(t: string): number[] {
+  const out: number[] = [];
+  for (const m of t.matchAll(AMT_RX)) {
+    const around = t.slice(Math.max(0, (m.index ?? 0) - 35), (m.index ?? 0) + m[0].length + 25);
+    if (NOT_A_DEAL_SIZE.test(around)) continue;
+    const usd = m[3] != null;
+    const num = parseFloat((usd ? m[3] : m[1]).replace(/,/g, ""));
+    const unit = (usd ? m[4] : m[2]).toLowerCase();
+    if (Number.isNaN(num)) continue;
+    out.push(usd ? (num * (unit === "bn" || unit === "billion" ? 1e9 : 1e6) * 88) / 1e7 : num * (UNIT_CR[unit] ?? 1));
+  }
+  return out;
+}
+const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(2, Math.min(a, b) * 0.02);
+
 export interface Story {
   tag: string; // strongest tag
   tags: string[];
@@ -116,24 +136,42 @@ export interface Story {
 
 export function buildStories(all: Item[], mcap: number | null): Story[] {
   const sorted = all.filter((i) => !NOISE.test(i.t)).sort((a, b) => (a.d < b.d ? 1 : -1));
-  const clusters: { items: Item[]; w: Set<string>; pt: string; amt: number | null }[] = [];
+  const clusters: { items: Item[]; w: Set<string>; pt: string; amt: number | null; amts: number[][] }[] = [];
   for (const it of sorted) {
     const pt = primaryTag(it.g);
     const w = words(it.t);
+    const ams = amountsOf(it.t);
     let hit: (typeof clusters)[number] | undefined;
     for (const c of clusters) {
       if (c.pt !== pt) continue;
       const near = Math.abs(new Date(c.items[0].d).getTime() - new Date(it.d).getTime()) <= 6 * 86400000;
-      const sameAmt = it.a != null && c.amt != null && Math.abs(it.a - c.amt) <= Math.max(2, c.amt * 0.02);
-      if (sameAmt || (near && jaccard(w, c.w) >= 0.45)) {
+      const sameAmt = ams.some((x) => c.amts.some((set) => set.some((y) => close(x, y))));
+      if ((sameAmt && near) || (near && jaccard(w, c.w) >= 0.45)) {
         hit = c;
         break;
       }
     }
     if (hit) {
       hit.items.push(it);
-      if (hit.amt == null && it.a != null) hit.amt = it.a;
-    } else clusters.push({ items: [it], w, pt, amt: it.a });
+      hit.amts.push(ams);
+    } else clusters.push({ items: [it], w, pt, amt: null, amts: [ams] });
+  }
+  for (const c of clusters) {
+    // the story's amount = the figure most of its headlines agree on (ties: the smaller, i.e. the deal not the backdrop)
+    const tally = new Map<number, number>();
+    for (const set of c.amts) for (const x of set) {
+      const key = Array.from(tally.keys()).find((k) => close(k, x)) ?? x;
+      tally.set(key, (tally.get(key) ?? 0) + 1);
+    }
+    let best: number | null = null;
+    let bestN = 0;
+    tally.forEach((n, k) => {
+      if (n > bestN || (n === bestN && best != null && k < best)) {
+        best = k;
+        bestN = n;
+      }
+    });
+    c.amt = best;
   }
   return clusters.map((c) => {
     const srcSet = new Set(c.items.map((i) => (i.s || "").toLowerCase()).filter(Boolean));
