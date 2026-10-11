@@ -6607,8 +6607,17 @@ class handler(BaseHTTPRequestHandler):
                 payload = get_meta(conn, "business_radar", None)
             finally:
                 conn.close()
+            one = (query.get("symbol") or [None])[0]
+            if one:  # full items (with their links) for one company, loaded when its row is expanded
+                send_json(self, 200, {"items": ((payload or {}).get("items") or {}).get(one, [])})
+                return
             if payload:
-                payload = {k: v for k, v in payload.items() if k != "checked"}
+                # the list view gets the newest 15 per company and only the newest one's link: the links dominate the size
+                slim = {}
+                for s_, its in (payload.get("items") or {}).items():
+                    slim[s_] = [({**i} if k == 0 else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:15])]
+                payload = {k: v for k, v in payload.items() if k not in ("checked", "items")}
+                payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
             return
 

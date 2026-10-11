@@ -349,6 +349,7 @@ export const api = {
   },
 
   getBusinessRadar: (): Promise<any> => req("/api/momentum_screeners?business_radar=1"),
+  getBusinessRadarSymbol: (symbol: string): Promise<{ items: any[] }> => req(`/api/momentum_screeners?business_radar=1&symbol=${encodeURIComponent(symbol)}`),
 
   getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
     req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),

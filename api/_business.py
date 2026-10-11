@@ -35,13 +35,13 @@ UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML,
 
 # tag -> regex over the lower-cased headline. A headline can carry several tags.
 TAGS = {
-    "Order": r"(order|contract)s?\b.{0,60}(worth|₹|rs\.?|crore|\bcr\b|bag|win|secur|receiv|award|book)|(bags?|bagged|wins?|secures?|receives?|awarded|lands?)\b.{0,40}(order|contract)|order ?book|letter of award|work order|\bloa\b|\bl1\b",
+    "Order": r"(order|contract)s?\b.{0,60}(worth|₹|rs\.?|crore|\bcr\b|bag|win|secur|receiv|award|book)|(bags?|bagged|wins?|secures?|receives?|awarded|lands?)\b.{0,40}(order|contract)|letter of award|work order|\bloa\b|\bl1\b",
     "Capex": r"capex|capital expenditure|capacity (expansion|addition|increase)|expand(s|ing)? (its )?(capacity|manufacturing|production)|new (plant|facility|factory|unit)|greenfield|brownfield|commission(s|ed|ing)\b|commercial production|to invest|investment of|set(s|ting)? up",
     "M&A / JV": r"acqui(re|res|red|sition)|takeover|merger|amalgamat|joint venture|\bjv\b|buys? (a )?stake|stake (buy|sale|acquisition)|demerger|spin.?off|subsidiary",
     "Approval / Launch": r"usfda|\bfda\b|\bcdsco\b|\bdcgi\b|(receives?|gets?|secures?|bags?) (regulatory |final |tentative )?(approval|clearance|nod)|patent|certification|launch(es|ed)?\b|unveil|new product|product launch|clinical trial|commercial production",
     "Partnership": r"partner(s|ship)?\b|tie.?up|\bmou\b|collaborat|supply agreement|alliance|distribution agreement|licen[cs]e agreement",
     "Funding": r"\bqip\b|preferential|warrants?\b|fund ?raise|raises? (rs|₹)|rights issue|\bipo\b",
-    "Outlook": r"guidance|expects?\b|aims? to|\btargets?\b|to double|plans? to|revenue target|medium.term|visibility|growth (plan|target|roadmap)|outperform|record (revenue|profit|order)",
+    "Outlook": r"order ?book|order backlog|guidance|expects?\b|aims? to|\btargets?\b|to double|plans? to|revenue target|medium.term|visibility|growth (plan|target|roadmap)|outperform|record (revenue|profit|order)",
     "Concall / Presentation": r"earnings call|concall|conference call|investor (presentation|day|meet)|analyst (meet|day)|management commentary|transcript",
     "Risk": r"downgrade|probe\b|raid|penalty|fraud|default|resign|plunge|slump|tax demand|show.?cause|sebi (order|notice)|insolvency|fire\b|ban\b",
 }
@@ -57,22 +57,24 @@ _USD_RE = re.compile(r"(?:us ?\$|\$|usd)\s?([\d,]+(?:\.\d+)?)\s?(bn\b|billion|mn
 USD_INR = 88.0  # rough: only used to put dollar headlines on the same crore scale
 
 
+_NOT_A_DEAL_SIZE = re.compile(r"order ?book|backlog|pipeline|market ?cap|m-?cap|valuation|turnover|revenue|\bsales\b|net worth|\bdebt\b|borrowing|\bprofit|\bpat\b|ebitda|\bcash\b|\bgdv\b")
+
+
 def amount_cr(title):
     """Largest ₹ amount in the headline, in crore (None if there is none). Dollar amounts are converted at a
     flat USD_INR, so they are indicative."""
     best = None
-    for num, unit in _USD_RE.findall(title):
-        try:
-            v = float(num.replace(",", "")) * (1e9 if unit.lower() in ("bn", "billion") else 1e6) * USD_INR / 1e7
-        except ValueError:
-            continue
-        best = v if best is None else max(best, v)
-    for num, unit in _AMT_RE.findall(title):
-        try:
-            v = float(num.replace(",", "")) * _UNIT_CR[unit.lower()]
-        except (ValueError, KeyError):
-            continue
-        best = v if best is None else max(best, v)
+    for rx, scale in ((_USD_RE, None), (_AMT_RE, True)):
+        for m in rx.finditer(title):
+            around = title[max(0, m.start() - 35): m.end() + 25].lower()
+            if _NOT_A_DEAL_SIZE.search(around):
+                continue  # an order BOOK, market cap, revenue... is a size, not a new deal
+            num, unit = m.group(1), m.group(2).lower()
+            try:
+                v = float(num.replace(",", "")) * (_UNIT_CR[unit] if scale else (1e9 if unit in ("bn", "billion") else 1e6) * USD_INR / 1e7)
+            except (ValueError, KeyError):
+                continue
+            best = v if best is None else max(best, v)
     return round(best, 1) if best is not None else None
 
 
@@ -216,6 +218,10 @@ def run_radar(name_map, budget_s=235, workers=8, recheck_hours=20):
             elif status == "fail":
                 stats["failed"] += 1
     for sym in list(items):
+        for it in items[sym]:  # re-derive from the headline so every logic fix applies to history too
+            it["g"] = classify(it["t"])
+            it["a"] = amount_cr(it["t"])
+        items[sym] = [x for x in items[sym] if x["g"]]
         items[sym] = sorted((x for x in items[sym] if x["d"] >= drop_before), key=lambda x: x["d"], reverse=True)[:40]
         if not items[sym]:
             del items[sym]

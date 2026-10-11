@@ -94,6 +94,16 @@ export default function BusinessRadar() {
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"score" | "value" | "valuePct" | "latest">("score");
   const [open, setOpen] = useState<string | null>(null);
+  const [full, setFull] = useState<Record<string, Item[]>>({});
+  function toggleOpen(sym: string) {
+    setOpen((o) => (o === sym ? null : sym));
+    if (!full[sym]) {
+      api
+        .getBusinessRadarSymbol(sym)
+        .then((r) => setFull((f) => ({ ...f, [sym]: r.items })))
+        .catch(() => {});
+    }
+  }
   const [shown, setShown] = useState(PAGE_ROWS);
 
   useEffect(() => {
@@ -311,7 +321,7 @@ export default function BusinessRadar() {
                 <>
                   <tr key={r.symbol} className="border-b border-slate-100 align-top hover:bg-slate-50/60">
                     <td className="py-2 pr-2 whitespace-nowrap">
-                      <button onClick={() => setOpen(open === r.symbol ? null : r.symbol)} className="text-slate-400 mr-1 w-4" title="Show all items">
+                      <button onClick={() => toggleOpen(r.symbol)} className="text-slate-400 mr-1 w-4" title="Show all items">
                         {open === r.symbol ? "▾" : "▸"}
                       </button>
                       <Link to={`/portfolio-charts/${encodeURIComponent(r.symbol)}`} className="font-medium text-indigo-600 hover:underline">
@@ -348,7 +358,7 @@ export default function BusinessRadar() {
                     <tr key={r.symbol + "-open"} className="bg-slate-50/70">
                       <td colSpan={9} className="px-6 py-3">
                         <ul className="space-y-1.5">
-                          {r.items.map((i, k) => (
+                          {(full[r.symbol] ?? r.items).filter((i) => ageDays(i.d, Date.now()) <= Math.max(days, 90)).map((i, k) => (
                             <li key={k} className="flex gap-2 items-baseline">
                               <span className="text-xs text-slate-400 w-20 shrink-0">{i.d}</span>
                               <span className="flex flex-wrap gap-1 shrink-0">
@@ -358,9 +368,13 @@ export default function BusinessRadar() {
                                   </span>
                                 ))}
                               </span>
-                              <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
-                                {i.t}
-                              </a>
+                              {i.u ? (
+                                <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
+                                  {i.t}
+                                </a>
+                              ) : (
+                                <span>{i.t}</span>
+                              )}
                               {i.a != null && <span className="text-xs text-slate-500 shrink-0">₹{fmtCr(i.a)} Cr</span>}
                               <span className="text-xs text-slate-400 shrink-0">{i.s}</span>
                             </li>
