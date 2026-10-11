@@ -52,6 +52,7 @@ function impliedCagr(e: Entry, r: Row): { cagr: number; tip: string } | null {
   return { cagr, tip: `₹${Math.round(target).toLocaleString("en-IN")} Cr target ÷ ₹${Math.round(r.prevFy).toLocaleString("en-IN")} Cr (FY${r.baseFy} sales) over ${years} years` };
 }
 
+// the table sits in a height-capped scroll area so the sticky header and frozen Company column stick to IT (an uncapped overflow wrapper would not)
 const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
 const PAGE_ROWS = 100;
 
@@ -300,7 +301,6 @@ export default function Guidance() {
       {radar && view.length === 0 && <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4">No guidance statements match these filters.</div>}
 
       {view.length > 0 && (
-        {/* a height-capped scroll area makes the sticky header/first column stick to IT (an uncapped overflow-x wrapper would not) */}
         <div className="overflow-auto max-h-[78vh] rounded-lg border border-slate-200">
           <table className="w-full text-sm border-separate border-spacing-0">
             <thead className="sticky top-0 z-20 bg-slate-50">
