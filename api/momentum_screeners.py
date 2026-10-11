@@ -3282,6 +3282,17 @@ def _run_weekly_patterns(symbols, name_map, sector_map):
     return {"label": "Weekly DC/RSI patterns (deep history)", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+_GUID_FWD = re.compile(
+    r"\b(guid(e|es|ed|ance)|expects?|expected to|targets?|targeting|aims?|aspires?|plans? to|to (double|triple|grow|reach|touch|cross|add|invest|set up|commission)|will (grow|reach|touch|add|invest)|forecasts?|on track to|set to|eyes?|looking (at|to)|ambition|visibility|by (fy\s?\d{2}|20\d{2})|next (two|three|2|3|5) years|medium.term|raises? (capex|guidance)|revises? (guidance|target))\b",
+    re.IGNORECASE,
+)
+_GUID_QNT = re.compile(r"(\d[\d,.]*\s?(%|per ?cent|x\b|times|crore|cr\b|lakh|bn\b|billion|mn\b|million|gw|mw|gwh|mwp|tonnes?|mt|units|stores|plants|bps))|\bfy\s?\d{2}\b|\b20\d{2}\b", re.IGNORECASE)
+
+
+def _looks_like_guidance(title):
+    return bool(_GUID_FWD.search(title) and _GUID_QNT.search(title))
+
+
 def _run_business_radar(symbols, name_map, sector_map):
     from _business import run_radar
 
@@ -6661,8 +6672,8 @@ class handler(BaseHTTPRequestHandler):
                 slim = {}
                 for s_, its in (payload.get("items") or {}).items():
                     keep_links = s_ in wl_syms or s_ in hold_syms  # alerts need the links of the stocks you own/watch
-                    # the Guidance tab links every Outlook/Capex headline too
-                    slim[s_] = [({**i} if (k == 0 or keep_links or "Outlook" in i.get("g", []) or "Capex" in i.get("g", [])) else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
+                    # the Guidance tab links every headline that reads like guidance (same patterns as src/lib/guidance.ts)
+                    slim[s_] = [({**i} if (k == 0 or keep_links or _looks_like_guidance(i.get("t", ""))) else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
                 payload = {k: v for k, v in payload.items() if k not in ("checked", "items", "sector_cache")}
                 payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
