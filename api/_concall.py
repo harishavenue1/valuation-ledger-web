@@ -18,6 +18,7 @@ import requests
 from _db import get_conn, get_meta, set_meta
 
 KEY = "concall_guidance"
+EXTRACT_VERSION = 2  # bump when the extraction rules change: stored transcripts are then re-parsed
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129 Safari/537.36"
 MAX_PDF_BYTES = 12_000_000
 MAX_PAGES = 90
@@ -45,6 +46,11 @@ BOILERPLATE = re.compile(
     re.IGNORECASE,
 )
 INLINE_SPEAKER = re.compile(r"^((?:Mr\.?|Ms\.?|Mrs\.?|Dr\.?|CA|Shri)?\s*[A-Z][A-Za-z.'\-]+(?: [A-Za-z.'\-]+){0,3})\s*:\s+(\S.*)$")
+NOT_A_SPEAKER = re.compile(
+    r"^(encl|enclosure|page|sub|subject|ref|reference|tel|fax|email|e-?mail|note|notes|source|date|to|from|cc|regd|cin|corporate identity number|management|participants|"
+    r"moderator|operator|disclaimer|attachment|annexure|dear sir|yours faithfully|thanking you|for|dated|place|time|venue|link|website|transcript|audio)$",
+    re.IGNORECASE,
+)
 ANALYST_TALK = re.compile(
     r"\b(sir|madam|ma'am|my (first|second|next|last|final) question|my question|you (mentioned|said|are|have|guided|indicated|spoke)|your (comment|guidance|margin|target|presentation|opening)|"
     r"can you|could you|would you|will you|just (wanted|want) to|i wanted to|i would like to understand|congratulations|thanks? for|thank you for taking)\b",
@@ -90,7 +96,7 @@ def _blocks(text):
     blocks, speaker, buf = [], None, []
     for l in lines:
         m = INLINE_SPEAKER.match(l)
-        if m and len(m.group(1)) <= 40 and not re.search(r"\d", m.group(1)):
+        if m and len(m.group(1)) <= 40 and not re.search(r"\d", m.group(1)) and not NOT_A_SPEAKER.match(m.group(1).strip()):
             if buf:
                 blocks.append((speaker, " ".join(buf)))
             speaker, buf = m.group(1).strip(), [m.group(2)]
@@ -130,6 +136,8 @@ def extract_lines(text, limit=LINES_PER_CALL):
             s = re.sub(r"\s+", " ", s).strip()
             if not (40 <= len(s) <= 420) or "?" in s or BOILERPLATE.search(s) or ANALYST_TALK.search(s):
                 continue
+            if re.search(r"[A-Za-z]\d{3,}|\d{3,}[A-Za-z]{3,}", s):  # PDF text glitches such as "like002080%"
+                continue
             if not (FWD.search(s) and QUANT.search(s) and FIRST_PERSON.search(s)):
                 continue
             key = re.sub(r"[^a-z0-9]", "", s.lower())[:70]
@@ -150,7 +158,7 @@ def extract_lines(text, limit=LINES_PER_CALL):
 
 def process_company(symbol, get_profile, prev=None):
     """{'calls': [...], 'checked': iso} — newest transcripts first; a transcript already parsed (same URL) is reused."""
-    done = {c["url"]: c for c in ((prev or {}).get("calls") or []) if not c.get("error")}
+    done = {c["url"]: c for c in ((prev or {}).get("calls") or []) if not c.get("error") and c.get("v") == EXTRACT_VERSION}
     prof = get_profile(symbol)
     calls = []
     for c in (prof.get("concalls") or []):
@@ -171,7 +179,7 @@ def process_company(symbol, get_profile, prev=None):
                 results.append({"date": date, "url": url, "ppt": ppt, "lines": [], "error": f"HTTP {r.status_code}" if r.status_code != 200 else "not a PDF / too large"})
                 continue
             text, pages = pdf_text(r.content)
-            results.append({"date": date, "url": url, "ppt": ppt, "pages": pages, "chars": len(text), "lines": extract_lines(text)})
+            results.append({"date": date, "url": url, "ppt": ppt, "v": EXTRACT_VERSION, "pages": pages, "chars": len(text), "lines": extract_lines(text)})
         except Exception as e:
             results.append({"date": date, "url": url, "ppt": ppt, "lines": [], "error": str(e)[:120]})
     return {"calls": results, "fin": prof.get("fin"), "checked": datetime.now(timezone.utc).isoformat()}
@@ -194,7 +202,9 @@ def run_concall_guidance(name_map, budget_s=230, workers=3, recheck_days=14):
 
     def stale(sym):
         c = comps.get(sym)
-        return not c or datetime.fromisoformat(c["checked"]).timestamp() < cutoff
+        if not c or datetime.fromisoformat(c["checked"]).timestamp() < cutoff:
+            return True
+        return any(call.get("v") != EXTRACT_VERSION and not call.get("error") for call in c.get("calls") or [])  # parsed with older rules
 
     todo = [u for u in universe if stale(u[0])]
     todo.sort(key=lambda u: (u[2], (comps.get(u[0]) or {}).get("checked", "")))
