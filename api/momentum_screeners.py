@@ -3311,6 +3311,14 @@ def _run_fintwit(symbols, name_map, sector_map):
     return {"label": "Fintwit tweets", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+def _run_concall_guidance(symbols, name_map, sector_map):
+    from _concall import run_concall_guidance
+
+    stats = run_concall_guidance(name_map)
+    rows = [{"item": k, "value": v} for k, v in stats.items()]
+    return {"label": "Concall guidance", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_resolve(symbols, name_map, sector_map):
     from _bhav import resolve_deep_actions
 
@@ -6528,6 +6536,7 @@ SCREENER_RUNNERS = {
     "weeklyPatterns": _run_weekly_patterns,
     "businessRadar": _run_business_radar,
     "fintwit": _run_fintwit,
+    "concallGuidance": _run_concall_guidance,
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
@@ -6629,6 +6638,18 @@ class handler(BaseHTTPRequestHandler):
                 payload = {**payload, "rows": [{k: v for k, v in r.items() if k not in ("bars", "as_of", "volume")} for r in payload["rows"]]}
             # changes once a day: let the browser reuse it for 5 min and revalidate in the background after that
             send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"})
+            return
+
+        # ?concall_guidance=1 — management guidance lines parsed from concall transcripts (api/_concall.py)
+        if (query.get("concall_guidance") or [None])[0]:
+            from _concall import feed as concall_feed
+
+            conn = get_conn()
+            try:
+                payload = concall_feed(conn)
+            finally:
+                conn.close()
+            send_json(self, 200, payload, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
             return
 
         # ?fintwit=1 — the stored tweets of the followed accounts (api/_fintwit.py)

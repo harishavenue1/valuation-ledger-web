@@ -13,7 +13,7 @@ import { G_CLASS, G_TYPES, GType, extractGuidance } from "../lib/guidance";
 interface Entry {
   symbol: string;
   date: string; // YYYY-MM-DD
-  src: "News" | "Tweet";
+  src: "News" | "Tweet" | "Concall";
   who: string; // outlet or @handle
   text: string;
   types: GType[];
@@ -41,6 +41,7 @@ export default function Guidance() {
   useScreeners(["portfolioAllocation"]);
   const { radar, tech } = useBusinessData();
   const [tweets, setTweets] = useState<any[] | null>(null);
+  const [concallFeed, setConcallFeed] = useState<Record<string, { date: string; url: string; ppt?: string; lines: any[] }[]>>({});
   const [days, setDays] = useState(90);
   const [types, setTypes] = useState<Set<GType>>(new Set());
   const [srcs, setSrcs] = useState<Set<string>>(new Set());
@@ -57,6 +58,7 @@ export default function Guidance() {
 
   useEffect(() => {
     api.getFintwit().then((r) => setTweets(r.tweets)).catch(() => setTweets([]));
+    api.getConcallGuidance().then((r) => setConcallFeed(r.companies ?? {})).catch(() => {});
   }, []);
 
   const holdings = useMemo(() => new Set<string>(((bundle.momentum_screeners as any)?.portfolioAllocation?.rows ?? []).map((r: any) => r.symbol)), [bundle]);
@@ -91,8 +93,19 @@ export default function Guidance() {
         for (const sym of syms) add({ symbol: sym, date, src: "Tweet", who: `@${t.h}`, text: g.text, types: g.types, horizon: g.horizon, strength: g.strength, link });
       }
     }
+    // what management said on the earnings calls (parsed from the filed transcripts by api/_concall.py)
+    for (const [sym, calls] of Object.entries(concallFeed)) {
+      for (const c of calls) {
+        const d = new Date(`1 ${c.date}`);
+        const date = Number.isNaN(d.getTime()) ? "" : new Date(d.getFullYear(), d.getMonth() + 1, 0).toISOString().slice(0, 10);
+        if (!date) continue;
+        for (const l of c.lines) {
+          add({ symbol: sym, date, src: "Concall", who: `${l.who ?? "Management"} · ${c.date} call`, text: l.text, types: (l.types ?? ["Other"]) as GType[], horizon: l.horizon ?? null, strength: Math.min(4, (l.strength ?? 2) + 1), link: c.url });
+        }
+      }
+    }
     return out;
-  }, [radar, tweets, matchers]);
+  }, [radar, tweets, matchers, concallFeed]);
 
   const rows = useMemo<Row[]>(() => {
     const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
@@ -178,8 +191,9 @@ export default function Guidance() {
   return (
     <div>
       <p className="text-xs text-slate-500 mb-3 max-w-4xl">
-        What is being said about each company's future — revenue, margin, capex, orders — pulled from news headlines and the tweets you follow, each linked to its source. Open a row for the company's
-        concall transcripts and presentations (the filed announcements). These are pattern matches, not a reading of the filings: check the source.
+        What is being said about each company's future — revenue, margin, capex, orders — from 🎙 what management said on its earnings calls (parsed from the filed transcripts), 📰 news headlines and 🐦 the tweets you follow,
+        each linked to its source. Open a row for all its concall transcripts and presentations. These are pattern matches, not a reading of the filings: check the source. Concall lines are filled
+        daily, holdings and watchlist first, then the largest companies.
       </p>
       <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="text-xs text-slate-500">Window</span>
@@ -195,9 +209,9 @@ export default function Guidance() {
           </button>
         ))}
         <span className="mx-1 text-slate-300">|</span>
-        {["News", "Tweet"].map((s) => (
+        {["Concall", "News", "Tweet"].map((s) => (
           <button key={s} onClick={() => toggle(srcs, s, setSrcs)} className={`text-xs px-2 py-1 rounded-full border ${srcs.has(s) ? "bg-slate-200 text-slate-800 border-slate-400 font-medium" : "border-slate-300 text-slate-500"}`}>
-            {s === "News" ? "📰 News" : "🐦 Tweets"}
+            {s === "Concall" ? "🎙 Management (concalls)" : s === "News" ? "📰 News" : "🐦 Tweets"}
           </button>
         ))}
       </div>
@@ -307,13 +321,13 @@ export default function Guidance() {
                                   <span>{e.text}</span>
                                 </div>
                                 <div className="text-xs text-slate-400">
-                                  {e.src === "Tweet" ? "🐦" : "📰"} {e.who} · {e.date}
+                                  {e.src === "Tweet" ? "🐦" : e.src === "Concall" ? "🎙" : "📰"} {e.who} · {e.src === "Concall" ? e.date.slice(0, 7) : e.date}
                                   {e.link ? (
                                     <>
                                       {" "}
                                       ·{" "}
                                       <a href={e.link} target="_blank" rel="noreferrer" className="text-indigo-500 hover:underline">
-                                        source ↗
+                                        {e.src === "Concall" ? "transcript ↗" : "source ↗"}
                                       </a>
                                     </>
                                   ) : null}

@@ -23,6 +23,7 @@ import { api, ApiError } from "../lib/api";
 const CLOUD_SCREENERS = new Set([
   "businessRadar",
   "fintwit",
+  "concallGuidance",
   "myLongTermInvestingStrategy",
   "weeklySignals",
   "smartMoney",
