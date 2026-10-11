@@ -18,7 +18,7 @@ import requests
 from _db import get_conn, get_meta, set_meta
 
 KEY = "concall_guidance"
-EXTRACT_VERSION = 2  # bump when the extraction rules change: stored transcripts are then re-parsed
+EXTRACT_VERSION = 3  # bump when the extraction rules change: stored transcripts are then re-parsed
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/129 Safari/537.36"
 MAX_PDF_BYTES = 12_000_000
 MAX_PAGES = 90
@@ -96,7 +96,9 @@ def _blocks(text):
     blocks, speaker, buf = [], None, []
     for l in lines:
         m = INLINE_SPEAKER.match(l)
-        if m and len(m.group(1)) <= 40 and not re.search(r"\d", m.group(1)) and not NOT_A_SPEAKER.match(m.group(1).strip()):
+        label = m.group(1).strip() if m else ""
+        # a real speaker label is a person's name (2+ words); single words are headings like "Symbol:" or "Encl:"
+        if m and len(m.group(1)) <= 40 and not re.search(r"\d", label) and len(label.split()) >= 2 and not NOT_A_SPEAKER.match(label):
             if buf:
                 blocks.append((speaker, " ".join(buf)))
             speaker, buf = m.group(1).strip(), [m.group(2)]
