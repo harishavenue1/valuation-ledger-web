@@ -314,7 +314,7 @@ export default function Guidance() {
       <p className="text-xs text-slate-500 mb-3 max-w-4xl">
         What is being said about each company's future — revenue, margin, capex, orders — from 🎙 what management said on its earnings calls (parsed from the filed transcripts), 📰 news headlines and 🐦 the tweets you follow,
         each linked to its source. Open a row for all its concall transcripts and presentations. These are pattern matches, not a reading of the filings: check the source. Concall lines are filled
-        daily, holdings and watchlist first, then the largest companies.
+        weekly (Sunday), holdings and watchlist first, then the largest companies; Run now reads the next batch.
         <span className="ml-3 align-middle" title="Reads the next batch of concall transcripts now (about 4 minutes)">
           <RunButton screener="concallGuidance" />
         </span>
