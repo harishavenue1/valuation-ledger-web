@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
+import RunButton from "../components/RunButton";
 import { chartPath, companyPath, useBusinessData } from "../lib/businessData";
 
 // Tweets tab — the accounts you follow for ideas, in one feed (no scrolling the timeline). The tweets are
@@ -137,6 +138,7 @@ export default function Tweets() {
       <p className="text-xs text-slate-500 mb-3 max-w-4xl">
         The accounts you follow for ideas, in one feed, newest first — no scrolling the timeline. Tickers and company names inside a tweet link to the Business company page.
         {feed?.updated && <> Last loaded {new Date(feed.updated).toLocaleString("en-IN")}.</>}
+        <span className="ml-3 align-middle"><RunButton screener="fintwit" /></span>
       </p>
 
       <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -181,8 +183,8 @@ export default function Tweets() {
       {!feed && !err && <div className="text-sm text-slate-500">Loading…</div>}
       {feed && feed.tweets.length === 0 && (
         <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded p-4 max-w-3xl">
-          No tweets stored yet. X no longer offers a free way for a server to read tweets, so this feed is filled from your own logged-in browser (ask Claude to "refresh the tweets"), or automatically
-          if an X API token is ever added.
+          No tweets stored yet. X no longer offers a free way for a server to read tweets. Add an X API bearer token as the Vercel environment variable <code>X_BEARER_TOKEN</code> and this feed
+          fills itself three times a day (press "Run now" for the first pull).
         </div>
       )}
 

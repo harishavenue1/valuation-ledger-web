@@ -22,6 +22,7 @@ import { api, ApiError } from "../lib/api";
 // actually reachable from any machine").
 const CLOUD_SCREENERS = new Set([
   "businessRadar",
+  "fintwit",
   "myLongTermInvestingStrategy",
   "weeklySignals",
   "smartMoney",

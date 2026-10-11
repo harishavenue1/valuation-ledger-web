@@ -3290,6 +3290,16 @@ def _run_business_radar(symbols, name_map, sector_map):
     return {"label": "Business Radar", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+def _run_fintwit(symbols, name_map, sector_map):
+    from _fintwit import fetch_from_api
+
+    res = fetch_from_api()
+    if res.get("error"):
+        return None, res["error"]
+    rows = [{"item": k, "value": v} for k, v in res.items()]
+    return {"label": "Fintwit tweets", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_resolve(symbols, name_map, sector_map):
     from _bhav import resolve_deep_actions
 
@@ -6506,6 +6516,7 @@ SCREENER_RUNNERS = {
     "bhavTechnicals": _run_bhav_technicals,
     "weeklyPatterns": _run_weekly_patterns,
     "businessRadar": _run_business_radar,
+    "fintwit": _run_fintwit,
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
