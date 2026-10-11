@@ -100,6 +100,8 @@ function guidedGrowth(entries: Entry[], r: { prevFy: number | null; baseFy: numb
       if (s) g = { fy: e.horizon, pct: s.pct, label: s.label, kind: "stated", tip: `Stated: "${e.text.slice(0, 160)}"`, link: e.link, who: e.who };
     }
     if (!g) continue;
+    // a growth rate quoted for a year that has already ended is a result, not guidance
+    if (g.kind === "stated" && g.fy && r.baseFy != null && parseInt(g.fy.slice(2)) <= r.baseFy) continue;
     // prefer a statement that names a year, then the newest, then the most specific, then the computed CAGR
     const rank: (string | number)[] = [g.fy ? 1 : 0, e.date, e.strength, g.kind === "CAGR" ? 1 : 0];
     if (!best) best = { g, rank };
