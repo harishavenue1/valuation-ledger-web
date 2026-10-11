@@ -18,7 +18,7 @@ const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
 const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
 const FIITrend = lazy(() => import("./pages/FIITrend"));
 const Directory = lazy(() => import("./pages/Directory"));
-const BusinessRadar = lazy(() => import("./pages/BusinessRadar"));
+const Business = lazy(() => import("./pages/Business"));
 const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
 const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
 const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
@@ -300,7 +300,7 @@ export default function App() {
             <Route path="/sector-directory" element={<Directory />} />
             <Route path="/portfolio-charts" element={<PortfolioCharts />} />
             <Route path="/portfolio-charts/:symbol" element={<PortfolioCharts />} />
-            <Route path="/business-radar" element={<BusinessRadar />} />
+            <Route path="/business-radar" element={<Business />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
             <Route path="/reverse-dcf" element={<ReverseDCF />} />

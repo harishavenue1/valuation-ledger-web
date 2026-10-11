@@ -1,100 +1,83 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
 import { Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
+import {
+  Item,
+  TAG_CLASS,
+  TAG_ORDER,
+  ageDays,
+  chartPath,
+  companyPath,
+  fmtCr,
+  storyStats,
+  tvUrl,
+  useBusinessData,
+  Stats,
+} from "../lib/businessData";
 
-// Business Radar — the qualitative side: what companies are DOING (orders,
-// capex, M&A, approvals, guidance) rather than what their charts are doing.
-// Data: api/_business.py accumulates tagged Google News headlines daily.
+// Radar tab — what companies are DOING (orders, capex, M&A, approvals, guidance),
+// from the daily-accumulated tagged headlines (api/_business.py).
 
-interface Item {
-  d: string; // ISO date
-  t: string; // headline
-  s: string; // source
-  u: string; // link
-  g: string[]; // tags
-  a: number | null; // ₹ crore mentioned in the headline
-}
-interface Radar {
-  as_of: string | null;
-  updated?: string;
-  items: Record<string, Item[]>;
-  names: Record<string, string>;
-  stats?: Record<string, any>;
-  keep_days?: number;
-}
-
-// weight of a story by its strongest tag; Risk counts against
-const TAG_WEIGHT: Record<string, number> = {
-  Order: 3,
-  Capex: 3,
-  "M&A / JV": 2,
-  "Approval / Launch": 2,
-  Partnership: 1.5,
-  Funding: 1,
-  Outlook: 1,
-  "Concall / Presentation": 0.5,
-  Risk: -2,
-};
-const TAG_ORDER = Object.keys(TAG_WEIGHT);
-const TAG_CLASS: Record<string, string> = {
-  Order: "bg-emerald-50 text-emerald-700 border-emerald-300",
-  Capex: "bg-sky-50 text-sky-700 border-sky-300",
-  "M&A / JV": "bg-violet-50 text-violet-700 border-violet-300",
-  "Approval / Launch": "bg-teal-50 text-teal-700 border-teal-300",
-  Partnership: "bg-indigo-50 text-indigo-700 border-indigo-300",
-  Funding: "bg-amber-50 text-amber-700 border-amber-300",
-  Outlook: "bg-slate-100 text-slate-700 border-slate-300",
-  "Concall / Presentation": "bg-slate-100 text-slate-600 border-slate-300",
-  Risk: "bg-red-50 text-red-700 border-red-300",
-};
 const PAGE_ROWS = 150;
 
-function primaryTag(tags: string[]): string {
-  return tags.slice().sort((a, b) => Math.abs(TAG_WEIGHT[b] ?? 0) - Math.abs(TAG_WEIGHT[a] ?? 0))[0] ?? "";
-}
-function ageDays(d: string, now: number): number {
-  return Math.max(0, (now - new Date(d + "T00:00:00Z").getTime()) / 86400000);
-}
-function fmtCr(v: number | null | undefined): string {
-  if (v == null || !isFinite(v) || v <= 0) return "";
-  return v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v.toFixed(0);
-}
+const HEADERS: { k?: SortKey; label: string; right?: boolean; filter?: boolean; tip?: string }[] = [
+  { k: "symbol", label: "Company" },
+  { k: "price", label: "Price", right: true, filter: true, tip: "Last close; click the number for the internal chart, TV↗ opens TradingView" },
+  { k: "day", label: "Day %", right: true, filter: true },
+  { k: "score", label: "Score", right: true, filter: true, tip: "Catalyst score" },
+  { label: "Catalysts" },
+  { k: "valueCr", label: "Value ₹Cr", right: true, filter: true, tip: "₹ amounts on distinct Order / Capex / M&A stories in the window" },
+  { k: "valuePct", label: "% mcap", right: true, filter: true, tip: "Value as a % of market cap" },
+  { k: "mcap", label: "Mcap Cr", right: true, filter: true },
+  { k: "m3", label: "3M %", right: true, filter: true },
+  { k: "wrsi", label: "wRSI", right: true, filter: true, tip: "Weekly RSI(14)" },
+  { k: "last", label: "Latest" },
+];
 
-interface Row {
+type SortKey = "symbol" | "price" | "day" | "score" | "valueCr" | "valuePct" | "mcap" | "m3" | "wrsi" | "last";
+
+interface Row extends Stats {
   symbol: string;
   name: string;
-  items: Item[]; // in window, newest first
-  stories: number;
-  tagCounts: Record<string, number>;
-  score: number;
-  valueCr: number; // distinct ₹ amounts on Order/Capex/M&A stories
+  sector: string;
   mcap: number | null;
+  price: number | null;
+  day: number | null;
   valuePct: number | null;
   m3: number | null;
   wrsi: number | null;
-  dc: string;
-  last: string;
 }
 
 export default function BusinessRadar() {
   const { bundle } = useData();
   useScreeners(["portfolioAllocation"]);
-  const [radar, setRadar] = useState<Radar | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [tech, setTech] = useState<Map<string, any>>(new Map());
+  const { radar, tech, err } = useBusinessData();
   const [days, setDays] = useState(30);
   const [tags, setTags] = useState<Set<string>>(new Set());
   const [minMcap, setMinMcap] = useState(0);
+  const [sector, setSector] = useState("");
   const [onlyHold, setOnlyHold] = useState(false);
   const [onlyWatch, setOnlyWatch] = useState(false);
   const [hideRiskOnly, setHideRiskOnly] = useState(true);
   const [q, setQ] = useState("");
-  const [sort, setSort] = useState<"score" | "value" | "valuePct" | "latest">("score");
+  const [sortKey, setSortKey] = useState<SortKey>("score");
+  const [sortDir, setSortDir] = useState<1 | -1>(-1); // -1 = high to low
+  // per-column minimum filters (blank = off); blanks in the data never pass an active filter
+  const [colMin, setColMin] = useState<Partial<Record<SortKey, string>>>({});
+  function clickSort(k: SortKey) {
+    if (k === sortKey) setSortDir((d) => (d === 1 ? -1 : 1));
+    else {
+      setSortKey(k);
+      setSortDir(k === "symbol" ? 1 : -1);
+    }
+  }
   const [open, setOpen] = useState<string | null>(null);
   const [full, setFull] = useState<Record<string, Item[]>>({});
+  const [shown, setShown] = useState(PAGE_ROWS);
+
   function toggleOpen(sym: string) {
     setOpen((o) => (o === sym ? null : sym));
     if (!full[sym]) {
@@ -104,68 +87,34 @@ export default function BusinessRadar() {
         .catch(() => {});
     }
   }
-  const [shown, setShown] = useState(PAGE_ROWS);
-
-  useEffect(() => {
-    let off = false;
-    api
-      .getBusinessRadar()
-      .then((r: Radar) => !off && setRadar(r))
-      .catch((e: any) => !off && setErr(String(e?.message ?? e)));
-    api
-      .getBhavTechnicals()
-      .then((r) => !off && setTech(new Map((r.rows ?? []).map((x: any) => [x.symbol, x]))))
-      .catch(() => {});
-    return () => {
-      off = true;
-    };
-  }, []);
 
   const holdings = useMemo(() => {
     const rows = (bundle.momentum_screeners as any)?.portfolioAllocation?.rows ?? [];
     return new Set<string>(rows.map((r: any) => r.symbol));
   }, [bundle]);
   const watch = useMemo(() => new Set<string>(bundle.watchlist?.tickers ?? []), [bundle]);
+  const sectors = useMemo(() => Array.from(new Set(Object.values(radar?.sectors ?? {}))).sort(), [radar]);
 
   const rows = useMemo<Row[]>(() => {
     if (!radar) return [];
     const now = Date.now();
     const out: Row[] = [];
     for (const [sym, all] of Object.entries(radar.items)) {
-      const inWin = all.filter((i) => ageDays(i.d, now) <= days);
-      if (!inWin.length) continue;
-      // one story per (strongest tag, ₹ amount) — outlets repeat the same news a dozen times
-      const seen = new Set<string>();
-      let score = 0;
-      let valueCr = 0;
-      const tagCounts: Record<string, number> = {};
-      let stories = 0;
-      for (const i of inWin) {
-        const pt = primaryTag(i.g);
-        const key = i.a != null ? `${pt}:${Math.round(i.a)}` : `${pt}:${i.t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 50)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        stories++;
-        for (const g of i.g) tagCounts[g] = (tagCounts[g] ?? 0) + 1;
-        score += (TAG_WEIGHT[pt] ?? 0) * Math.pow(0.5, ageDays(i.d, now) / 30);
-        if (i.a != null && ["Order", "Capex", "M&A / JV"].includes(pt)) valueCr += i.a;
-      }
+      const st = storyStats(all, 0, days, now);
+      if (!st) continue;
       const t = tech.get(sym);
       const mcap = t?.market_cap_cr ?? null;
       out.push({
+        ...st,
         symbol: sym,
         name: radar.names[sym] ?? t?.name ?? sym,
-        items: inWin,
-        stories,
-        tagCounts,
-        score: Math.round(score * 10) / 10,
-        valueCr,
+        sector: radar.sectors?.[sym] ?? "",
         mcap,
-        valuePct: mcap && valueCr ? (valueCr / mcap) * 100 : null,
+        price: t?.price ?? null,
+        day: t?.change_pct ?? null,
+        valuePct: mcap && st.valueCr ? (st.valueCr / mcap) * 100 : null,
         m3: t?.three_month_pct ?? null,
         wrsi: t?.rsi_w ?? null,
-        dc: t?.dc_state ?? "",
-        last: inWin[0].d,
       });
     }
     return out;
@@ -176,19 +125,25 @@ export default function BusinessRadar() {
     if (tags.size) r = r.filter((x) => Array.from(tags).some((g) => x.tagCounts[g]));
     if (hideRiskOnly) r = r.filter((x) => Object.keys(x.tagCounts).some((g) => g !== "Risk"));
     if (minMcap > 0) r = r.filter((x) => (x.mcap ?? 0) >= minMcap);
+    if (sector) r = r.filter((x) => x.sector === sector);
     if (onlyHold) r = r.filter((x) => holdings.has(x.symbol));
     if (onlyWatch) r = r.filter((x) => watch.has(x.symbol));
     const needle = q.trim().toLowerCase();
     if (needle) r = r.filter((x) => x.symbol.toLowerCase().includes(needle) || x.name.toLowerCase().includes(needle));
-    const by: Record<string, (x: Row) => number | string> = {
-      score: (x) => x.score,
-      value: (x) => x.valueCr,
-      valuePct: (x) => x.valuePct ?? -1,
-      latest: (x) => x.last,
-    };
-    const f = by[sort];
-    return r.slice().sort((a, b) => (f(a) < f(b) ? 1 : f(a) > f(b) ? -1 : 0));
-  }, [rows, tags, hideRiskOnly, minMcap, onlyHold, onlyWatch, q, sort, holdings, watch]);
+    for (const [k, v] of Object.entries(colMin)) {
+      const n = parseFloat(v as string);
+      if (!Number.isNaN(n)) r = r.filter((x) => typeof (x as any)[k] === "number" && (x as any)[k] >= n);
+    }
+    const val = (x: Row): number | string | null => (sortKey === "symbol" ? x.symbol : ((x as any)[sortKey] ?? null));
+    return r.slice().sort((a, b) => {
+      const va = val(a);
+      const vb = val(b);
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1; // blanks always last
+      if (vb == null) return -1;
+      return va < vb ? -sortDir : va > vb ? sortDir : 0;
+    });
+  }, [rows, tags, hideRiskOnly, minMcap, sector, onlyHold, onlyWatch, q, sortKey, sortDir, colMin, holdings, watch]);
 
   function toggleTag(g: string) {
     setTags((p) => {
@@ -203,14 +158,13 @@ export default function BusinessRadar() {
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-1">
-        <h1 className="text-xl font-semibold">🧭 Business Radar</h1>
         <span className="text-slate-500 text-sm">What companies are doing — orders, capex, M&A, approvals, guidance — not what the chart is doing</span>
         <span className="ml-auto">
           <RunButton screener="businessRadar" />
         </span>
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        Built daily from news headlines (one search per company, {radar?.stats?.universe ?? "~1,300"} companies: every stock above ₹1,000 Cr plus your holdings and watchlist). Each headline is tagged by
+        Built daily from news headlines (one search per company, {radar?.stats?.universe ?? "~1,500"} companies: every stock above ₹1,000 Cr plus your holdings and watchlist). Each headline is tagged by
         keyword, ₹ amounts are read from it, and the history accumulates for {radar?.keep_days ?? 120} days — so this page gets richer every day. It is headlines, not filings: open the link to judge
         the substance.
         {radar?.as_of && <> Last refreshed {radar.as_of}.</>}
@@ -224,8 +178,8 @@ export default function BusinessRadar() {
             Risk −2) halved every 30 days of age. Several outlets reporting the same order or capex count once.
           </p>
           <p>
-            <b>Value ₹Cr</b> = the ₹ amounts on distinct Order, Capex and M&A stories (dollar amounts at a flat ₹88). <b>Value % mcap</b> compares it with the market cap: an ₹800 Cr order means far more to a
-            ₹4,000 Cr company than to a ₹80,000 Cr one.
+            <b>Value ₹Cr</b> = the ₹ amounts on distinct Order, Capex and M&A stories (dollar amounts at a flat ₹88; order-book totals are not counted). <b>% mcap</b> compares it with the market cap: an
+            ₹800 Cr order means far more to a ₹4,000 Cr company than to a ₹80,000 Cr one.
           </p>
           <p>Tags are keyword matches on the headline, so they will sometimes be wrong; the score is a way to find where to read, not a verdict.</p>
         </div>
@@ -265,6 +219,14 @@ export default function BusinessRadar() {
           />
           Cr
         </label>
+        <select value={sector} onChange={(e) => setSector(e.target.value)} className="px-1 py-1 border border-slate-300 rounded bg-white text-slate-700 max-w-[14rem]">
+          <option value="">All sectors</option>
+          {sectors.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
         <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer">
           <input type="checkbox" checked={onlyHold} onChange={(e) => setOnlyHold(e.target.checked)} /> My holdings
         </label>
@@ -280,15 +242,6 @@ export default function BusinessRadar() {
           placeholder="Filter by name/ticker"
           className="px-2 py-1 text-sm border border-slate-300 rounded bg-white w-48"
         />
-        <label className="flex items-center gap-1.5 text-slate-600">
-          Sort
-          <select value={sort} onChange={(e) => setSort(e.target.value as any)} className="px-1 py-1 border border-slate-300 rounded bg-white">
-            <option value="score">Catalyst score</option>
-            <option value="value">Value ₹Cr</option>
-            <option value="valuePct">Value % of mcap</option>
-            <option value="latest">Latest news</option>
-          </select>
-        </label>
         <span className="text-xs text-slate-500">{view.length} companies</span>
       </div>
 
@@ -305,31 +258,70 @@ export default function BusinessRadar() {
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                <th className="py-2 pr-2">Company</th>
-                <th className="py-2 px-2 text-right">Score</th>
-                <th className="py-2 px-2">Catalysts</th>
-                <th className="py-2 px-2 text-right">Value ₹Cr</th>
-                <th className="py-2 px-2 text-right">% mcap</th>
-                <th className="py-2 px-2 text-right">Mcap Cr</th>
-                <th className="py-2 px-2 text-right">3M %</th>
-                <th className="py-2 px-2 text-right">wRSI</th>
-                <th className="py-2 px-2">Latest</th>
+                {HEADERS.map((h) => (
+                  <th
+                    key={h.k ?? h.label}
+                    className={`py-2 px-2 ${h.right ? "text-right" : ""} ${h.k ? "cursor-pointer select-none hover:text-slate-700" : ""}`}
+                    title={h.tip}
+                    onClick={h.k ? () => clickSort(h.k!) : undefined}
+                  >
+                    {h.label}
+                    {h.k && sortKey === h.k && <span className="ml-0.5">{sortDir === -1 ? "▼" : "▲"}</span>}
+                  </th>
+                ))}
+              </tr>
+              <tr className="border-b border-slate-200">
+                {HEADERS.map((h) => (
+                  <th key={(h.k ?? h.label) + "-f"} className={`px-2 pb-1 ${h.right ? "text-right" : ""}`}>
+                    {h.filter && (
+                      <input
+                        type="number"
+                        placeholder="min"
+                        value={colMin[h.k!] ?? ""}
+                        onChange={(e) => setColMin((m) => ({ ...m, [h.k!]: e.target.value }))}
+                        className="w-14 px-1 py-0 text-xs text-right font-normal border border-slate-300 rounded bg-white text-slate-800"
+                        title={`Show only rows with ${h.label} at or above this`}
+                      />
+                    )}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {view.slice(0, shown).map((r) => (
-                <>
-                  <tr key={r.symbol} className="border-b border-slate-100 align-top hover:bg-slate-50/60">
+                <Fragment key={r.symbol}>
+                  <tr className="border-b border-slate-100 align-top hover:bg-slate-50/60">
                     <td className="py-2 pr-2 whitespace-nowrap">
                       <button onClick={() => toggleOpen(r.symbol)} className="text-slate-400 mr-1 w-4" title="Show all items">
                         {open === r.symbol ? "▾" : "▸"}
                       </button>
-                      <Link to={`/portfolio-charts/${encodeURIComponent(r.symbol)}`} className="font-medium text-indigo-600 hover:underline">
+                      <Link to={companyPath(r.symbol)} className="font-medium text-indigo-600 hover:underline" title="Business profile">
                         {r.symbol}
                       </Link>
                       {holdings.has(r.symbol) && <span title="In your holdings"> ★</span>}
-                      <div className="text-xs text-slate-500 ml-5 max-w-[14rem] truncate">{r.name}</div>
+                      <div className="text-xs text-slate-500 ml-5 max-w-[14rem] truncate" title={r.sector}>
+                        {r.name}
+                      </div>
                     </td>
+                    <td className="py-2 px-2 text-right whitespace-nowrap">
+                      {r.price != null ? (
+                        <>
+                          <Link to={chartPath(r.symbol)} className="text-indigo-600 hover:underline" title="Internal chart">
+                            {r.price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}
+                          </Link>
+                          <div className="text-xs">
+                            <a href={tvUrl(r.symbol)} target="_blank" rel="noreferrer" className="text-slate-400 hover:text-slate-600" title="Open in TradingView">
+                              TV↗
+                            </a>
+                          </div>
+                        </>
+                      ) : (
+                        <a href={tvUrl(r.symbol)} target="_blank" rel="noreferrer" className="text-xs text-slate-400 hover:text-slate-600">
+                          TV↗
+                        </a>
+                      )}
+                    </td>
+                    <td className="py-2 px-2 text-right">{r.day != null ? <Signed v={r.day} digits={1} /> : ""}</td>
                     <td className="py-2 px-2 text-right font-medium">{r.score.toFixed(1)}</td>
                     <td className="py-2 px-2">
                       <div className="flex flex-wrap gap-1">
@@ -346,46 +338,50 @@ export default function BusinessRadar() {
                     <td className="py-2 px-2 text-right">{r.m3 != null ? <Signed v={r.m3} digits={0} /> : ""}</td>
                     <td className="py-2 px-2 text-right text-slate-600">{r.wrsi != null ? r.wrsi.toFixed(0) : ""}</td>
                     <td className="py-2 px-2 max-w-[28rem]">
-                      <a href={r.items[0].u} target="_blank" rel="noreferrer" className="text-slate-800 hover:underline line-clamp-2">
-                        {r.items[0].t}
-                      </a>
+                      {r.items[0].u ? (
+                        <a href={r.items[0].u} target="_blank" rel="noreferrer" className="text-slate-800 hover:underline line-clamp-2">
+                          {r.items[0].t}
+                        </a>
+                      ) : (
+                        <span className="line-clamp-2">{r.items[0].t}</span>
+                      )}
                       <div className="text-xs text-slate-400">
                         {r.items[0].d} · {r.items[0].s}
                       </div>
                     </td>
                   </tr>
                   {open === r.symbol && (
-                    <tr key={r.symbol + "-open"}>
-                      <td colSpan={9} className="pl-8 pr-2 pb-3 pt-1">
+                    <tr>
+                      <td colSpan={11} className="pl-8 pr-2 pb-3 pt-1">
                         <div className="border-l-2 border-slate-300 pl-4">
-                        <ul className="space-y-1.5">
-                          {(full[r.symbol] ?? r.items).filter((i) => ageDays(i.d, Date.now()) <= Math.max(days, 90)).map((i, k) => (
-                            <li key={k} className="flex gap-2 items-baseline">
-                              <span className="text-xs text-slate-400 w-20 shrink-0">{i.d}</span>
-                              <span className="flex flex-wrap gap-1 shrink-0">
-                                {i.g.map((g) => (
-                                  <span key={g} className={`text-[10px] px-1 rounded border ${TAG_CLASS[g]}`}>
-                                    {g}
-                                  </span>
-                                ))}
-                              </span>
-                              {i.u ? (
-                                <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
-                                  {i.t}
-                                </a>
-                              ) : (
-                                <span>{i.t}</span>
-                              )}
-                              {i.a != null && <span className="text-xs text-slate-500 shrink-0">₹{fmtCr(i.a)} Cr</span>}
-                              <span className="text-xs text-slate-400 shrink-0">{i.s}</span>
-                            </li>
-                          ))}
-                        </ul>
+                          <ul className="space-y-1.5">
+                            {(full[r.symbol] ?? r.items).filter((i) => ageDays(i.d, Date.now()) <= Math.max(days, 90)).map((i, k) => (
+                              <li key={k} className="flex gap-2 items-baseline">
+                                <span className="text-xs text-slate-400 w-20 shrink-0">{i.d}</span>
+                                <span className="flex flex-wrap gap-1 shrink-0">
+                                  {i.g.map((g) => (
+                                    <span key={g} className={`text-[10px] px-1 rounded border ${TAG_CLASS[g]}`}>
+                                      {g}
+                                    </span>
+                                  ))}
+                                </span>
+                                {i.u ? (
+                                  <a href={i.u} target="_blank" rel="noreferrer" className="hover:underline">
+                                    {i.t}
+                                  </a>
+                                ) : (
+                                  <span>{i.t}</span>
+                                )}
+                                {i.a != null && <span className="text-xs text-slate-500 shrink-0">₹{fmtCr(i.a)} Cr</span>}
+                                <span className="text-xs text-slate-400 shrink-0">{i.s}</span>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>

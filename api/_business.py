@@ -171,7 +171,21 @@ def build_universe(name_map):
     return [(s, n, p) for s, n, p, _ in rows]
 
 
-def run_radar(name_map, budget_s=235, workers=8, recheck_hours=20):
+def sector_lookup(sector_map):
+    """{symbol: sector}: the NSE-750 sector map plus the index-directory lists (Midcap 150 / Smallcap 250 / Microcap 250)."""
+    out = dict(sector_map or {})
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_indexdir", None) or {}
+    finally:
+        conn.close()
+    for r in scan.get("rows") or []:
+        if r.get("symbol") and r.get("sector") and r["symbol"] not in out:
+            out[r["symbol"]] = r["sector"]
+    return out
+
+
+def run_radar(name_map, sector_map=None, budget_s=235, workers=8, recheck_hours=20):
     t0 = time.monotonic()
     conn = get_conn()
     try:
@@ -231,6 +245,7 @@ def run_radar(name_map, budget_s=235, workers=8, recheck_hours=20):
         "items": items,
         "checked": checked,
         "names": {s: n for s, n, _ in universe},
+        "sectors": {s: v for s, v in sector_lookup(sector_map).items() if s in items or s in checked},
         "stats": stats,
         "keep_days": KEEP_DAYS,
     }
@@ -242,3 +257,99 @@ def run_radar(name_map, budget_s=235, workers=8, recheck_hours=20):
     stats["companies_with_items"] = len(items)
     stats["elapsed_s"] = round(time.monotonic() - t0, 1)
     return stats
+
+
+# ── company profile (Screener.in page, no login) ─────────────────────────────
+
+PROFILE_TTL_DAYS = 7
+
+
+def _clean(t):
+    return re.sub(r"\s*\[\d+(?:,\s*\d+)*\]", "", t or "").strip()
+
+
+def fetch_profile(symbol):
+    """Business profile from the company's Screener.in page: About + Key Points (segments, capacity,
+    strategy as the company describes them), pros/cons, compounded growth, concall/presentation links,
+    sector. Cached in meta for PROFILE_TTL_DAYS."""
+    from bs4 import BeautifulSoup
+
+    key = "bp:" + symbol
+    conn = get_conn()
+    try:
+        cached = get_meta(conn, key, None)
+    finally:
+        conn.close()
+    if cached and cached.get("fetched"):
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(cached["fetched"])).days
+        if age < PROFILE_TTL_DAYS:
+            return cached
+    headers = {"User-Agent": UA, "Referer": "https://www.screener.in/"}
+    html = None
+    for path in (f"/company/{quote_plus(symbol)}/consolidated/", f"/company/{quote_plus(symbol)}/"):
+        r = requests.get("https://www.screener.in" + path, headers=headers, timeout=25)
+        if r.status_code == 200 and "company-profile" in r.text:
+            html = r.text
+            break
+    if html is None:
+        return {"symbol": symbol, "error": "no Screener.in page found", "fetched": datetime.now(timezone.utc).isoformat()}
+    sp = BeautifulSoup(html, "html.parser")
+    about = sp.select_one(".company-profile div.sub.about")
+    key_pts = sp.select_one(".company-profile div.sub.commentary")
+    prof = sp.select_one(".company-profile")
+    if about is None and prof is not None:  # layout drift: fall back to the whole block
+        about = prof
+    ratios = {}
+    for li in sp.select("#top-ratios li"):
+        nm = li.select_one(".name")
+        val = li.select_one(".value")
+        if nm and val:
+            ratios[nm.get_text(" ", strip=True)] = val.get_text(" ", strip=True)
+    growth = {}
+    for tb in sp.select("table.ranges-table"):
+        title = tb.select_one("th")
+        if not title:
+            continue
+        rows = {}
+        for tr in tb.select("tr")[1:]:
+            tds = [td.get_text(" ", strip=True) for td in tr.select("td")]
+            if len(tds) == 2:
+                rows[tds[0].rstrip(":")] = tds[1]
+        growth[title.get_text(" ", strip=True)] = rows
+    peers = [a.get_text(" ", strip=True) for a in sp.select("#peers p.sub a")]
+    concalls = []
+    box = sp.select_one("div.documents.concalls")
+    if box:
+        for li in box.select("li"):
+            dt = li.select_one("div")
+            links = {}
+            for a in li.select("a"):
+                href, label = a.get("href") or "", a.get_text(" ", strip=True)
+                if href.startswith("http") and label:
+                    links[label] = href
+            if links:
+                concalls.append({"date": dt.get_text(" ", strip=True) if dt else "", "links": links})
+    web = next((a.get("href") for a in sp.select(".company-links a") if "Website" in a.get_text()), None) or next(
+        (a.get("href") for a in sp.select("a") if a.get("href", "").startswith("http") and "bseindia" not in a["href"] and "nseindia" not in a["href"] and "screener" not in a["href"] and "Website" in a.get_text()),
+        None,
+    )
+    out = {
+        "symbol": symbol,
+        "fetched": datetime.now(timezone.utc).isoformat(),
+        "name": (sp.select_one("h1") or sp.select_one("title")).get_text(" ", strip=True) if (sp.select_one("h1") or sp.select_one("title")) else symbol,
+        "about": _clean(about.get_text("\n", strip=True)).replace("About\n", "", 1) if about is not None else "",
+        "key_points": _clean(key_pts.get_text("\n", strip=True)).replace("Key Points\n", "", 1) if key_pts is not None else "",
+        "pros": [li.get_text(" ", strip=True) for li in sp.select("div.pros li")],
+        "cons": [li.get_text(" ", strip=True) for li in sp.select("div.cons li")],
+        "ratios": ratios,
+        "growth": growth,
+        "classification": peers[:4],
+        "concalls": concalls[:8],
+        "website": web,
+    }
+    conn = get_conn()
+    try:
+        set_meta(conn, key, out)
+    finally:
+        conn.close()
+    return out

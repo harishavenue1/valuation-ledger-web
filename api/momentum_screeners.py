@@ -3285,7 +3285,7 @@ def _run_weekly_patterns(symbols, name_map, sector_map):
 def _run_business_radar(symbols, name_map, sector_map):
     from _business import run_radar
 
-    stats = run_radar(name_map)
+    stats = run_radar(name_map, sector_map)
     rows = [{"item": k, "value": v} for k, v in stats.items()]
     return {"label": "Business Radar", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
@@ -6598,6 +6598,17 @@ class handler(BaseHTTPRequestHandler):
                 payload = {**payload, "rows": [{k: v for k, v in r.items() if k not in ("bars", "as_of", "volume")} for r in payload["rows"]]}
             # changes once a day: let the browser reuse it for 5 min and revalidate in the background after that
             send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"})
+            return
+
+        # ?business_profile=SYMBOL — one company's Screener.in business profile (cached 7 days in meta)
+        prof_sym = (query.get("business_profile") or [None])[0]
+        if prof_sym:
+            from _business import fetch_profile
+
+            try:
+                send_json(self, 200, fetch_profile(prof_sym.strip().upper()), extra_headers={"Cache-Control": "private, max-age=600"})
+            except Exception as e:
+                send_json(self, 502, {"error": f"profile fetch failed: {e}"})
             return
 
         # ?business_radar=1 — the Business Radar page's accumulated news/catalyst items (api/_business.py)
