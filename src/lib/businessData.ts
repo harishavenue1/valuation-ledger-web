@@ -106,7 +106,7 @@ const UNIT_CR: Record<string, number> = { "lakh crore": 1e5, crore: 1, crores: 1
 function amountsOf(t: string): number[] {
   const out: number[] = [];
   for (const m of t.matchAll(AMT_RX)) {
-    const around = t.slice(Math.max(0, (m.index ?? 0) - 35), (m.index ?? 0) + m[0].length + 25);
+    const around = t.slice(Math.max(0, (m.index ?? 0) - 24), (m.index ?? 0) + m[0].length + 14);
     if (NOT_A_DEAL_SIZE.test(around)) continue;
     const usd = m[3] != null;
     const num = parseFloat((usd ? m[3] : m[1]).replace(/,/g, ""));

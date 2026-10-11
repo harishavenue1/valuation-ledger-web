@@ -66,7 +66,7 @@ def amount_cr(title):
     best = None
     for rx, scale in ((_USD_RE, None), (_AMT_RE, True)):
         for m in rx.finditer(title):
-            around = title[max(0, m.start() - 35): m.end() + 25].lower()
+            around = title[max(0, m.start() - 24): m.end() + 14].lower()
             if _NOT_A_DEAL_SIZE.search(around):
                 continue  # an order BOOK, market cap, revenue... is a size, not a new deal
             num, unit = m.group(1), m.group(2).lower()
