@@ -117,7 +117,7 @@ export default function Guidance() {
     const out: Entry[] = [];
     const seen = new Set<string>();
     const add = (e: Entry) => {
-      e.horizon = horizonOf(e.text) ?? e.horizon; // the latest fiscal year named (stored concall lines carry an older rule)
+      e.horizon = horizonOf(e.text); // the latest fiscal year named; always recomputed (stored concall lines carry an older, looser rule)
       const k = e.symbol + norm(e.text);
       if (seen.has(k)) return;
       seen.add(k);
@@ -394,7 +394,7 @@ export default function Guidance() {
                         <ul className="space-y-1.5">
                           {r.entries
                             .slice()
-                            .sort((a, b) => b.strength - a.strength || (a.date < b.date ? 1 : -1))
+                            .sort((a, b) => Number(!!impliedCagr(b, r)) - Number(!!impliedCagr(a, r)) || b.strength - a.strength || (a.date < b.date ? 1 : -1))
                             .slice(0, open === r.symbol ? 12 : 3)
                             .map((e, k) => (
                               <li key={k}>
