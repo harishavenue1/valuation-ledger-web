@@ -263,6 +263,19 @@ def run_radar(name_map, sector_map=None, budget_s=235, workers=8, recheck_hours=
                 if sec is not None:
                     sector_cache[sym] = sec
         stats["sector_missing"] = len([m for m in missing if m not in sector_cache])
+    # a headline that matches several companies' names ("Kalpataru Projects" vs "Kalpataru") belongs to the one whose
+    # name matches it most fully; re-done every run so it also repairs history
+    owners = {}
+    names = {u[0]: u[1] for u in universe}
+    for sym, its in items.items():
+        toks = _tokens(names.get(sym) or "")
+        for it in its:
+            k = _title_key(it["t"])
+            score = sum(1 for t in toks if t in it["t"].lower())
+            if score > owners.get(k, (-1, None))[0]:
+                owners[k] = (score, sym)
+    for sym in list(items):
+        items[sym] = [x for x in items[sym] if owners.get(_title_key(x["t"]), (0, sym))[1] in (sym, None) or owners[_title_key(x["t"])][0] == sum(1 for t in _tokens(names.get(sym) or "") if t in x["t"].lower())]
     for sym in list(items):
         for it in items[sym]:  # re-derive from the headline so every logic fix applies to history too
             it["g"] = classify(it["t"])
