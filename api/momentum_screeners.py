@@ -3282,6 +3282,14 @@ def _run_weekly_patterns(symbols, name_map, sector_map):
     return {"label": "Weekly DC/RSI patterns (deep history)", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
 
 
+def _run_business_radar(symbols, name_map, sector_map):
+    from _business import run_radar
+
+    stats = run_radar(name_map)
+    rows = [{"item": k, "value": v} for k, v in stats.items()]
+    return {"label": "Business Radar", "push_rows": rows, "scanned": len(rows), "skipped": 0}, None
+
+
 def _run_bhav_resolve(symbols, name_map, sector_map):
     from _bhav import resolve_deep_actions
 
@@ -6497,6 +6505,7 @@ SCREENER_RUNNERS = {
     "bhavStore": _run_bhav_store,
     "bhavTechnicals": _run_bhav_technicals,
     "weeklyPatterns": _run_weekly_patterns,
+    "businessRadar": _run_business_radar,
     "bhavResolve": _run_bhav_resolve,
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
@@ -6589,6 +6598,18 @@ class handler(BaseHTTPRequestHandler):
                 payload = {**payload, "rows": [{k: v for k, v in r.items() if k not in ("bars", "as_of", "volume")} for r in payload["rows"]]}
             # changes once a day: let the browser reuse it for 5 min and revalidate in the background after that
             send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"})
+            return
+
+        # ?business_radar=1 — the Business Radar page's accumulated news/catalyst items (api/_business.py)
+        if (query.get("business_radar") or [None])[0]:
+            conn = get_conn()
+            try:
+                payload = get_meta(conn, "business_radar", None)
+            finally:
+                conn.close()
+            if payload:
+                payload = {k: v for k, v in payload.items() if k != "checked"}
+            send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
             return
 
         screener = (query.get("screener") or [None])[0]

@@ -21,6 +21,7 @@ import { api, ApiError } from "../lib/api";
 // never needed it (caught 2026-08-30 while confirming "is everything
 // actually reachable from any machine").
 const CLOUD_SCREENERS = new Set([
+  "businessRadar",
   "myLongTermInvestingStrategy",
   "weeklySignals",
   "smartMoney",

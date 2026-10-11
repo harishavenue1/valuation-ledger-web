@@ -348,6 +348,8 @@ export const api = {
     return bhavCache.p;
   },
 
+  getBusinessRadar: (): Promise<any> => req("/api/momentum_screeners?business_radar=1"),
+
   getScreeners: (names: string[]): Promise<{ momentum_screeners: MomentumScreeners }> =>
     req(`/api/stocks?screeners=${names.map(encodeURIComponent).join(",")}`),
 
