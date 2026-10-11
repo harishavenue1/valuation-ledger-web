@@ -6627,7 +6627,7 @@ class handler(BaseHTTPRequestHandler):
                 slim = {}
                 for s_, its in (payload.get("items") or {}).items():
                     slim[s_] = [({**i} if k == 0 else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:15])]
-                payload = {k: v for k, v in payload.items() if k not in ("checked", "items")}
+                payload = {k: v for k, v in payload.items() if k not in ("checked", "items", "sector_cache")}
                 payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})
             return

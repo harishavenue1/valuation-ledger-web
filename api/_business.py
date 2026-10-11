@@ -185,6 +185,19 @@ def sector_lookup(sector_map):
     return out
 
 
+def fetch_sector(symbol, session):
+    """Screener.in's own sector (first level of the company page's peer breadcrumb), the same naming the
+    NSE index lists use ("Telecommunication", "Capital Goods"...). '' when there is no page."""
+    from bs4 import BeautifulSoup
+
+    for path in (f"/company/{quote_plus(symbol)}/consolidated/", f"/company/{quote_plus(symbol)}/"):
+        r = session.get("https://www.screener.in" + path, headers={"User-Agent": UA, "Referer": "https://www.screener.in/"}, timeout=25)
+        if r.status_code == 200 and "company-profile" in r.text:
+            a = BeautifulSoup(r.text, "html.parser").select("#peers p.sub a")
+            return a[0].get_text(" ", strip=True) if a else ""
+    return ""
+
+
 def run_radar(name_map, sector_map=None, budget_s=235, workers=8, recheck_hours=20):
     t0 = time.monotonic()
     conn = get_conn()
@@ -231,6 +244,25 @@ def run_radar(name_map, sector_map=None, budget_s=235, workers=8, recheck_hours=
                 stats["rate_limited"] = True
             elif status == "fail":
                 stats["failed"] += 1
+    # sectors for stocks outside the NSE index lists: a few hundred per run from Screener.in, remembered
+    sector_cache = state.get("sector_cache") or {}
+    known = sector_lookup(sector_map)
+    missing = [u[0] for u in universe if u[0] not in known and u[0] not in sector_cache]
+    stats["sector_missing"] = len(missing)
+    if missing and time.monotonic() - t0 < budget_s - 20:
+        def sec_one(sym):
+            if time.monotonic() - t0 > budget_s:
+                return sym, None
+            try:
+                return sym, fetch_sector(sym, session)
+            except Exception:
+                return sym, None
+
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            for sym, sec in pool.map(sec_one, missing[:300]):
+                if sec is not None:
+                    sector_cache[sym] = sec
+        stats["sector_missing"] = len([m for m in missing if m not in sector_cache])
     for sym in list(items):
         for it in items[sym]:  # re-derive from the headline so every logic fix applies to history too
             it["g"] = classify(it["t"])
@@ -245,7 +277,8 @@ def run_radar(name_map, sector_map=None, budget_s=235, workers=8, recheck_hours=
         "items": items,
         "checked": checked,
         "names": {s: n for s, n, _ in universe},
-        "sectors": {s: v for s, v in sector_lookup(sector_map).items() if s in items or s in checked},
+        "sectors": {s: v for s, v in {**{k: v for k, v in sector_cache.items() if v}, **known}.items() if s in items or s in checked},
+        "sector_cache": sector_cache,
         "stats": stats,
         "keep_days": KEEP_DAYS,
     }
