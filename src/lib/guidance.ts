@@ -17,6 +17,28 @@ const FORWARD =
 const QUANT = /(\d[\d,.]*\s?(%|per ?cent|x\b|times|crore|cr\b|lakh|bn\b|billion|mn\b|million|gw|mw|gwh|mwp|tonnes?|mt|units|stores|plants|bps))|\bfy\s?\d{2}\b|\b20\d{2}\b/i;
 const NEGATIVE_CONTEXT = /stock prediction|analyst targets?|key levels|price (forecast|prediction)|share price (target|forecast)|price target|target price|\bbuy\b.{0,20}target|stock (could|may) (rally|jump)|technical|support at|resistance|stop.?loss/i;
 
+/** The fiscal year a statement is about: the LATEST one it names ("₹20,000 Cr by financial year 2029, against ₹4,750 Cr in FY26" -> FY29). */
+export function horizonOf(p: string): string | null {
+  const ys: number[] = [];
+  for (const m of p.matchAll(/\bFY\s?-?(\d{2,4})E?\b/gi)) ys.push(parseInt(m[1].slice(-2)));
+  for (const m of p.matchAll(/\b(?:financial|fiscal) year\s+(?:ending\s+)?(?:march\s+)?(?:FY\s?)?(20\d{2}|\d{2})\b/gi)) ys.push(parseInt(m[1].slice(-2)));
+  for (const m of p.matchAll(/\bby\s+(?:the end of\s+)?(?:FY\s?)?(20\d{2})\b/gi)) ys.push(parseInt(m[1].slice(-2)));
+  for (const m of p.matchAll(/\bby\s+(?:the end of\s+)?FY\s?(\d{2})\b/gi)) ys.push(parseInt(m[1]));
+  const ok = ys.filter((y) => y >= 20 && y <= 45);
+  return ok.length ? `FY${Math.max(...ok)}` : null;
+}
+
+const CR_UNIT: Record<string, number> = { "lakh crore": 1e5, crore: 1, crores: 1, cr: 1, bn: 100, billion: 100 };
+/** The largest ₹ amount in a sentence, in crore (a revenue target is normally the biggest figure in it); null if none. */
+export function targetAmountCr(p: string): number | null {
+  let best: number | null = null;
+  for (const m of p.matchAll(/(?:₹|rs\.?|inr)?\s?([\d,]+(?:\.\d+)?)\s?(lakh crore|crores?|cr\b|bn\b|billion)/gi)) {
+    const v = parseFloat(m[1].replace(/,/g, "")) * (CR_UNIT[m[2].toLowerCase()] ?? 1);
+    if (!Number.isNaN(v) && (best == null || v > best)) best = v;
+  }
+  return best;
+}
+
 export interface Guidance {
   text: string;
   types: GType[];
@@ -43,9 +65,7 @@ export function extractGuidance(text: string, minStrength = 2): Guidance[] {
     .filter((p) => p.length >= 25);
   for (const p of parts) {
     if (!FORWARD.test(p) || !QUANT.test(p) || NEGATIVE_CONTEXT.test(p)) continue;
-    const fy = p.match(/\bFY\s?-?(\d{2,4})E?\b/i);
-    const by = p.match(/\bby\s+(?:FY\s?)?(20\d{2}|\d{2})\b/i);
-    const horizon = fy ? `FY${fy[1].slice(-2)}` : by ? `FY${by[1].slice(-2)}` : null;
+    const horizon = horizonOf(p);
     let strength = 1;
     if (/[\d,.]+\s?(%|per ?cent|crore|cr\b|bn\b|billion|x\b|times|gw|mw)/i.test(p)) strength++;
     if (horizon) strength++;

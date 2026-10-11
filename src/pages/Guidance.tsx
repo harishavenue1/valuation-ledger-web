@@ -5,7 +5,7 @@ import RunButton from "../components/RunButton";
 import { ScreenerInLink, Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
 import { buildMatchers, chartPath, companyPath, findMentions, tvUrl, useBusinessData } from "../lib/businessData";
-import { G_CLASS, G_TYPES, GType, extractGuidance } from "../lib/guidance";
+import { G_CLASS, G_TYPES, GType, extractGuidance, horizonOf, targetAmountCr } from "../lib/guidance";
 
 // Guidance tab — one row per company with what is being said about its future (revenue, margin, capex, orders),
 // each statement linked to where it came from: a news headline, one of the tweets you follow, and (on expand)
@@ -36,6 +36,20 @@ interface Row {
   prevFy: number | null; // last completed financial year's sales, ₹ Cr
   prevFyLabel: string;
   prevFyGrowth: number | null; // that year's growth over the one before, %
+  baseFy: number | null; // the completed FY those sales belong to, e.g. 26 for FY26
+  revQLabel: string; // which quarter revQ is, e.g. "Jun 2026"
+}
+
+/** Implied sales CAGR when a statement is a revenue TARGET: target ₹ amount vs the last completed FY's sales, over the years to the target FY. */
+function impliedCagr(e: Entry, r: Row): { cagr: number; tip: string } | null {
+  if (!e.types.includes("Revenue") || !e.horizon || r.prevFy == null || r.baseFy == null || r.prevFy <= 0) return null;
+  if (!/revenue|sales|turnover|top.?line/i.test(e.text) || /ebitda|profit|\bpat\b|margin|order|capex|invest/i.test(e.text.replace(/revenue/gi, ""))) return null;
+  const hy = parseInt(e.horizon.slice(2));
+  const years = hy - r.baseFy;
+  const target = targetAmountCr(e.text);
+  if (!target || years < 1 || years > 12 || target <= r.prevFy * 1.05) return null;
+  const cagr = (Math.pow(target / r.prevFy, 1 / years) - 1) * 100;
+  return { cagr, tip: `₹${Math.round(target).toLocaleString("en-IN")} Cr target ÷ ₹${Math.round(r.prevFy).toLocaleString("en-IN")} Cr (FY${r.baseFy} sales) over ${years} years` };
 }
 
 const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
@@ -79,17 +93,22 @@ export default function Guidance() {
   // sales facts: the stored NSE-750 fundamentals first (last annual value there is TTM, so the last full year is the one before it),
   // else what the daily concall run read off the company's Screener page
   const fundMap = useMemo(() => new Map<string, any>((((bundle.momentum_screeners as any)?.nse750Fundamentals?.rows ?? []) as any[]).map((r) => [r.symbol, r])), [bundle]);
-  function salesFacts(sym: string): { revQ: number | null; prevFy: number | null; label: string; fyG: number | null } {
+  function salesFacts(sym: string): { revQ: number | null; prevFy: number | null; label: string; fyG: number | null; baseFy: number | null; qLabel: string } {
+    const now = new Date();
+    // last completed financial year (March year-end); results are out by end-May, so from June on it is the year that just ended
+    const dateFy = (now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1) % 100;
     const f = fundMap.get(sym);
     if (f?.revenue_hist?.length >= 3) {
       const h = f.revenue_hist as number[];
       const q = (f.q_sales_growth as any[] | undefined)?.slice().reverse().find((v) => typeof v === "number");
       const prev = h[h.length - 2];
       const before = h[h.length - 3];
-      return { revQ: typeof q === "number" ? q : null, prevFy: prev ?? null, label: "", fyG: prev && before ? Math.round((prev / before - 1) * 1000) / 10 : null };
+      const ql = ((f.q_labels as string[] | undefined) ?? []).slice(-1)[0] ?? "";
+      return { revQ: typeof q === "number" ? q : null, prevFy: prev ?? null, label: `FY${dateFy}`, fyG: prev && before ? Math.round((prev / before - 1) * 1000) / 10 : null, baseFy: dateFy, qLabel: ql };
     }
     const x = fin[sym];
-    return { revQ: x?.q_yoy ?? null, prevFy: x?.prev_fy_sales ?? null, label: x?.prev_fy_label ?? "", fyG: x?.prev_fy_growth ?? null };
+    const fyNum = x?.prev_fy_label ? parseInt(String(x.prev_fy_label).slice(-2)) : null;
+    return { revQ: x?.q_yoy ?? null, prevFy: x?.prev_fy_sales ?? null, label: x?.prev_fy_label ?? "", fyG: x?.prev_fy_growth ?? null, baseFy: fyNum, qLabel: x?.q_label ?? "" };
   }
   const matchers = useMemo(() => buildMatchers(radar, tech), [radar, tech]);
 
@@ -98,6 +117,7 @@ export default function Guidance() {
     const out: Entry[] = [];
     const seen = new Set<string>();
     const add = (e: Entry) => {
+      e.horizon = horizonOf(e.text) ?? e.horizon; // the latest fiscal year named (stored concall lines carry an older rule)
       const k = e.symbol + norm(e.text);
       if (seen.has(k)) return;
       seen.add(k);
@@ -164,6 +184,8 @@ export default function Guidance() {
         prevFy: sf.prevFy,
         prevFyLabel: sf.label,
         prevFyGrowth: sf.fyG,
+        baseFy: sf.baseFy,
+        revQLabel: sf.qLabel,
       });
     }
     return out;
@@ -292,8 +314,8 @@ export default function Guidance() {
                 <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("prevFy")} title="Sales of the last completed financial year, ₹ Cr (small figure: that year's growth over the year before)">
                   Prev Yr Sales (Cr){sortMark("prevFy")}
                 </th>
-                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("revQ")} title="Latest quarter's sales growth, year on year">
-                  Rev growth %{sortMark("revQ")}
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("revQ")} title="Sales of the latest reported quarter vs the same quarter a year earlier (the quarter is shown under the number). Not a full-year figure.">
+                  Qtr rev growth % (YoY){sortMark("revQ")}
                 </th>
                 <th className="py-2 px-2 text-right">3M %</th>
                 <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700" onClick={() => click("best")} title="Most specific statement first">
@@ -357,7 +379,16 @@ export default function Guidance() {
                           ""
                         )}
                       </td>
-                      <td className="py-2 px-2 text-right">{r.revQ != null ? <Signed v={r.revQ} digits={0} /> : ""}</td>
+                      <td className="py-2 px-2 text-right whitespace-nowrap">
+                        {r.revQ != null ? (
+                          <>
+                            <Signed v={r.revQ} digits={0} />
+                            {r.revQLabel && <div className="text-[10px] text-slate-400">{r.revQLabel}</div>}
+                          </>
+                        ) : (
+                          ""
+                        )}
+                      </td>
                       <td className="py-2 px-2 text-right">{r.m3 != null ? <Signed v={r.m3} digits={0} /> : ""}</td>
                       <td className="py-2 px-2 max-w-[44rem]">
                         <ul className="space-y-1.5">
@@ -374,6 +405,14 @@ export default function Guidance() {
                                     </span>
                                   ))}
                                   {e.horizon && <span className="text-[10px] px-1 rounded border border-slate-300 text-slate-600 shrink-0">{e.horizon}</span>}
+                                  {(() => {
+                                    const c = impliedCagr(e, r);
+                                    return c ? (
+                                      <span className="text-[10px] px-1 rounded border border-emerald-400 text-emerald-700 shrink-0" title={c.tip}>
+                                        CAGR {c.cagr.toFixed(0)}% FY{r.baseFy}→{e.horizon}
+                                      </span>
+                                    ) : null;
+                                  })()}
                                   <span>{e.text}</span>
                                 </div>
                                 <div className="text-xs text-slate-400">

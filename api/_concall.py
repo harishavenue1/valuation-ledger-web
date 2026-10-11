@@ -72,8 +72,12 @@ def types_of(t):
 
 
 def _horizon(t):
-    m = re.search(r"\bFY\s?-?(\d{2,4})E?\b", t, re.I) or re.search(r"\bby\s+(?:the end of\s+)?(?:FY\s?)?(20\d{2}|\d{2})\b", t, re.I)
-    return f"FY{m.group(1)[-2:]}" if m else None
+    """The latest fiscal year the sentence names ("... by financial year 2029, compared with FY26" -> FY29)."""
+    ys = [int(m.group(1)[-2:]) for m in re.finditer(r"\bFY\s?-?(\d{2,4})E?\b", t, re.I)]
+    ys += [int(m.group(1)[-2:]) for m in re.finditer(r"\b(?:financial|fiscal) year\s+(?:ending\s+)?(?:march\s+)?(?:FY\s?)?(20\d{2}|\d{2})\b", t, re.I)]
+    ys += [int(m.group(1)[-2:]) for m in re.finditer(r"\bby\s+(?:the end of\s+)?(?:FY\s?)?(20\d{2})\b", t, re.I)]
+    ys = [y for y in ys if 20 <= y <= 45]
+    return f"FY{max(ys)}" if ys else None
 
 
 def pdf_text(content):
