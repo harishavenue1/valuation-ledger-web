@@ -99,7 +99,7 @@ def relevant(title, name):
 
 
 _NOT_AN_ORDER = re.compile(r"assessment|income.?tax|\bi-t\b|\btax\b|\bgst\b|nclt|high court|supreme court|sebi|penalty|draft order|show.?cause|demand notice|interim order")
-_CALENDAR_NOISE = re.compile(r"\bdate\b|date,|results? (preview|date)|analyst outlook|record date|ex-date|price targets?|target (of|price)|upside|initiates coverage|gets .?(buy|sell|hold)|buy, sell or hold|stocks to (buy|watch)|\bbuy\b.{0,25}target")
+_CALENDAR_NOISE = re.compile(r"\bdate\b|date,|results? (preview|date)|analyst outlook|record date|ex-date|price targets?|target (of|price)|upside|initiates coverage|gets .?(buy|sell|hold)|buy, sell or hold|stocks to (buy|watch)|\baccumulate\b|for target|target rs|recommends?\b|brokerage|top picks?|\bbuy\b.{0,25}target")
 
 
 def classify(title):

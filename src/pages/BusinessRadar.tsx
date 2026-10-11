@@ -355,8 +355,9 @@ export default function BusinessRadar() {
                     </td>
                   </tr>
                   {open === r.symbol && (
-                    <tr key={r.symbol + "-open"} className="bg-slate-50/70">
-                      <td colSpan={9} className="px-6 py-3">
+                    <tr key={r.symbol + "-open"}>
+                      <td colSpan={9} className="pl-8 pr-2 pb-3 pt-1">
+                        <div className="border-l-2 border-slate-300 pl-4">
                         <ul className="space-y-1.5">
                           {(full[r.symbol] ?? r.items).filter((i) => ageDays(i.d, Date.now()) <= Math.max(days, 90)).map((i, k) => (
                             <li key={k} className="flex gap-2 items-baseline">
@@ -380,6 +381,7 @@ export default function BusinessRadar() {
                             </li>
                           ))}
                         </ul>
+                        </div>
                       </td>
                     </tr>
                   )}
