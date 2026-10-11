@@ -2,7 +2,7 @@ import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { Signed } from "../components/ScreenerTable";
+import { ScreenerInLink, Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
 import { useBusinessAlerts } from "../lib/businessAlerts";
 import {
@@ -315,6 +315,7 @@ export default function BusinessRadar() {
                   <Link to={companyPath(a.symbol)} className="font-medium text-indigo-600 hover:underline">
                     {a.symbol}
                   </Link>
+                  <ScreenerInLink symbol={a.symbol} />
                   <span className="text-xs text-slate-400" title={a.mine === "holding" ? "In your holdings" : a.mine === "both" ? "Holding and on your watchlist" : "On your watchlist"}>
                     {a.mine === "watchlist" ? " ☆" : " ★"}
                   </span>
@@ -383,6 +384,7 @@ export default function BusinessRadar() {
                       <Link to={companyPath(r.symbol)} className="font-medium text-indigo-600 hover:underline" title="Business profile">
                         {r.symbol}
                       </Link>
+                      <ScreenerInLink symbol={r.symbol} />
                       {holdings.has(r.symbol) && <span title="In your holdings"> ★</span>}
                       <div className="text-xs text-slate-500 ml-5 max-w-[14rem] truncate" title={r.sector}>
                         {r.name}

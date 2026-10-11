@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Signed } from "../components/ScreenerTable";
+import { ScreenerInLink, Signed } from "../components/ScreenerTable";
 import { api } from "../lib/api";
 import { Item, TAG_CLASS, TAG_ORDER, TIER_CLASS, buildStories, chartPath, fmtCr, storyStats, tvUrl, useBusinessData } from "../lib/businessData";
 
@@ -105,7 +105,8 @@ export default function CompanyProfile() {
         <div className="space-y-5">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <h2 className="text-lg font-semibold">
-              {symbol} <span className="font-normal text-slate-500 text-base">{profile.name ?? radar?.names?.[symbol] ?? ""}</span>
+              {symbol}
+              <ScreenerInLink symbol={symbol} /> <span className="font-normal text-slate-500 text-base">{profile.name ?? radar?.names?.[symbol] ?? ""}</span>
             </h2>
             {t?.price != null && (
               <span className="text-sm">

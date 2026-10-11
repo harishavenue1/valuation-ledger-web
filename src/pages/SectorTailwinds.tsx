@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Signed } from "../components/ScreenerTable";
+import { ScreenerInLink, Signed } from "../components/ScreenerTable";
 import { TAG_CLASS, TIER_CLASS, Tier, companyPath, fmtCr, storyStats, useBusinessData, useMinTier, Stats } from "../lib/businessData";
 
 // Sectors tab — which sectors are collecting the most orders, capex and approvals this month
@@ -184,6 +184,7 @@ export default function SectorTailwinds() {
                                 <Link to={companyPath(t.symbol)} className="font-medium text-indigo-600 hover:underline w-28 shrink-0">
                                   {t.symbol}
                                 </Link>
+                                <ScreenerInLink symbol={t.symbol} />
                                 <span className="w-10 text-right shrink-0">{t.st.score.toFixed(1)}</span>
                                 <span className="flex flex-wrap gap-1">
                                   {Object.entries(t.st.tagCounts).map(([g, n]) => (
