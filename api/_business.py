@@ -314,6 +314,55 @@ def _clean(t):
     return re.sub(r"\s*\[\d+(?:,\s*\d+)*\]", "", t or "").strip()
 
 
+def _num(s):
+    try:
+        return float(str(s).replace(",", "").replace("%", "").strip())
+    except ValueError:
+        return None
+
+
+def _sales_row(sp, section_id):
+    """(headers, values) of the Sales/Revenue row of one Screener results table."""
+    sec = sp.select_one(f"section#{section_id}")
+    t = sec.select_one("table") if sec else None
+    if t is None:
+        return [], []
+    hdr = [th.get_text(strip=True) for th in t.select("thead th")][1:]
+    for tr in t.select("tbody tr"):
+        c = [td.get_text(strip=True) for td in tr.select("td")]
+        if c and re.match(r"^(sales|revenue)", c[0], re.I):
+            return hdr, [_num(x) for x in c[1:]]
+    return [], []
+
+
+def _fin_from_soup(sp):
+    """Sales facts for the Guidance tab: last completed FY sales (the annual table ends with a TTM column, so it is
+    the one before it), that FY's growth over the one before, and the latest quarter's YoY growth."""
+    out = {}
+    hdr, vals = _sales_row(sp, "profit-loss")
+    if hdr and vals:
+        fy_h, fy_v = (hdr[:-1], vals[:-1]) if hdr[-1].upper() == "TTM" else (hdr, vals)
+        if fy_v and fy_v[-1] is not None:
+            out["prev_fy_label"] = fy_h[-1]
+            out["prev_fy_sales"] = fy_v[-1]
+            if len(fy_v) > 1 and fy_v[-2]:
+                out["prev_fy_growth"] = round((fy_v[-1] / fy_v[-2] - 1) * 100, 1)
+        if hdr[-1].upper() == "TTM" and vals[-1] is not None:
+            out["ttm_sales"] = vals[-1]
+    qh, qv = _sales_row(sp, "quarters")
+    if qh and qv and qv[-1] is not None:
+        out["q_label"] = qh[-1]
+        # YoY needs the same quarter a year earlier; locate it by label so a missing quarter cannot shift the pairing
+        m = re.match(r"([A-Za-z]{3}) (\d{4})", qh[-1])
+        if m:
+            ly = f"{m.group(1)} {int(m.group(2)) - 1}"
+            if ly in qh:
+                base = qv[qh.index(ly)]
+                if base:
+                    out["q_yoy"] = round((qv[-1] / base - 1) * 100, 1)
+    return out
+
+
 def fetch_profile(symbol):
     """Business profile from the company's Screener.in page: About + Key Points (segments, capacity,
     strategy as the company describes them), pros/cons, compounded growth, concall/presentation links,
@@ -381,6 +430,7 @@ def fetch_profile(symbol):
     )
     out = {
         "symbol": symbol,
+        "fin": _fin_from_soup(sp),
         "fetched": datetime.now(timezone.utc).isoformat(),
         "name": (sp.select_one("h1") or sp.select_one("title")).get_text(" ", strip=True) if (sp.select_one("h1") or sp.select_one("title")) else symbol,
         "about": _clean(about.get_text("\n", strip=True)).replace("About\n", "", 1) if about is not None else "",

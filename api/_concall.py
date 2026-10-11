@@ -174,7 +174,7 @@ def process_company(symbol, get_profile, prev=None):
             results.append({"date": date, "url": url, "ppt": ppt, "pages": pages, "chars": len(text), "lines": extract_lines(text)})
         except Exception as e:
             results.append({"date": date, "url": url, "ppt": ppt, "lines": [], "error": str(e)[:120]})
-    return {"calls": results, "checked": datetime.now(timezone.utc).isoformat()}
+    return {"calls": results, "fin": prof.get("fin"), "checked": datetime.now(timezone.utc).isoformat()}
 
 
 def run_concall_guidance(name_map, budget_s=230, workers=3, recheck_days=14):
@@ -231,8 +231,10 @@ def run_concall_guidance(name_map, budget_s=230, workers=3, recheck_days=14):
 def feed(conn):
     """What the Guidance tab needs: per company, per call, the strongest lines (kept compact)."""
     state = get_meta(conn, KEY, None) or {}
-    out = {}
+    out, fin = {}, {}
     for sym, c in (state.get("companies") or {}).items():
+        if c.get("fin"):
+            fin[sym] = c["fin"]
         calls = []
         for call in c.get("calls") or []:
             lines = [{k: l[k] for k in ("text", "who", "types", "horizon", "strength")} for l in (call.get("lines") or []) if l.get("strength", 0) >= 2][:6]
@@ -240,4 +242,4 @@ def feed(conn):
                 calls.append({"date": call.get("date"), "url": call.get("url"), "ppt": call.get("ppt"), "lines": lines})
         if calls:
             out[sym] = calls
-    return {"companies": out, "updated": state.get("updated")}
+    return {"companies": out, "fin": fin, "updated": state.get("updated")}

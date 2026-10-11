@@ -349,7 +349,7 @@ export const api = {
   },
 
   getBusinessRadar: (): Promise<any> => req("/api/momentum_screeners?business_radar=1"),
-  getConcallGuidance: (): Promise<{ companies: Record<string, { date: string; url: string; ppt?: string; lines: any[] }[]>; updated?: string }> => req("/api/momentum_screeners?concall_guidance=1"),
+  getConcallGuidance: (): Promise<{ companies: Record<string, { date: string; url: string; ppt?: string; lines: any[] }[]>; fin?: Record<string, any>; updated?: string }> => req("/api/momentum_screeners?concall_guidance=1"),
   getFintwit: (): Promise<{ tweets: any[]; handles: Record<string, string>; updated?: string }> => req("/api/momentum_screeners?fintwit=1"),
   getBusinessProfile: (symbol: string): Promise<any> => req(`/api/momentum_screeners?business_profile=${encodeURIComponent(symbol)}`),
   getBusinessRadarSymbol: (symbol: string): Promise<{ items: any[] }> => req(`/api/momentum_screeners?business_radar=1&symbol=${encodeURIComponent(symbol)}`),

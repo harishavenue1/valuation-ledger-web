@@ -31,6 +31,10 @@ interface Row {
   price: number | null;
   day: number | null;
   m3: number | null;
+  revQ: number | null; // latest quarter's sales growth, YoY %
+  prevFy: number | null; // last completed financial year's sales, ₹ Cr
+  prevFyLabel: string;
+  prevFyGrowth: number | null; // that year's growth over the one before, %
 }
 
 const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 60);
@@ -38,10 +42,11 @@ const PAGE_ROWS = 100;
 
 export default function Guidance() {
   const { bundle } = useData();
-  useScreeners(["portfolioAllocation"]);
+  useScreeners(["portfolioAllocation", "nse750Fundamentals"]);
   const { radar, tech } = useBusinessData();
   const [tweets, setTweets] = useState<any[] | null>(null);
   const [concallFeed, setConcallFeed] = useState<Record<string, { date: string; url: string; ppt?: string; lines: any[] }[]>>({});
+  const [fin, setFin] = useState<Record<string, any>>({});
   const [days, setDays] = useState(90);
   const [types, setTypes] = useState<Set<GType>>(new Set());
   const [srcs, setSrcs] = useState<Set<string>>(new Set());
@@ -50,7 +55,7 @@ export default function Guidance() {
   const [minMcap, setMinMcap] = useState(0);
   const [minStrength, setMinStrength] = useState(3);
   const [q, setQ] = useState("");
-  const [sortKey, setSortKey] = useState<"latest" | "symbol" | "mcap" | "n" | "best">("latest");
+  const [sortKey, setSortKey] = useState<"latest" | "symbol" | "mcap" | "n" | "best" | "revQ" | "prevFy">("latest");
   const [dir, setDir] = useState<1 | -1>(-1);
   const [open, setOpen] = useState<string | null>(null);
   const [concalls, setConcalls] = useState<Record<string, any>>({});
@@ -58,12 +63,33 @@ export default function Guidance() {
 
   useEffect(() => {
     api.getFintwit().then((r) => setTweets(r.tweets)).catch(() => setTweets([]));
-    api.getConcallGuidance().then((r) => setConcallFeed(r.companies ?? {})).catch(() => {});
+    api
+      .getConcallGuidance()
+      .then((r) => {
+        setConcallFeed(r.companies ?? {});
+        setFin(r.fin ?? {});
+      })
+      .catch(() => {});
   }, []);
 
   const holdings = useMemo(() => new Set<string>(((bundle.momentum_screeners as any)?.portfolioAllocation?.rows ?? []).map((r: any) => r.symbol)), [bundle]);
   const watch = useMemo(() => new Set<string>(bundle.watchlist?.tickers ?? []), [bundle]);
   const tracker = bundle.guidance_tracker;
+  // sales facts: the stored NSE-750 fundamentals first (last annual value there is TTM, so the last full year is the one before it),
+  // else what the daily concall run read off the company's Screener page
+  const fundMap = useMemo(() => new Map<string, any>((((bundle.momentum_screeners as any)?.nse750Fundamentals?.rows ?? []) as any[]).map((r) => [r.symbol, r])), [bundle]);
+  function salesFacts(sym: string): { revQ: number | null; prevFy: number | null; label: string; fyG: number | null } {
+    const f = fundMap.get(sym);
+    if (f?.revenue_hist?.length >= 3) {
+      const h = f.revenue_hist as number[];
+      const q = (f.q_sales_growth as any[] | undefined)?.slice().reverse().find((v) => typeof v === "number");
+      const prev = h[h.length - 2];
+      const before = h[h.length - 3];
+      return { revQ: typeof q === "number" ? q : null, prevFy: prev ?? null, label: "", fyG: prev && before ? Math.round((prev / before - 1) * 1000) / 10 : null };
+    }
+    const x = fin[sym];
+    return { revQ: x?.q_yoy ?? null, prevFy: x?.prev_fy_sales ?? null, label: x?.prev_fy_label ?? "", fyG: x?.prev_fy_growth ?? null };
+  }
   const matchers = useMemo(() => buildMatchers(radar, tech), [radar, tech]);
 
   const entries = useMemo<Entry[]>(() => {
@@ -122,6 +148,7 @@ export default function Guidance() {
     for (const [sym, es] of by) {
       es.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : b.strength - a.strength));
       const t = tech.get(sym);
+      const sf = salesFacts(sym);
       out.push({
         symbol: sym,
         name: radar?.names?.[sym] ?? t?.name ?? sym,
@@ -132,10 +159,14 @@ export default function Guidance() {
         price: t?.price ?? null,
         day: t?.change_pct ?? null,
         m3: t?.three_month_pct ?? null,
+        revQ: sf.revQ,
+        prevFy: sf.prevFy,
+        prevFyLabel: sf.label,
+        prevFyGrowth: sf.fyG,
       });
     }
     return out;
-  }, [entries, days, types, srcs, minStrength, tech, radar]);
+  }, [entries, days, types, srcs, minStrength, tech, radar, fundMap, fin]);
 
   const view = useMemo(() => {
     let r = rows;
@@ -144,7 +175,7 @@ export default function Guidance() {
     if (onlyWatch) r = r.filter((x) => watch.has(x.symbol));
     const needle = q.trim().toLowerCase();
     if (needle) r = r.filter((x) => x.symbol.toLowerCase().includes(needle) || x.name.toLowerCase().includes(needle) || x.entries.some((e) => e.text.toLowerCase().includes(needle)));
-    const val = (x: Row): number | string | null => (sortKey === "symbol" ? x.symbol : sortKey === "mcap" ? x.mcap : sortKey === "n" ? x.entries.length : sortKey === "best" ? x.best : x.latest);
+    const val = (x: Row): number | string | null => (sortKey === "symbol" ? x.symbol : sortKey === "mcap" ? x.mcap : sortKey === "revQ" ? x.revQ : sortKey === "prevFy" ? x.prevFy : sortKey === "n" ? x.entries.length : sortKey === "best" ? x.best : x.latest);
     return r.slice().sort((a, b) => {
       const va = val(a);
       const vb = val(b);
@@ -254,6 +285,12 @@ export default function Guidance() {
                 <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("mcap")}>
                   Mcap Cr{sortMark("mcap")}
                 </th>
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("prevFy")} title="Sales of the last completed financial year, ₹ Cr (small figure: that year's growth over the year before)">
+                  Prev Yr Sales (Cr){sortMark("prevFy")}
+                </th>
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("revQ")} title="Latest quarter's sales growth, year on year">
+                  Rev growth %{sortMark("revQ")}
+                </th>
                 <th className="py-2 px-2 text-right">3M %</th>
                 <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700" onClick={() => click("best")} title="Most specific statement first">
                   Guidance{sortMark("best")}
@@ -302,6 +339,21 @@ export default function Guidance() {
                         ) : null}
                       </td>
                       <td className="py-2 px-2 text-right text-slate-600">{r.mcap != null ? Math.round(r.mcap).toLocaleString("en-IN") : ""}</td>
+                      <td className="py-2 px-2 text-right whitespace-nowrap">
+                        {r.prevFy != null ? (
+                          <>
+                            {Math.round(r.prevFy).toLocaleString("en-IN")}
+                            {r.prevFyGrowth != null && (
+                              <div className="text-xs" title={`${r.prevFyLabel || "Last FY"} sales growth over the year before`}>
+                                <Signed v={r.prevFyGrowth} digits={0} />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          ""
+                        )}
+                      </td>
+                      <td className="py-2 px-2 text-right">{r.revQ != null ? <Signed v={r.revQ} digits={0} /> : ""}</td>
                       <td className="py-2 px-2 text-right">{r.m3 != null ? <Signed v={r.m3} digits={0} /> : ""}</td>
                       <td className="py-2 px-2 max-w-[44rem]">
                         <ul className="space-y-1.5">
@@ -354,7 +406,7 @@ export default function Guidance() {
                     </tr>
                     {open === r.symbol && (
                       <tr>
-                        <td colSpan={8} className="pl-8 pr-2 pb-3 pt-1">
+                        <td colSpan={10} className="pl-8 pr-2 pb-3 pt-1">
                           <div className="border-l-2 border-slate-300 pl-4 text-sm">
                             <div className="text-xs text-slate-500 mb-1">Concall transcripts &amp; presentations (filed on BSE; from the company's Screener.in page)</div>
                             {!concalls[r.symbol] ? (
