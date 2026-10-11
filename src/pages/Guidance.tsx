@@ -303,32 +303,32 @@ export default function Guidance() {
       {view.length > 0 && (
         <div className="overflow-auto max-h-[78vh] rounded-lg border border-slate-200">
           <table className="w-full text-sm border-separate border-spacing-0">
-            <thead className="sticky top-0 z-20 bg-slate-50">
+            <thead>
               <tr className="text-left text-xs text-slate-500 border-b border-slate-200">
-                <th className="py-2 pl-2 pr-2 cursor-pointer select-none hover:text-slate-700 sticky left-0 z-30 bg-slate-50" onClick={() => click("symbol")}>
+                <th className="py-2 pl-2 pr-2 cursor-pointer select-none hover:text-slate-700 sticky left-0 top-0 z-30 bg-slate-50" onClick={() => click("symbol")}>
                   Company{sortMark("symbol")}
                 </th>
-                <th className="py-2 px-2 text-right">Price</th>
-                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("mcap")}>
+                <th className="py-2 px-2 text-right sticky top-0 z-20 bg-slate-50">Price</th>
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("mcap")}>
                   Mcap Cr{sortMark("mcap")}
                 </th>
-                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("prevFy")} title="Sales of the last completed financial year, ₹ Cr (small figure: that year's growth over the year before)">
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("prevFy")} title="Sales of the last completed financial year, ₹ Cr (small figure: that year's growth over the year before)">
                   Prev Yr Sales (Cr){sortMark("prevFy")}
                 </th>
-                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("revQ")} title="Sales of the latest reported quarter vs the same quarter a year earlier (the quarter is shown under the number). Not a full-year figure.">
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("revQ")} title="Sales of the latest reported quarter vs the same quarter a year earlier (the quarter is shown under the number). Not a full-year figure.">
                   Qtr rev growth % (YoY){sortMark("revQ")}
                 </th>
-                <th className="py-2 px-2 text-right">3M %</th>
-                <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700" onClick={() => click("best")} title="Most specific statement first">
+                <th className="py-2 px-2 text-right sticky top-0 z-20 bg-slate-50">3M %</th>
+                <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("best")} title="Most specific statement first">
                   Guidance{sortMark("best")}
                 </th>
-                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700" onClick={() => click("n")}>
+                <th className="py-2 px-2 text-right cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("n")}>
                   #{sortMark("n")}
                 </th>
-                <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700" onClick={() => click("latest")}>
+                <th className="py-2 px-2 cursor-pointer select-none hover:text-slate-700 sticky top-0 z-20 bg-slate-50" onClick={() => click("latest")}>
                   Latest{sortMark("latest")}
                 </th>
-                <th className="py-2 px-2" title="Your own note from the Guidance Tracker page">
+                <th className="py-2 px-2 sticky top-0 z-20 bg-slate-50" title="Your own note from the Guidance Tracker page">
                   Your tracker
                 </th>
               </tr>
