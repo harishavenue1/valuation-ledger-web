@@ -5,11 +5,13 @@ const BusinessRadar = lazy(() => import("./BusinessRadar"));
 const SectorTailwinds = lazy(() => import("./SectorTailwinds"));
 const CompanyProfile = lazy(() => import("./CompanyProfile"));
 const Tweets = lazy(() => import("./Tweets"));
+const Guidance = lazy(() => import("./Guidance"));
 
 const TABS = [
   { key: "radar", label: "Radar", hint: "Company-by-company catalysts" },
   { key: "sectors", label: "Sector tailwinds", hint: "Which sectors are collecting orders and capex" },
   { key: "company", label: "Company", hint: "One company's business, growth record and catalysts" },
+  { key: "guidance", label: "Guidance", hint: "What is being said about each company's future, linked to the source" },
   { key: "tweets", label: "Tweets", hint: "The accounts you follow, in one feed" },
 ];
 
@@ -37,7 +39,7 @@ export default function Business() {
         ))}
       </div>
       <Suspense fallback={<div className="text-sm text-slate-500">Loading…</div>}>
-        {tab === "sectors" ? <SectorTailwinds /> : tab === "company" ? <CompanyProfile /> : tab === "tweets" ? <Tweets /> : <BusinessRadar />}
+        {tab === "sectors" ? <SectorTailwinds /> : tab === "company" ? <CompanyProfile /> : tab === "tweets" ? <Tweets /> : tab === "guidance" ? <Guidance /> : <BusinessRadar />}
       </Suspense>
     </div>
   );

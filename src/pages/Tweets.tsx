@@ -2,7 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import RunButton from "../components/RunButton";
-import { chartPath, companyPath, useBusinessData } from "../lib/businessData";
+import { buildMatchers, chartPath, companyPath, findMentions, useBusinessData } from "../lib/businessData";
 
 // Tweets tab — the accounts you follow for ideas, in one feed (no scrolling the timeline). The tweets are
 // stored by api/_fintwit.py; they are loaded by whatever fetches X (see the note shown when the feed is empty).
@@ -74,25 +74,9 @@ export default function Tweets() {
     api.getFintwit().then(setFeed).catch((e: any) => setErr(String(e?.message ?? e)));
   }, []);
 
-  // company names and tickers we can recognise inside a tweet
-  const matchers = useMemo(() => {
-    const syms = new Set<string>();
-    const names: [string, string][] = [];
-    for (const [s, n] of Object.entries(radar?.names ?? {})) {
-      syms.add(s);
-      const core = n.replace(/\b(limited|ltd\.?)\s*$/i, "").trim().toLowerCase();
-      if (core.length >= 6 || core.split(" ").length >= 2) names.push([core, s]);
-    }
-    for (const s of tech.keys()) syms.add(s);
-    return { syms, names };
-  }, [radar, tech]);
-
+  const matchers = useMemo(() => buildMatchers(radar, tech), [radar, tech]);
   function mentions(text: string): string[] {
-    const found = new Set<string>();
-    for (const m of text.matchAll(/[$#]?\b([A-Z][A-Z0-9&-]{2,})\b/g)) if (matchers.syms.has(m[1])) found.add(m[1]);
-    const low = text.toLowerCase();
-    for (const [core, s] of matchers.names) if (low.includes(core)) found.add(s);
-    return Array.from(found).slice(0, 6);
+    return findMentions(text, matchers).slice(0, 6);
   }
 
   const handles = useMemo(() => Object.entries(feed?.handles ?? {}), [feed]);

@@ -6661,7 +6661,8 @@ class handler(BaseHTTPRequestHandler):
                 slim = {}
                 for s_, its in (payload.get("items") or {}).items():
                     keep_links = s_ in wl_syms or s_ in hold_syms  # alerts need the links of the stocks you own/watch
-                    slim[s_] = [({**i} if (k == 0 or keep_links) else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
+                    # the Guidance tab links every Outlook/Capex headline too
+                    slim[s_] = [({**i} if (k == 0 or keep_links or "Outlook" in i.get("g", []) or "Capex" in i.get("g", [])) else {kk: vv for kk, vv in i.items() if kk != "u"}) for k, i in enumerate(its[:25])]
                 payload = {k: v for k, v in payload.items() if k not in ("checked", "items", "sector_cache")}
                 payload["items"] = slim
             send_json(self, 200, payload or {"items": {}, "names": {}, "as_of": None}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=3600"})

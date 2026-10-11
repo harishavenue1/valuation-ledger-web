@@ -312,3 +312,28 @@ export function useBusinessData(delayMs = 0): { radar: Radar | null; tech: Map<s
   }, []);
   return { radar, tech, err };
 }
+
+
+// ── recognising companies inside free text (tweets, headlines) ───────────────
+export interface Matchers {
+  syms: Set<string>;
+  names: [string, string][]; // [lower-case core name, symbol]
+}
+export function buildMatchers(radar: Radar | null, tech: Map<string, any>): Matchers {
+  const syms = new Set<string>();
+  const names: [string, string][] = [];
+  for (const [s, n] of Object.entries(radar?.names ?? {})) {
+    syms.add(s);
+    const core = n.replace(/\b(limited|ltd\.?)\s*$/i, "").trim().toLowerCase();
+    if (core.length >= 6 || core.split(" ").length >= 2) names.push([core, s]);
+  }
+  for (const s of tech.keys()) syms.add(s);
+  return { syms, names };
+}
+export function findMentions(text: string, m: Matchers): string[] {
+  const found = new Set<string>();
+  for (const x of text.matchAll(/[$#]?\b([A-Z][A-Z0-9&-]{2,})\b/g)) if (m.syms.has(x[1])) found.add(x[1]);
+  const low = text.toLowerCase();
+  for (const [core, s] of m.names) if (low.includes(core)) found.add(s);
+  return Array.from(found);
+}
