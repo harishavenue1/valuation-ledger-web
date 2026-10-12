@@ -982,7 +982,7 @@ export default function PortfolioAllocation() {
                 <div className="text-xs font-medium text-slate-600 mb-1">
                   {z.title} <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
                 </div>
-                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" />
+                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
               </div>
             );
           })}
@@ -996,6 +996,7 @@ export default function PortfolioAllocation() {
             navigate={(t) => navigate(`/company/${t}`)}
             watchlist={watchlist}
             emptyMessage="No individual stock holdings."
+            fullHeight
             rowClassName={athView === "color" ? (r) => ZONES.find((z) => z.label === proximityBucketFor(r.pct_from_ath))?.tint ?? "" : undefined}
           />
         </div>

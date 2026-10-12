@@ -218,6 +218,8 @@ export function GenericTable({
   onSortedRows,
   // optional per-row class (e.g. a background tint); callers that pass nothing look exactly as before
   rowClassName,
+  // no inner vertical scroll box: the table grows to its full height and the PAGE scrolls (all rows rendered)
+  fullHeight = false,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -228,6 +230,7 @@ export function GenericTable({
   initialSector?: string;
   onSortedRows?: (rows: Record<string, any>[]) => void;
   rowClassName?: (row: Record<string, any>) => string;
+  fullHeight?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState(initialSector ?? "All");
@@ -341,7 +344,7 @@ export function GenericTable({
           overlaps the first row instead of sticking to the page
           (verified live 2026-08-23 before landing the original fix). */}
       <div
-        className="overflow-x-auto overflow-y-auto max-h-[75vh] rounded-lg border border-slate-200"
+        className={`overflow-x-auto rounded-lg border border-slate-200 ${fullHeight ? "" : "overflow-y-auto max-h-[75vh]"}`}
         onScroll={(e) => {
           const el = e.currentTarget;
           if (visibleCount < sorted.length && el.scrollTop + el.clientHeight > el.scrollHeight - 600) setVisibleCount((n) => Math.min(sorted.length, n + PAGE_ROWS));
@@ -383,7 +386,7 @@ export function GenericTable({
               // bug again. Purely a React reconciliation identity, never
               // rendered, so this changes no visible behavior.
               const seenKeys = new Map<string, number>();
-              return sorted.slice(0, visibleCount).map((r, i) => {
+              return sorted.slice(0, fullHeight ? sorted.length : visibleCount).map((r, i) => {
               const sym = String(r.symbol ?? i);
               // Symbol alone isn't a safe React key here: sectorStockAlpha
               // (Stocks vs Sector) legitimately pushes the same stock
@@ -452,7 +455,7 @@ export function GenericTable({
             })()}
           </tbody>
         </table>
-        {visibleCount < sorted.length && (
+        {!fullHeight && visibleCount < sorted.length && (
           <div className="text-center text-xs text-slate-500 py-2 border-t border-slate-100">
             Showing {visibleCount} of {sorted.length} —{" "}
             <button onClick={() => setVisibleCount((n) => Math.min(sorted.length, n + PAGE_ROWS * 4))} className="text-indigo-600 hover:underline">
