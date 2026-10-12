@@ -621,11 +621,12 @@ export default function PortfolioAllocation() {
   }
   const stockRows = useMemo(() => {
     const filtered = selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
+    // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null }));
   }, [rows, selectedRealSectors]);
   const fundRows = useMemo(() => {
     const filtered = selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null }));
   }, [rows, selectedRealSectors]);
 
   const COLS: Col[] = useMemo(
