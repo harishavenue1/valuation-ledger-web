@@ -242,6 +242,16 @@ const CAP_BUCKET_ORDER = ["Large Cap", "Mid Cap", "Small Cap", "Micro Cap", "Unc
 // separately instead of one number standing in for both.
 const PROXIMITY_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Below -25%", "Unclassified"];
 
+// ATH zones for the holdings table — the same fixed buckets as above, used on pct_from_ath, with a tint per zone
+// (transparent rgba so it reads on both the light and the dark theme).
+const ZONES: { label: string; title: string; tint: string }[] = [
+  { label: "🔥 0% to -10%", title: "🔥 Near ATH — within 10% of the all-time high", tint: "bg-[rgba(46,160,67,0.13)]" },
+  { label: "🚶 -10% to -25%", title: "🚶 Mid — 10% to 25% below the all-time high", tint: "bg-[rgba(214,167,42,0.12)]" },
+  { label: "🐢 Below -25%", title: "🐢 Below — more than 25% under the all-time high", tint: "bg-[rgba(235,104,52,0.12)]" },
+  { label: "Unclassified", title: "No ATH data", tint: "" },
+];
+type AthView = "group" | "color" | "plain";
+
 function proximityBucketFor(pctFromHigh: number | null | undefined): string {
   if (pctFromHigh == null) return "Unclassified";
   if (pctFromHigh >= -10) return "🔥 0% to -10%";
@@ -592,6 +602,22 @@ export default function PortfolioAllocation() {
   // Re-ranked 1..N per section — rows arrive already sorted by
   // % of portfolio (the push's own order), so re-numbering in place is
   // enough; no re-sort needed.
+  const [athView, setAthViewState] = useState<AthView>(() => {
+    try {
+      const v = localStorage.getItem("pf.athView");
+      return v === "color" || v === "plain" ? v : "group";
+    } catch {
+      return "group";
+    }
+  });
+  function setAthView(v: AthView) {
+    setAthViewState(v);
+    try {
+      localStorage.setItem("pf.athView", v);
+    } catch {
+      // best-effort persistence only
+    }
+  }
   const stockRows = useMemo(() => {
     const filtered = selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund);
     return filtered.map((r, i) => ({ ...r, rank: i + 1 }));
@@ -914,16 +940,57 @@ export default function PortfolioAllocation() {
           </span>
         </div>
       )}
-      <h2 className="text-sm font-medium text-slate-700 mb-2">📈 Stocks ({stockRows.length})</h2>
-      <div className="mb-6">
-        <GenericTable
-          rows={stockRows}
-          cols={COLS}
-          navigate={(t) => navigate(`/company/${t}`)}
-          watchlist={watchlist}
-          emptyMessage="No individual stock holdings."
-        />
+      <div className="flex flex-wrap items-center gap-3 mb-2">
+        <h2 className="text-sm font-medium text-slate-700">📈 Stocks ({stockRows.length})</h2>
+        <span className="text-xs text-slate-500">ATH zones:</span>
+        {([["group", "Grouped"], ["color", "Colour-coded"], ["plain", "Plain"]] as [AthView, string][]).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setAthView(k)}
+            className={`text-xs px-2.5 py-1 rounded-full border ${athView === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600"}`}
+          >
+            {label}
+          </button>
+        ))}
+        {athView !== "plain" && (
+          <span className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+            {ZONES.slice(0, 3).map((z) => (
+              <span key={z.label} className="inline-flex items-center gap-1" title={z.title}>
+                <span className={`inline-block w-3 h-3 rounded-sm border border-slate-300 ${z.tint}`} /> {z.label}
+              </span>
+            ))}
+          </span>
+        )}
       </div>
+      {athView === "group" ? (
+        <div className="mb-6 space-y-5">
+          {ZONES.map((z) => {
+            const group = (stockRows as any[]).filter((r) => proximityBucketFor(r.pct_from_ath) === z.label).map((r, i) => ({ ...r, rank: i + 1 }));
+            if (group.length === 0) return null;
+            const weight = group.reduce((s, r) => s + (r.pct_of_portfolio ?? 0), 0);
+            return (
+              <div key={z.label}>
+                <div className="text-xs font-medium text-slate-600 mb-1">
+                  {z.title} <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
+                </div>
+                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" />
+              </div>
+            );
+          })}
+          {stockRows.length === 0 && <div className="text-sm text-slate-500">No individual stock holdings.</div>}
+        </div>
+      ) : (
+        <div className="mb-6">
+          <GenericTable
+            rows={stockRows}
+            cols={COLS}
+            navigate={(t) => navigate(`/company/${t}`)}
+            watchlist={watchlist}
+            emptyMessage="No individual stock holdings."
+            rowClassName={athView === "color" ? (r) => ZONES.find((z) => z.label === proximityBucketFor(r.pct_from_ath))?.tint ?? "" : undefined}
+          />
+        </div>
+      )}
 
       <h2 className="text-sm font-medium text-slate-700 mb-2">🧺 Funds &amp; ETFs ({fundRows.length})</h2>
       <GenericTable

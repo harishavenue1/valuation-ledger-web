@@ -216,6 +216,8 @@ export function GenericTable({
   // Reports the rows exactly as shown (after the name/sector filters and the
   // header sort) — callers keep it in a ref, so no re-render is triggered.
   onSortedRows,
+  // optional per-row class (e.g. a background tint); callers that pass nothing look exactly as before
+  rowClassName,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -225,6 +227,7 @@ export function GenericTable({
   gridLines?: boolean;
   initialSector?: string;
   onSortedRows?: (rows: Record<string, any>[]) => void;
+  rowClassName?: (row: Record<string, any>) => string;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState(initialSector ?? "All");
@@ -418,7 +421,7 @@ export function GenericTable({
               seenKeys.set(baseKey, seenCount + 1);
               const rowKey = seenCount === 0 ? baseKey : `${baseKey}-dup${seenCount}`;
               return (
-                <tr key={rowKey} className="border-t border-slate-100 hover:bg-slate-50">
+                <tr key={rowKey} className={`border-t border-slate-100 hover:bg-slate-50 ${rowClassName ? rowClassName(r) : ""}`}>
                   {cols.map((c, i) => (
                     <td
                       key={c.key}
