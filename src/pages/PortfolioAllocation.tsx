@@ -244,11 +244,12 @@ const PROXIMITY_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Be
 
 // ATH zones for the holdings table — the same fixed buckets as above, used on pct_from_ath, with a tint per zone
 // (transparent rgba so it reads on both the light and the dark theme).
-const ZONES: { label: string; title: string; tint: string }[] = [
-  { label: "🔥 0% to -10%", title: "🔥 Near ATH — within 10% of the all-time high", tint: "bg-[rgba(46,160,67,0.13)]" },
-  { label: "🚶 -10% to -25%", title: "🚶 Mid — 10% to 25% below the all-time high", tint: "bg-[rgba(214,167,42,0.12)]" },
-  { label: "🐢 Below -25%", title: "🐢 Below — more than 25% under the all-time high", tint: "bg-[rgba(235,104,52,0.12)]" },
-  { label: "Unclassified", title: "No ATH data", tint: "" },
+// A = green, B = yellow, C = orange (the user's own letters for the three zones).
+const ZONES: { label: string; letter: string; title: string; tint: string; badge: { bg: string; fg: string } }[] = [
+  { label: "🔥 0% to -10%", letter: "A", title: "A · 🔥 Near ATH — within 10% of the all-time high", tint: "bg-[rgba(46,160,67,0.14)]", badge: { bg: "#2ea043", fg: "#ffffff" } },
+  { label: "🚶 -10% to -25%", letter: "B", title: "B · 🚶 Mid — 10% to 25% below the all-time high", tint: "bg-[rgba(250,204,21,0.17)]", badge: { bg: "#facc15", fg: "#3b3200" } },
+  { label: "🐢 Below -25%", letter: "C", title: "C · 🐢 Below — more than 25% under the all-time high", tint: "bg-[rgba(249,115,22,0.15)]", badge: { bg: "#f97316", fg: "#ffffff" } },
+  { label: "Unclassified", letter: "", title: "No ATH data", tint: "", badge: { bg: "", fg: "" } },
 ];
 type AthView = "group" | "color" | "plain";
 
@@ -639,23 +640,27 @@ export default function PortfolioAllocation() {
       { key: "rank", label: "Rank", width: 3 },
       { key: "symbol", label: "Symbol", align: "left", width: 9 },
       {
-        // 2026-09-27 ("start with the chart" / "only for the stocks we
-        // have bought in PF") — the in-app candlestick chart
-        // (PortfolioCharts.tsx) is only linked from HERE, deliberately,
-        // not from GenericTable's shared Symbol-column rendering (which
-        // every other screener table on this app also uses) — that
-        // would put the link on all 750 NSE stocks everywhere, not
-        // just actual holdings. PortfolioCharts.tsx's own holdings list
-        // makes this a one-time entry point, not a per-row necessity —
-        // kept anyway so a specific row jumps straight to its own chart.
-        key: "chart_link",
-        label: "",
+        // 2026-10-12 ("instead of chart column add a column with A, B, C" — A green, B yellow, C orange): replaces the
+        // 📈 chart-link column. The zone comes from % from ATH with the same fixed buckets as the ATH summary
+        // (A: within 10%, B: 10-25% below, C: more than 25% below); funds/ETFs with no ATH show a dash. The in-app
+        // chart is still reachable from the Charts page and the price column's TradingView link.
+        key: "ath_zone",
+        label: "Zone",
         width: 3,
-        render: (r) => (
-          <Link to={`/portfolio-charts/${encodeURIComponent(r.symbol)}`} onClick={(e) => e.stopPropagation()} className="text-slate-400 hover:text-indigo-600" title={`Open ${r.symbol} chart`}>
-            📈
-          </Link>
-        ),
+        align: "center",
+        render: (r) => {
+          const z = ZONES.find((x) => x.label === proximityBucketFor(r.pct_from_ath));
+          if (!z || !z.letter) return <span className="text-slate-300">–</span>;
+          return (
+            <span
+              className="inline-block w-5 h-5 leading-5 rounded text-[11px] font-bold text-center"
+              style={{ background: z.badge.bg, color: z.badge.fg }}
+              title={`${z.title} (${typeof r.pct_from_ath === "number" ? r.pct_from_ath.toFixed(1) + "%" : "n/a"} from ATH)`}
+            >
+              {z.letter}
+            </span>
+          );
+        },
       },
       { key: "sector", label: "Sector", align: "left", width: 5 },
       {
@@ -956,7 +961,10 @@ export default function PortfolioAllocation() {
           <span className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             {ZONES.slice(0, 3).map((z) => (
               <span key={z.label} className="inline-flex items-center gap-1" title={z.title}>
-                <span className={`inline-block w-3 h-3 rounded-sm border border-slate-300 ${z.tint}`} /> {z.label}
+                <span className="inline-block w-4 h-4 leading-4 rounded-sm text-[10px] font-bold text-center" style={{ background: z.badge.bg, color: z.badge.fg }}>
+                  {z.letter}
+                </span>{" "}
+                {z.label}
               </span>
             ))}
           </span>
