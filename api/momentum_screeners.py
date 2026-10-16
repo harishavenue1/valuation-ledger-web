@@ -6644,7 +6644,7 @@ class handler(BaseHTTPRequestHandler):
                 # fields the page never reads (bars, per-row as_of, raw volume): ~10% of the bytes
                 payload = {**payload, "rows": [{k: v for k, v in r.items() if k not in ("bars", "as_of", "volume")} for r in payload["rows"]]}
             # changes once a day: let the browser reuse it for 5 min and revalidate in the background after that
-            send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []}, extra_headers={"Cache-Control": "private, max-age=300, stale-while-revalidate=86400"})
+            send_json(self, 200, payload or {"ok": False, "reason": "not published yet", "rows": []}, extra_headers={"Cache-Control": "private, max-age=60"})  # no stale-while-revalidate: it let a browser show a day-old copy after a refresh
             return
 
         # ?concall_guidance=1 — management guidance lines parsed from concall transcripts (api/_concall.py)
