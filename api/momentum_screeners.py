@@ -2921,6 +2921,11 @@ def _run_global_currencies(symbols, name_map, sector_map):
 RFX_UNIVERSE = [
     ("USD/INR", "USDINR=X", "FX_IDC:USDINR", "fx"),
     ("Dollar Index", "DX-Y.NYB", "TVC:DXY", "fx"),
+    # 2026-10-16 ("add Gold & Silver in Rupee Terms ... since we have major allocation") — the NSE gold/silver ETFs are
+    # the rupee price of the metals as traded in India (duty and premium included); GOLDCASE/SILVERCASE, the PF's own
+    # holdings, track the same prices but have under 2 years of history, so the older GOLDBEES/SILVERBEES carry the series.
+    ("Gold (₹) · GOLDBEES", "GOLDBEES.NS", "NSE:GOLDBEES", "commodity"),
+    ("Silver (₹) · SILVERBEES", "SILVERBEES.NS", "NSE:SILVERBEES", "commodity"),
     ("S&P 500", "^GSPC", "SP:SPX", "index"),
     ("Nasdaq Composite", "^IXIC", "NASDAQ:IXIC", "index"),
 ]

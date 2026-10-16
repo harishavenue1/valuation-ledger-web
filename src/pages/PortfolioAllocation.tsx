@@ -268,11 +268,11 @@ function proximityBucketFor(pctFromHigh: number | null | undefined): string {
 // D/W/M/Q/6M/Y % changes, refreshed daily, each name linking to its
 // TradingView chart. Currency pairs are colored by what a MOVE means for
 // Indian equities (red = rising: a stronger dollar or weaker rupee is a
-// headwind); indices (and the portfolio row) are the opposite, plain up = green.
+// headwind); indices, gold/silver (a large share of this PF) and the portfolio row are the opposite, plain up = green.
 function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
   const cell = (v: number | null | undefined, kind: string) => {
     if (v === null || v === undefined) return <span className="text-slate-300">—</span>;
-    const upIsGood = kind === "index" || kind === "portfolio";
+    const upIsGood = kind === "index" || kind === "portfolio" || kind === "commodity"; // gold/silver rising is good: they are ~67% of the PF
     const up = upIsGood ? "text-emerald-600" : "text-red-600";
     const down = upIsGood ? "text-red-600" : "text-emerald-600";
     return <span className={v > 0 ? up : v < 0 ? down : "text-slate-500"}>{`${v > 0 ? "+" : ""}${v.toFixed(2)}%`}</span>;
