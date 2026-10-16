@@ -6501,9 +6501,16 @@ TECHNICAL_BATCH_WEEKLY = [
     "technicalSummary", "myLongTermInvestingStrategy", "weeklySignals", "smartMoney",
     "weekendInvesting", "quantBollinger", "valueRsiTurnaround", "allTimeHigh",
 ]
+# The evening NSE-file chain, in dependency order inside ONE invocation: store the day's bhavcopy -> publish the
+# all-stocks technicals -> patch the weekly DC/RSI patterns into them -> the scans that read what was published.
+# As separate crons (13:30 store, 13:50 publish, 13:58-14:05 scans/patterns) nothing guaranteed that order — a late or
+# skipped store run meant the publish/scans re-ran on yesterday's data, and a publish after the patterns wiped them.
+BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "microcapMom", "indexDirectory"]
+
 TECHNICAL_BATCHES = {
     "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
     "technicalBatchWeekly": TECHNICAL_BATCH_WEEKLY,
+    "bhavDaily": BHAV_DAILY,
 }
 
 
