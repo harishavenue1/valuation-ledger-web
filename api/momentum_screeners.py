@@ -2921,11 +2921,6 @@ def _run_global_currencies(symbols, name_map, sector_map):
 RFX_UNIVERSE = [
     ("USD/INR", "USDINR=X", "FX_IDC:USDINR", "fx"),
     ("Dollar Index", "DX-Y.NYB", "TVC:DXY", "fx"),
-    # 2026-10-16 ("add Gold & Silver in Rupee Terms ... since we have major allocation") — the NSE gold/silver ETFs are
-    # the rupee price of the metals as traded in India (duty and premium included); GOLDCASE/SILVERCASE, the PF's own
-    # holdings, track the same prices but have under 2 years of history, so the older GOLDBEES/SILVERBEES carry the series.
-    ("Gold (₹) · GOLDBEES", "GOLDBEES.NS", "NSE:GOLDBEES", "commodity"),
-    ("Silver (₹) · SILVERBEES", "SILVERBEES.NS", "NSE:SILVERBEES", "commodity"),
     ("S&P 500", "^GSPC", "SP:SPX", "index"),
     ("Nasdaq Composite", "^IXIC", "NASDAQ:IXIC", "index"),
 ]
@@ -3227,6 +3222,49 @@ def _rfx_row(name, symbol, kind, tv, df):
     return row
 
 
+# 2026-10-16 ("add Gold & Silver in Rupee Terms ... since we have major allocation", then "instead of GOLDBEES ETF replace with
+# actual GOLD MCX and same for Silver") — the MCX front-month futures, in rupees (gold per 10 g, silver per kg), read from
+# TradingView's public scanner (mcxindia.com itself answers 403 to scripts, and MCX's iCOMDEX index has no public feed).
+# The continuous front-month contract carries a small step each time it rolls to the next expiry. If the scanner can't be
+# reached, the NSE gold/silver ETFs (rupee price as traded in India) stand in so the rows never vanish.
+RFX_MCX = [
+    ("Gold · MCX (₹/10g)", "MCX:GOLD1!", "GOLDBEES.NS", "NSE:GOLDBEES"),
+    ("Silver · MCX (₹/kg)", "MCX:SILVER1!", "SILVERBEES.NS", "NSE:SILVERBEES"),
+]
+RFX_TV_COLS = ["close", "change", "Perf.W", "Perf.1M", "Perf.3M", "Perf.6M", "Perf.Y", "EMA20", "EMA50", "EMA200", "High.All", "price_52_week_high"]
+
+
+def _rfx_mcx_rows():
+    """{tv_symbol: row} for the MCX contracts, or {} when the scanner is unreachable."""
+    try:
+        r = requests.post(
+            "https://scanner.tradingview.com/futures/scan",
+            headers={"User-Agent": "Mozilla/5.0", "Origin": "https://www.tradingview.com", "Referer": "https://www.tradingview.com/"},
+            json={"symbols": {"tickers": [m[1] for m in RFX_MCX], "query": {"types": []}}, "columns": RFX_TV_COLS},
+            timeout=20,
+        )
+        if r.status_code != 200:
+            return {}
+        out = {}
+        for item in r.json().get("data") or []:
+            v = dict(zip(RFX_TV_COLS, item.get("d") or []))
+            c = v.get("close")
+            if not c:
+                continue
+            pct = lambda ref: round((c / ref - 1) * 100, 2) if ref else None
+            r2 = lambda x: round(x, 2) if isinstance(x, (int, float)) else None
+            out[item["s"]] = {
+                "level": round(float(c), 2),
+                "chg_1d": r2(v.get("change")), "chg_1w": r2(v.get("Perf.W")), "chg_1m": r2(v.get("Perf.1M")),
+                "chg_1q": r2(v.get("Perf.3M")), "chg_6m": r2(v.get("Perf.6M")), "chg_1y": r2(v.get("Perf.Y")),
+                "pct_20d_ema": pct(v.get("EMA20")), "pct_50d_ema": pct(v.get("EMA50")), "pct_200d_ema": pct(v.get("EMA200")),
+                "pct_from_ath": pct(v.get("High.All")), "pct_from_52w_high": pct(v.get("price_52_week_high")),
+            }
+        return out
+    except Exception:
+        return {}
+
+
 def _run_rates_fx(symbols, name_map, sector_map):
     rows, skipped = [], []
     for name, ticker, tv, kind in RFX_UNIVERSE:
@@ -3235,7 +3273,16 @@ def _run_rates_fx(symbols, name_map, sector_map):
             skipped.append(name)
         else:
             rows.append(row)
-    # The Nifty indices go right after the currencies, before the US indices
+    # Gold and silver (MCX, in rupees) sit right after the currencies
+    mcx = _rfx_mcx_rows()
+    for name, tv_sym, etf, etf_tv in RFX_MCX:
+        if tv_sym in mcx:
+            rows.append({"name": name, "symbol": tv_sym, "kind": "commodity", "tradingview_url": f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(tv_sym)}", **mcx[tv_sym]})
+        else:
+            row = _rfx_row(name.replace("MCX", "ETF proxy"), etf, "commodity", etf_tv, _gxc_fetch_history(etf, period="5y"))
+            if row is not None:
+                rows.append(row)
+    # The Nifty indices go right after the commodities, before the US indices
     first_index = next((i for i, r in enumerate(rows) if r["kind"] == "index"), len(rows))
     try:
         days = _rfx_nse_history_update()
