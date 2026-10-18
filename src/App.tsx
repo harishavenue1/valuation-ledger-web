@@ -110,6 +110,17 @@ const EMPTY: Bundle = {
   last_refresh: {},
 };
 
+// A saved company with no financial years (e.g. a fresh listing Screener has no annual table for) used to crash every page that
+// reads its last year — one bad record blanked the whole app. Such records are left out of the bundle instead.
+function dropBrokenStocks(data: Bundle): Bundle {
+  const ok: Bundle["stocks"] = {};
+  for (const [t, s] of Object.entries(data.stocks ?? {})) {
+    if (Array.isArray((s as any)?.years) && (s as any).years.length > 0 && typeof (s as any).years[(s as any).years.length - 1] === "string") ok[t] = s;
+    else console.warn(`Skipping ${t}: no financial years on record`);
+  }
+  return { ...data, stocks: ok };
+}
+
 export default function App() {
   const [status, setStatus] = useState<"loading" | "authed" | "anon">("loading");
   const [themeState, setThemeState] = useState<Theme>(() => getTheme());
@@ -120,7 +131,7 @@ export default function App() {
 
   async function reload() {
     const data = await api.getAll();
-    setBundle(data);
+    setBundle(dropBrokenStocks(data));
     setStatus("authed");
   }
 
@@ -128,7 +139,7 @@ export default function App() {
     api
       .getAll()
       .then((data) => {
-        setBundle(data);
+        setBundle(dropBrokenStocks(data));
         setStatus("authed");
       })
       .catch((e) => {

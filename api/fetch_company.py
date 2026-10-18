@@ -62,6 +62,11 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 502, {"error": err})
             return
         data = clean_stock(data)
+        if not data.get("years") or not data.get("revenue"):
+            # a company with no annual financials on Screener (a fresh listing, or no usable consolidated/standalone
+            # table) saved with empty lists used to crash the whole front end (Summary reads the last year of every stock)
+            send_json(self, 422, {"error": f"{ticker}: Screener.in has no annual financials for this company yet, so it can't be modelled"})
+            return
         conn = get_conn()
         try:
             existing = get_json(conn, "stocks", data["ticker"]) or {}
@@ -183,6 +188,8 @@ class handler(BaseHTTPRequestHandler):
                 data, err = fetch_one(ticker)
                 if err:
                     failed.append({"ticker": ticker, "error": err})
+                elif not clean_stock(dict(data)).get("years"):
+                    failed.append({"ticker": ticker, "error": "no annual financials on Screener — left as it was"})
                 else:
                     data = clean_stock(data)
                     data["owned"] = stocks.get(data["ticker"], {}).get("owned", False)
