@@ -1,4 +1,5 @@
 import { useState } from "react";
+import MtfFallScenarios from "../components/MtfFallScenarios";
 import { fmt, fmtSigned } from "../lib/model";
 import { MethodologyNote } from "../components/ScreenerTable";
 import { computeMtfRow, computeMtfTotals, defaultInstrument, DEFAULT_ASSUMPTIONS, DEFAULT_DAYS, MtfAssumptions, MtfInstrument } from "../lib/mtf";
@@ -358,6 +359,7 @@ export default function MTFCalculator() {
   const [assumptions, setAssumptions] = useState<MtfAssumptions>(DEFAULT_ASSUMPTIONS);
   const [dayBuckets, setDayBuckets] = useState<number[]>(DEFAULT_DAYS);
   const [newDay, setNewDay] = useState("");
+  const [view, setView] = useState<"scenarios" | "playtool">("scenarios");
 
   function updateInstrument(idx: number, next: MtfInstrument) {
     setInstruments((prev) => prev.map((it, i) => (i === idx ? next : it)));
@@ -384,6 +386,17 @@ export default function MTFCalculator() {
         <h1 className="text-xl font-semibold">📐 MTF Calculator</h1>
         <span className="text-slate-500 text-sm">What margin-funded leverage actually costs you vs. paying cash</span>
       </div>
+      <div className="flex gap-2 mb-4">
+        {([["scenarios", "Fall scenarios"], ["playtool", "Playtool"]] as const).map(([k, label]) => (
+          <button key={k} onClick={() => setView(k)} className={`text-sm px-3 py-1.5 rounded border ${view === k ? "border-indigo-500 text-indigo-600 font-medium" : "border-slate-300 hover:border-slate-400"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      {view === "scenarios" ? (
+        <MtfFallScenarios />
+      ) : (
+      <>
       <p className="text-xs text-slate-500 mb-4">
         A close replica of{" "}
         <a href="https://zerodha.com/calculators/mtf-calculator/" target="_blank" rel="noreferrer" className="underline">
@@ -504,6 +517,8 @@ export default function MTFCalculator() {
       <p className="text-xs text-slate-400 mt-6 text-center">
         Not investment advice — a simplified simple-interest model for comparing MTF leverage cost against paying cash for the same trade.
       </p>
+      </>
+      )}
     </div>
   );
 }
