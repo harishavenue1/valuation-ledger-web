@@ -151,6 +151,8 @@ export default function MtfFallScenarios() {
   }, [st]);
   const setShared = (patch: Partial<Shared>) => setSt((s) => ({ ...s, shared: { ...s.shared, ...patch } }));
   const { silver, gold, shared, view } = st;
+  const [cmpFall, setCmpFall] = useState(5);
+  const [cmpSize, setCmpSize] = useState(10);
 
   const m = useMemo(() => {
     const maxFall = Math.min(Math.max(Math.round(shared.maxFall) || 0, 1), 95);
@@ -198,6 +200,33 @@ export default function MtfFallScenarios() {
     }
     return { legs, funded, own, interestDay: funded * 0.0004, rows, cashOutFall, cashNow, lockedLoss };
   }, [silver, gold, shared, view]);
+
+  const cmp = useMemo(() => {
+    const orig = view === "both" ? [silver, gold] : view === "silver" ? [silver] : [gold];
+    const mk = (kind: "hold" | "sell" | "conv") => {
+      let cash = shared.cash, top = 0, loss = 0, locked = 0, mtf = 0, back = 0;
+      orig.forEach((p) => {
+        const f = fundedPerUnit(p);
+        const sold = kind === "sell" ? (p.units * cmpSize) / 100 : 0;
+        const conv = kind === "conv" ? (p.units * cmpSize) / 100 : 0;
+        const R = p.units - sold - conv;
+        const P = p.price * (1 - cmpFall / 100);
+        back += sold * (p.price - f) - conv * f;
+        top += R * Math.max(0, p.avgCost - P - (shared.callPct / 100) * f);
+        loss += sold * (p.avgCost - p.price) + (R + conv) * (p.avgCost - P);
+        locked += sold * (p.avgCost - p.price);
+        mtf += R;
+      });
+      cash += back;
+      return { back, top, cashLeft: cash - top, loss, locked, mtf };
+    };
+    return [
+      { name: "Hold", r: mk("hold"), color: "#2a78d6" },
+      { name: `Sell ${cmpSize}%`, r: mk("sell"), color: "#eb6834" },
+      { name: `Convert ${cmpSize}%`, r: mk("conv"), color: "#1baf7a" },
+    ];
+  }, [silver, gold, shared, view, cmpFall, cmpSize]);
+  const cmpMax = Math.max(1, ...cmp.map((c) => Math.abs(c.r.cashLeft)));
 
   const ROW_TONE: Record<Status, string> = { safe: "", call: "bg-amber-50/60", debit: "bg-orange-100/70", stop: "bg-red-100/70" };
   const both = view === "both";
@@ -265,6 +294,43 @@ export default function MtfFallScenarios() {
           <div className="text-xs text-slate-500">Cash runs out at</div>
           <div className="text-lg font-semibold tabular-nums">{m.cashOutFall !== null ? `-${m.cashOutFall}%` : `beyond -${m.rows.length - 1}%`}</div>
         </div>
+      </div>
+
+      <div className="p-4 border border-slate-200 rounded-lg mb-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-3">
+          <h2 className="text-sm font-medium text-slate-700">Hold vs sell vs convert</h2>
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            Fall
+            <input type="range" min={1} max={10} step={1} value={cmpFall} onChange={(e) => setCmpFall(parseInt(e.target.value, 10))} className="accent-indigo-600" />
+            <b className="text-slate-800 tabular-nums w-8">-{cmpFall}%</b>
+          </label>
+          <span className="flex items-center gap-1 text-xs text-slate-600">
+            Sell / convert
+            {[5, 10, 20, 25].map((n) => (
+              <button key={n} onClick={() => setCmpSize(n)} className={`px-2 py-0.5 rounded border text-xs ${cmpSize === n ? "border-indigo-500 text-indigo-600" : "border-slate-300 hover:border-slate-400"}`}>
+                {n}%
+              </button>
+            ))}
+            <span className="text-slate-400">of MTF units</span>
+          </span>
+        </div>
+        <div className="text-xs text-slate-500 mb-3">Cash you have left after the broker's top-up request, if the price falls {cmpFall}% from the current price. Starting cash {L(shared.cash)}.</div>
+        {cmp.map((c) => (
+          <div key={c.name} className="mb-3">
+            <div className="flex justify-between text-sm mb-1">
+              <span className="font-medium">{c.name}</span>
+              <span className={`font-medium tabular-nums ${c.r.cashLeft < 0 ? "text-red-600" : ""}`}>{L(c.r.cashLeft)}</span>
+            </div>
+            <div className="h-5 bg-slate-100 rounded">
+              <div className="h-5 rounded" style={{ width: `${(Math.abs(c.r.cashLeft) / cmpMax) * 100}%`, background: c.r.cashLeft < 0 ? "#dc2626" : c.color }} />
+            </div>
+            <div className="text-[11px] text-slate-500 mt-1">
+              {c.r.back > 0 ? `Cash back ${L(c.r.back)} · ` : c.r.back < 0 ? `Pay ${L(-c.r.back)} to own the units · ` : ""}
+              Top-up {c.r.top > 0 ? L(c.r.top) : "none"} · Total loss {L(c.r.loss)}
+              {c.r.locked > 0 ? ` (booked ${L(c.r.locked)})` : ""} · MTF units left {fmt(c.r.mtf, 0)}
+            </div>
+          </div>
+        ))}
       </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
