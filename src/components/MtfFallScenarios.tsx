@@ -28,18 +28,18 @@ import { fmt } from "../lib/model";
 // by the same % together. Inputs are remembered in localStorage only as a
 // per-viewer convenience.
 
-type Pos = { name: string; units: number; avgCost: number; leverage: number; fundedOverride: number | null; price: number };
+type Pos = { name: string; units: number; avgCost: number; leverage: number; fundedOverride: number | null; price: number; sellPct: number; convPct: number };
 type Shared = { cash: number; callPct: number; stopPct: number; maxFall: number };
 type State = { silver: Pos; gold: Pos; shared: Shared; view: "silver" | "gold" | "both" };
 
 const DEFAULTS: State = {
-  silver: { name: "SILVERCASE", units: 114000, avgCost: 21.9076, leverage: 2.7, fundedOverride: null, price: 19.44 },
-  gold: { name: "GOLDCASE", units: 168000, avgCost: 23.2468, leverage: 3.57, fundedOverride: null, price: 22.06 },
+  silver: { name: "SILVERCASE", units: 114000, avgCost: 21.9076, leverage: 2.7, fundedOverride: null, price: 19.44, sellPct: 0, convPct: 0 },
+  gold: { name: "GOLDCASE", units: 168000, avgCost: 23.2468, leverage: 3.57, fundedOverride: null, price: 22.06, sellPct: 0, convPct: 0 },
   shared: { cash: 339000, callPct: 20, stopPct: 80, maxFall: 50 },
   view: "silver",
 };
 
-const LS_KEY = "mtfFallScenarios.v2";
+const LS_KEY = "mtfFallScenarios.v3";
 
 function load(): State {
   try {
@@ -78,6 +78,25 @@ function Field({ label, value, onChange, suffix, title }: { label: string; value
 
 type Status = "safe" | "call" | "debit" | "stop";
 
+function split(p: Pos) {
+  const sell = Math.min(Math.max(p.sellPct || 0, 0), 100);
+  const conv = Math.min(Math.max(p.convPct || 0, 0), 100 - sell);
+  const sold = Math.round((p.units * sell) / 100);
+  const converted = Math.round((p.units * conv) / 100);
+  return { sold, converted, left: p.units - sold - converted };
+}
+
+function BucketLine({ p, f }: { p: Pos; f: number }) {
+  const b = split(p);
+  const cashDelta = b.sold * (p.price - f) - b.converted * f;
+  return (
+    <div className="col-span-2 text-[11px] text-slate-500 leading-relaxed">
+      Sold <b className="text-slate-700">{fmt(b.sold, 0)}</b> · Converted <b className="text-slate-700">{fmt(b.converted, 0)}</b> · Left on MTF <b className="text-slate-700">{fmt(b.left, 0)}</b>
+      {" "}— cash {cashDelta >= 0 ? "back" : "used"} <b className={cashDelta >= 0 ? "text-emerald-600" : "text-red-600"}>{L(Math.abs(cashDelta))}</b>, loss locked in <b className="text-slate-700">{L(b.sold * (p.avgCost - p.price))}</b>
+    </div>
+  );
+}
+
 function PosInputs({ title, p, onChange }: { title: string; p: Pos; onChange: (p: Pos) => void }) {
   const f = fundedPerUnit(p);
   return (
@@ -113,6 +132,9 @@ function PosInputs({ title, p, onChange }: { title: string; p: Pos; onChange: (p
             margin {fmt(100 / p.leverage, 1, "%")} · funded {L(p.units * f)} · yours {L(p.units * (p.avgCost - f))}
           </span>
         </div>
+        <Field label="Sell (trim) %" value={p.sellPct} onChange={(v) => onChange({ ...p, sellPct: Number.isFinite(v) ? v : 0 })} suffix="% of MTF" title="Share of the MTF units sold now at the current price. The sale repays the funded part and returns the rest as cash; the loss is realised." />
+        <Field label="Convert to holdings %" value={p.convPct} onChange={(v) => onChange({ ...p, convPct: Number.isFinite(v) ? v : 0 })} suffix="% of MTF" title="Share of the MTF units converted to fully paid. You pay the funded part from cash; the units stay held, so no loss is realised." />
+        <BucketLine p={p} f={f} />
       </div>
     </div>
   );
@@ -132,10 +154,17 @@ export default function MtfFallScenarios() {
 
   const m = useMemo(() => {
     const maxFall = Math.min(Math.max(Math.round(shared.maxFall) || 0, 1), 95);
-    const legs = (view === "both" ? [silver, gold] : view === "silver" ? [silver] : [gold]).map((p) => {
-      const f = fundedPerUnit(p);
+    let cashAdj = 0;
+    let lockedLoss = 0;
+    const legs = (view === "both" ? [silver, gold] : view === "silver" ? [silver] : [gold]).map((orig) => {
+      const f = fundedPerUnit(orig);
+      const b = split(orig);
+      cashAdj += b.sold * (orig.price - f) - b.converted * f;
+      lockedLoss += b.sold * (orig.avgCost - orig.price);
+      const p = { ...orig, units: b.left };
       return { p, f, funded: p.units * f, own: p.units * (p.avgCost - f), callLine: p.avgCost - (shared.callPct / 100) * f, stopLine: p.avgCost - (shared.stopPct / 100) * f };
     });
+    const cashNow = shared.cash + cashAdj;
     const funded = legs.reduce((s, l) => s + l.funded, 0);
     const own = legs.reduce((s, l) => s + l.own, 0);
     const rows = [];
@@ -150,7 +179,7 @@ export default function MtfFallScenarios() {
       });
       const loss = per.reduce((s, x) => s + x.loss, 0);
       const topUp = per.reduce((s, x) => s + x.topUp, 0);
-      const cashLeft = shared.cash - topUp;
+      const cashLeft = cashNow - topUp;
       let s: Status = "safe";
       let label = "Safe";
       const stoppedNames = per.filter((x) => x.stopped).map((x) => x.name);
@@ -167,7 +196,7 @@ export default function MtfFallScenarios() {
       if (cashOutFall === null && cashLeft < 0) cashOutFall = d;
       rows.push({ d, per, loss, lossPct: funded > 0 ? (loss / funded) * 100 : 0, ownPct: own > 0 ? (loss / own) * 100 : 0, topUp, cashLeft, s, label });
     }
-    return { legs, funded, own, interestDay: funded * 0.0004, rows, cashOutFall };
+    return { legs, funded, own, interestDay: funded * 0.0004, rows, cashOutFall, cashNow, lockedLoss };
   }, [silver, gold, shared, view]);
 
   const ROW_TONE: Record<Status, string> = { safe: "", call: "bg-amber-50/60", debit: "bg-orange-100/70", stop: "bg-red-100/70" };
@@ -211,6 +240,12 @@ export default function MtfFallScenarios() {
         <div>
           <div className="text-xs text-slate-500">Interest per day</div>
           <div className="text-lg font-semibold tabular-nums">₹{fmt(m.interestDay, 0)}</div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">Cash after plan / loss locked in</div>
+          <div className="text-lg font-semibold tabular-nums">
+            {L(m.cashNow)} <span className="text-sm font-medium text-slate-500">/ {L(m.lockedLoss)}</span>
+          </div>
         </div>
         {m.legs.map((l) => {
           const away = l.p.price > 0 ? (1 - l.callLine / l.p.price) * 100 : 0;
