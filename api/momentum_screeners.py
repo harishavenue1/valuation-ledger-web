@@ -3487,6 +3487,21 @@ def _run_pullback_mom(symbols, name_map, sector_map):
     return {"label": "Pullback Momentum", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
 
 
+def _run_uprun_hold(symbols, name_map, sector_map):
+    """The "Uprun Hold" tab: reads what bhavTechnicals computed for the latest
+    session (api/_bhav.py compute_uprun_hold) — all NSE stocks."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_uprun", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the uprun scan has not been published yet (bhavTechnicals computes it each evening)"
+    rows = [{**r, "sector": sector_map.get(r["symbol"], "")} for r in (scan.get("rows") or [])]
+    funnel = scan.get("funnel") or {}
+    return {"label": "Uprun Hold", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
+
+
 def _run_gap_hold(symbols, name_map, sector_map):
     """The "Gap-Up Hold" tab (@FibTraderR): reads what bhavTechnicals computed
     for the latest session (api/_bhav.py compute_gap_hold) — all NSE stocks."""
@@ -6557,7 +6572,7 @@ TECHNICAL_BATCH_WEEKLY = [
 # all-stocks technicals -> patch the weekly DC/RSI patterns into them -> the scans that read what was published.
 # As separate crons (13:30 store, 13:50 publish, 13:58-14:05 scans/patterns) nothing guaranteed that order — a late or
 # skipped store run meant the publish/scans re-ran on yesterday's data, and a publish after the patterns wiped them.
-BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "microcapMom", "indexDirectory"]
+BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory"]
 
 TECHNICAL_BATCHES = {
     "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
@@ -6602,6 +6617,7 @@ SCREENER_RUNNERS = {
     "fourPctScan": _run_four_pct_scan,
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
+    "uprunHold": _run_uprun_hold,
     "microcapMom": _run_microcap_mom,
     "indexDirectory": _run_index_directory,
     "bhavUseStore": _run_bhav_use_store,

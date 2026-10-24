@@ -1424,6 +1424,89 @@ def compute_gap_hold(df, rows):
     return out, funnel
 
 
+# ── "Uprun Hold" (own scan, 2026-10-24) ──
+#
+# A steady uptrend that never broke its 50 DEMA: every close in the last N sessions at or above the
+# 50 EMA (dips below the 20 EMA are allowed — that is the point), the 50 EMA itself rising, and a real
+# gain over the window. EMAs on OHLC4, compared with the close (this account's convention). "Tightest"
+# is the closest the close came to the 50 EMA inside the window — a small number means a deep pullback
+# that held; a large one means the stock never really tested it.
+
+UP = {"window": 60, "min_mcap_cr": 500, "min_price": 10, "min_traded_cr": 1.0, "min_return_pct": 20.0, "history": 260}
+
+
+def compute_uprun_hold(df, rows):
+    if df.empty or not rows:
+        return [], {}
+    last_date = df["date"].max()
+    win = UP["window"]
+    funnel = {"universe": 0, "liquid": 0, "above_50ema": 0, "history_ok": 0, "never_below_50ema": 0, "ema50_rising": 0, "gain_ok": 0}
+    cand = []
+    for r in rows:
+        if r.get("as_of") != last_date.date().isoformat():
+            continue
+        funnel["universe"] += 1
+        mc = r.get("market_cap_cr")
+        if mc is None or not mc >= UP["min_mcap_cr"] or not r["price"] > UP["min_price"]:
+            continue
+        funnel["liquid"] += 1
+        p50 = r.get("pct_50d_ema")
+        if p50 is None or not p50 > 0:
+            continue
+        funnel["above_50ema"] += 1
+        cand.append(r)
+    if not cand:
+        return [], funnel
+    syms = {r["symbol"] for r in cand}
+    tail = df[df["symbol"].isin(syms)].groupby("symbol", sort=False).tail(UP["history"])
+    by_sym = {sym: g for sym, g in tail.groupby("symbol", sort=False)}
+    out = []
+    for r in cand:
+        g = by_sym.get(r["symbol"])
+        if g is None or len(g) < win + 60:
+            continue
+        funnel["history_ok"] += 1
+        o, h, l, c, v = (g[k].to_numpy(dtype=float) for k in ("o", "h", "l", "c", "v"))
+        ohlc4 = pd.Series((o + h + l + c) / 4)
+        ema50 = ohlc4.ewm(span=50, adjust=False).mean().to_numpy()
+        ema20 = ohlc4.ewm(span=20, adjust=False).mean().to_numpy()
+        cw, e50w, e20w = c[-win:], ema50[-win:], ema20[-win:]
+        if not bool(np.all(cw >= e50w)):
+            continue
+        funnel["never_below_50ema"] += 1
+        if not ema50[-1] > ema50[-win]:
+            continue
+        funnel["ema50_rising"] += 1
+        ret = (c[-1] / c[-win - 1] - 1) * 100
+        if not ret >= UP["min_return_pct"]:
+            continue
+        traded = float(c[-1] * v[-1] / 1e7)
+        if traded < UP["min_traded_cr"]:
+            continue
+        funnel["gain_ok"] += 1
+        out.append(
+            {
+                "symbol": r["symbol"],
+                "name": r.get("name") or r["symbol"],
+                "price": round(float(c[-1]), 2),
+                "change_pct": r.get("change_pct"),
+                "return_pct": round(float(ret), 1),
+                "days_below_20ema": int(np.sum(cw < e20w)),
+                "tightest_vs_50ema": round(float(np.min((cw / e50w - 1) * 100)), 1),
+                "pct_vs_20ema": r.get("pct_20d_ema"),
+                "pct_vs_50ema": r.get("pct_50d_ema"),
+                "pct_from_52w_high": r.get("pct_from_52w_high"),
+                "market_cap_cr": r.get("market_cap_cr"),
+                "traded_value_cr": round(traded, 1),
+                "as_of": r["as_of"],
+            }
+        )
+    out.sort(key=lambda x: -x["return_pct"])
+    for i, x in enumerate(out, 1):
+        x["rank"] = i
+    return out, funnel
+
+
 # ── "Momentum Pullback Scan" (CMA Gurvinder Malhotra @cmagurvinder, 2026-10-04) ──
 #
 # Key filters as printed in his infographic: Market Cap > Rs1,000 Cr; Close > the
@@ -1969,6 +2052,11 @@ def publish(budget_s=240):
         pb_rows, pb_funnel = compute_pullback_mom(df, rows)
     except Exception as e:
         pb_funnel = {"error": str(e)[:120]}
+    up_rows, up_funnel = [], {}
+    try:
+        up_rows, up_funnel = compute_uprun_hold(df, rows)
+    except Exception as e:
+        up_funnel = {"error": str(e)[:120]}
     dir_rows, dir_counts = [], {}
     try:
         dir_rows, dir_counts = compute_index_directory(rows, df)
@@ -2005,6 +2093,7 @@ def publish(budget_s=240):
                 set_meta(conn, MICRO_SNAPSHOT_KEY, mc_snap)
                 set_meta(conn, "bhav_scan_microcap", {"as_of": stats.get("latest_trade_date"), "rows": mc_rows, "funnel": mc_funnel, "snapshot": mc_snap, "params": MICRO})
             set_meta(conn, "bhav_scan_pullback", {"as_of": stats.get("latest_trade_date"), "rows": pb_rows, "funnel": pb_funnel, "filters": PB})
+            set_meta(conn, "bhav_scan_uprun", {"as_of": stats.get("latest_trade_date"), "rows": up_rows, "funnel": up_funnel, "filters": UP})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
     finally:

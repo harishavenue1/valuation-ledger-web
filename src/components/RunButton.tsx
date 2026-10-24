@@ -46,6 +46,7 @@ const CLOUD_SCREENERS = new Set([
   "nse750TechDaily",
   "gapHold",
   "pullBackMom",
+  "uprunHold",
   "microcapMom",
   "indexDirectory",
   "technicalSummary",

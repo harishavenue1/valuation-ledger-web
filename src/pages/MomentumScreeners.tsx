@@ -66,6 +66,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "fourPctScan", label: "4% Scan", emoji: "⚡" },
   { key: "gapHold", label: "Gap-Up Hold", emoji: "🪂" },
   { key: "pullBackMom", label: "Pullback Momentum", emoji: "🎣" },
+  { key: "uprunHold", label: "Uprun Hold", emoji: "🧗" },
   { key: "microcapMom", label: "Microcap Momentum", emoji: "🧲" },
 ];
 
@@ -387,6 +388,21 @@ export default function MomentumScreeners() {
       { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
       { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
     ],
+    uprunHold: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      { key: "change_pct", label: "Day Chg %", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+      { key: "return_pct", label: "60D Gain %", render: (r) => <Signed v={r.return_pct} digits={1} /> },
+      { key: "days_below_20ema", label: "Days < 20 EMA" },
+      { key: "tightest_vs_50ema", label: "Tightest vs 50 EMA %", render: (r) => <Signed v={r.tightest_vs_50ema} digits={1} /> },
+      { key: "pct_vs_20ema", label: "% vs 20 EMA", render: (r) => <Signed v={r.pct_vs_20ema} digits={1} /> },
+      { key: "pct_vs_50ema", label: "% vs 50 EMA", render: (r) => <Signed v={r.pct_vs_50ema} digits={1} /> },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+    ],
     gapHold: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -666,6 +682,17 @@ export default function MomentumScreeners() {
         high (his "break above the pullback high" entry confirmation, which he wants on volume, on the daily chart) and <b>Stop</b> = the lower
         of the last-5-session low and the 10 EMA (his "below recent swing low or 10 EMA, whichever is lower"); <b>Risk %</b> is price to stop.
         Those three are helper columns, not part of the scan. Ranked by 1-month gain. Educational — not advice.
+      </>
+    ),
+    uprunHold: (
+      <>
+        <b>Uprun Hold</b> — steady uptrends that never broke the <b>50 DEMA</b>, over <b>every NSE stock</b> in our daily store. A stock passes
+        when <b>every close in the last 60 sessions is at or above its 50 EMA</b> (dips below the 20 EMA are allowed — that is the point), the
+        <b>50 EMA is higher than it was 60 sessions ago</b>, and the stock is up at least <b>20%</b> over those 60 sessions. Also: market cap
+        ₹500 Cr+, price above ₹10, traded value ≥ ₹1 Cr. EMAs on OHLC4, compared with the close. <b>Days &lt; 20 EMA</b> counts the closes
+        under the 20 EMA inside the window; <b>Tightest vs 50 EMA</b> is the closest the close came to the 50 EMA (a small number = a pullback
+        that held right at support). Ranked by the 60-session gain. The window and thresholds are constants in api/_bhav.py (UP). Educational —
+        not advice.
       </>
     ),
     gapHold: (
