@@ -37,13 +37,11 @@ const COLS: Col[] = [
   { key: "pct_from_ath", label: "% from ATH", groupStart: true, render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
   { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
   { key: "rsi_w", label: "Weekly RSI", render: (r) => fmtNum(r.rsi_w, 1) },
-  { key: "deliv_pct", label: "Delivery %", render: (r) => fmtNum(r.deliv_pct, 1) },
 ];
 
 // Smallcap 250 / Microcap 250 only: the Microcap Momentum score ((0.7 x 6M% + 0.3 x 1M%) / 63-session volatility) and the rank WITHIN that index
 const MOM_COLS: Col[] = [
   { key: "mom_rank", label: "Mom Rank", groupStart: true, render: (r) => (r.mom_rank == null ? <span className="text-slate-300">—</span> : <span className="font-semibold">{r.mom_rank}</span>) },
-  { key: "mom_score", label: "Mom Score", render: (r) => (r.mom_score == null ? <span className="text-slate-300">—</span> : fmtNum(r.mom_score, 2)) },
   { key: "vol3m", label: "3M Volatility %", render: (r) => fmtNum(r.vol3m, 1) },
 ];
 
@@ -66,7 +64,14 @@ function IndexList({ index }: { index: string }) {
     // momentum-ranked first for the lists that carry a score (unranked last)
     return withMom ? [...r].sort((a: any, b: any) => (a.mom_rank ?? 1e9) - (b.mom_rank ?? 1e9)) : r;
   }, [entry, index, withMom]);
-  const cols = useMemo(() => (withMom ? [...COLS.slice(0, 3), ...MOM_COLS, ...COLS.slice(3)] : COLS), [withMom]);
+  // 2026-10-24 ("alot of columns obstructing the 1st screener link column", Delivery % and Mom Score dropped) — the text columns get
+  // a fixed share (Symbol also carries the star and the Screener.in link, so it must not be squeezed) and the numeric columns split the rest.
+  const cols = useMemo(() => {
+    const all = withMom ? [...COLS.slice(0, 3), ...MOM_COLS, ...COLS.slice(3)] : COLS;
+    const fixed = [11, 14, 9];
+    const rest = (100 - fixed.reduce((a, b) => a + b, 0)) / (all.length - fixed.length);
+    return all.map((c, i) => ({ ...c, width: i < fixed.length ? fixed[i] : rest }));
+  }, [withMom]);
 
   const stats = useMemo(() => {
     const pick = (k: string) => median(rows.map((r: any) => r[k]));
@@ -119,7 +124,7 @@ function IndexList({ index }: { index: string }) {
           <>
             <br />
             <br />
-            <b>Mom Rank / Mom Score</b> (Smallcap 250 and Microcap 250): the Microcap Momentum strategy's score — <code>(0.7 × 6M % + 0.3 × 1M %) ÷ annualised
+            <b>Mom Rank</b> (Smallcap 250 and Microcap 250): from the Microcap Momentum strategy's score — <code>(0.7 × 6M % + 0.3 × 1M %) ÷ annualised
             volatility of the last 63 sessions' daily returns</code> — ranked within this index (1 = strongest); the list opens sorted by it. The Microcap 250
             ranks here are the same as on the Momentum page's <b>Microcap Momentum</b> tab. A stock with under ~6 months of history, or no 1M figure, is unranked.
           </>
