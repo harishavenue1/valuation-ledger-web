@@ -3,7 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
-import { Col, GenericTable, NSE_SCREENER_COLS, ScreenerLoading, Signed } from "../components/ScreenerTable";
+import { Col, GenericTable, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
+import { ZONES, proximityBucketFor } from "../lib/athZones";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // 2026-09-13 ("can we add one more column to see where the stock lies
@@ -36,9 +37,75 @@ function MomentumTags({ tags }: { tags: string[] }) {
   );
 }
 
+// 2026-10-24 ("I need columns as same as portfolio-allocation") — same
+// columns, order, labels and widths as Portfolio Allocation's stock table
+// (plus a Group column at the end for the manual override). For a stock
+// that is actually held, every value comes from that page's own row; for
+// a pure watch item the position-only columns (Buy %, Current %, Avg
+// Price, P&L %) are a dash and the price/return/EMA/ATH/52WH columns come
+// from the NSE bhavcopy all-stocks technicals store (the same source All
+// Technicals uses), so every watchlisted NSE stock has them.
+const DASH = <span className="text-slate-300">—</span>;
+const dashOr = (v: any, f: (n: number) => React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : f(v as number));
+const NUM_W = 4.87;
 const BASE_COLS: Col[] = [
-  ...NSE_SCREENER_COLS,
-  { key: "momentumTags", label: "Momentum", render: (r) => <MomentumTags tags={r.momentumTags ?? []} /> },
+  { key: "rank", label: "Rank", width: 3 },
+  { key: "symbol", label: "Symbol", align: "left", width: 9 },
+  {
+    key: "ath_zone",
+    label: "Zone",
+    width: 3,
+    align: "center",
+    render: (r) => {
+      const z = ZONES.find((x) => x.label === proximityBucketFor(r.pct_from_ath));
+      if (!z || !z.letter) return <span className="text-slate-300">–</span>;
+      return (
+        <span
+          className="inline-block w-5 h-5 leading-5 rounded text-[11px] font-bold text-center"
+          style={{ background: z.badge.bg, color: z.badge.fg }}
+          title={`${z.title} (${typeof r.pct_from_ath === "number" ? r.pct_from_ath.toFixed(1) + "%" : "n/a"} from ATH)`}
+        >
+          {z.letter}
+        </span>
+      );
+    },
+  },
+  { key: "sector", label: "Sector", align: "left", width: 5 },
+  { key: "market_cap_cr", label: "Market Cap (Cr)", width: NUM_W, render: (r) => dashOr(r.market_cap_cr, (v) => `₹${fmtNum(v, 0)} Cr`) },
+  { key: "pct_of_portfolio_cost", label: "Buy %", width: NUM_W, groupStart: true, render: (r) => dashOr(r.pct_of_portfolio_cost, (v) => <span className="tabular-nums">{fmtNum(v, 1)}%</span>) },
+  { key: "pct_of_portfolio", label: "Current %", width: NUM_W, render: (r) => dashOr(r.pct_of_portfolio, (v) => <span className="font-semibold tabular-nums">{fmtNum(v, 1)}%</span>) },
+  { key: "avg_price", label: "Avg Price", width: NUM_W, render: (r) => dashOr(r.avg_price, (v) => `₹${fmtNum(v, 2)}`) },
+  {
+    key: "price",
+    label: "Cur Price",
+    width: NUM_W,
+    render: (r) => {
+      if (r.price === null || r.price === undefined) return DASH;
+      const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
+      return (
+        <a
+          href={`https://www.tradingview.com/chart/?symbol=${prefix}:${encodeURIComponent(r.symbol)}&interval=W`}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="tabular-nums hover:underline hover:text-indigo-600"
+          title={`Open ${r.symbol} chart on TradingView`}
+        >
+          ₹{fmtNum(r.price, 1)}
+        </a>
+      );
+    },
+  },
+  { key: "pnl_pct", label: "P&L %", width: NUM_W, render: (r) => dashOr(r.pnl_pct, (v) => <Signed v={v} digits={1} />) },
+  { key: "day_change_pct", label: "Day %", width: NUM_W, groupStart: true, render: (r) => dashOr(r.day_change_pct, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_1w", label: "1W %", width: NUM_W, render: (r) => dashOr(r.pct_1w, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_1m", label: "1M %", width: NUM_W, render: (r) => dashOr(r.pct_1m, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_3m", label: "3M %", width: NUM_W, render: (r) => dashOr(r.pct_3m, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_6m", label: "6M %", width: NUM_W, render: (r) => dashOr(r.pct_6m, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_200d_ema", label: "% vs 200D EMA", width: NUM_W, groupStart: true, render: (r) => dashOr(r.pct_200d_ema, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_33w_ema", label: "% vs 33W EMA", width: NUM_W, render: (r) => dashOr(r.pct_33w_ema, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_from_ath", label: "ATH %", width: NUM_W, render: (r) => dashOr(r.pct_from_ath, (v) => <Signed v={v} digits={1} />) },
+  { key: "pct_from_52w_high", label: "52WH %", width: NUM_W, render: (r) => dashOr(r.pct_from_52w_high, (v) => <Signed v={v} digits={1} />) },
 ];
 
 // 2026-10-24 ("organize our watchlist as during market downturns its
@@ -70,7 +137,7 @@ function autoGroup(r: Record<string, any>): string {
   if (tags.includes("ALTH") || tags.includes("52WH")) return "At highs";
   if (rsiW !== null && rsiW >= 66) return "Strong";
   if (tags.includes("52WL") || (rsiW !== null && rsiW < 40)) return "Weak";
-  const m = toNum(r.monthly_pct);
+  const m = toNum(r.pct_1m ?? r.monthly_pct);
   if (m !== null && m > 0) return "Holding up";
   return "Pullback";
 }
@@ -102,7 +169,7 @@ export default function Watchlist() {
   const navigate = useNavigate();
   const watchlist = useWatchlist();
   const [refreshing, setRefreshing] = useState(false);
-  const { ready } = useScreeners(["portfolioAllocation", "nseScreener", "52wHigh", "52wLow", "allTimeHigh"]);
+  const { ready } = useScreeners(["portfolioAllocation", "nseScreener", "52wHigh", "52wLow", "allTimeHigh", "nse750Fundamentals"]);
 
   const tickers = bundle.watchlist.tickers;
   // 2026-09-11 ("split watchlist into 2 parts actual owned in
@@ -199,6 +266,69 @@ export default function Watchlist() {
   // math, which should read the same as "couldn't find it" rather
   // than silently passing as fully resolved.
   const stillPartial = outsideNse750.filter((t) => liveDetail[t]?.rsi_d == null);
+  const [bhav, setBhav] = useState<Record<string, any>>({});
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getBhavTechnicals()
+      .then((r) => {
+        if (cancelled || !r?.rows) return;
+        const m: Record<string, any> = {};
+        for (const row of r.rows) m[row.symbol] = row;
+        setBhav(m);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const pfBySymbol = useMemo(() => {
+    const m = new Map<string, Record<string, any>>();
+    for (const r of bundle.momentum_screeners.portfolioAllocation?.rows ?? []) if (r.symbol && !m.has(r.symbol)) m.set(r.symbol, r);
+    return m;
+  }, [bundle.momentum_screeners.portfolioAllocation]);
+  const fundBySymbol = useMemo(() => {
+    const m = new Map<string, Record<string, any>>();
+    for (const r of bundle.momentum_screeners.nse750Fundamentals?.rows ?? []) if (r.symbol) m.set(String(r.symbol), r);
+    return m;
+  }, [bundle.momentum_screeners.nse750Fundamentals]);
+  const num = (v: any) => (v === null || v === undefined || v === "" ? null : typeof v === "number" ? v : toNum(v));
+  const firstNum = (...vs: any[]) => {
+    for (const v of vs) {
+      const n = num(v);
+      if (n !== null) return n;
+    }
+    return null;
+  };
+  // position fields from Portfolio Allocation (held stocks only), everything else Portfolio-first then bhav then the NSE Screener row
+  const enriched: Record<string, any>[] = rows.map((r) => {
+    const sym = String(r.symbol);
+    const pf = pfBySymbol.get(sym);
+    const bh = bhav[sym];
+    const fund = fundBySymbol.get(sym);
+    return {
+      ...r,
+      sector: pf?.sector || r.sector,
+      exchange: pf?.exchange,
+      market_cap_cr: firstNum(pf?.market_cap_cr, fund?.marketcap),
+      pct_of_portfolio_cost: pf?.pct_of_portfolio_cost ?? null,
+      pct_of_portfolio: pf?.pct_of_portfolio ?? null,
+      avg_price: pf?.avg_price ?? null,
+      pnl_pct: pf?.pnl_pct ?? null,
+      price: firstNum(pf?.price, bh?.price, r.price),
+      day_change_pct: firstNum(pf?.day_change_pct, bh?.change_pct, r.change_pct),
+      pct_1w: firstNum(pf?.pct_1w, bh?.w_pct_1w, r.weekly_pct),
+      pct_1m: firstNum(pf?.pct_1m, bh?.w_pct_1m, r.monthly_pct),
+      pct_3m: firstNum(pf?.pct_3m, bh?.w_pct_3m, r.three_month_pct),
+      pct_6m: firstNum(pf?.pct_6m, bh?.w_pct_6m),
+      pct_200d_ema: firstNum(pf?.pct_200d_ema, bh?.pct_200d_ema),
+      pct_33w_ema: firstNum(pf?.pct_33w_ema, bh?.pct_33w_ema),
+      pct_from_ath: firstNum(pf?.pct_from_ath, bh?.pct_from_ath),
+      pct_from_52w_high: firstNum(pf?.pct_from_52w_high, bh?.pct_from_52w_high),
+      rsi_w: firstNum(r.rsi_w, bh?.rsi_w),
+    };
+  });
+
   const manualGroups = bundle.watchlist.groups ?? {};
   const [view, setView] = useState<"signal" | "owned">("signal");
   const [search, setSearch] = useState("");
@@ -218,6 +348,7 @@ export default function Watchlist() {
     {
       key: "group",
       label: "Group",
+      width: 7,
       render: (r) => (
         <select
           value={manualGroups[r.symbol] && GROUP_KEYS.includes(manualGroups[r.symbol]) ? manualGroups[r.symbol] : "auto"}
@@ -237,18 +368,19 @@ export default function Watchlist() {
   ];
 
   const needle = search.trim().toLowerCase();
-  const visibleRows = needle ? rows.filter((r) => String(r.symbol).toLowerCase().includes(needle) || String(r.name ?? "").toLowerCase().includes(needle)) : rows;
-  const ownedRows = visibleRows.filter((r) => ownedSymbols.has(String(r.symbol)));
-  const notOwnedRows = visibleRows.filter((r) => !ownedSymbols.has(String(r.symbol)));
-  const byWeekly = (a: Record<string, any>, b: Record<string, any>) => (toNum(b.weekly_pct) ?? -1e9) - (toNum(a.weekly_pct) ?? -1e9);
+  const visibleRows = needle ? enriched.filter((r) => String(r.symbol).toLowerCase().includes(needle) || String(r.name ?? "").toLowerCase().includes(needle)) : enriched;
+  const ownedRows = visibleRows.filter((r) => ownedSymbols.has(String(r.symbol))).map((r, i) => ({ ...r, rank: i + 1 }));
+  const notOwnedRows = visibleRows.filter((r) => !ownedSymbols.has(String(r.symbol))).map((r, i) => ({ ...r, rank: i + 1 }));
+  const byWeekly = (a: Record<string, any>, b: Record<string, any>) => (toNum(b.pct_1w) ?? -1e9) - (toNum(a.pct_1w) ?? -1e9);
   const grouped = GROUPS.map((g) => {
     const list = visibleRows
       .filter((r) => {
         const m = manualGroups[r.symbol];
         return (m && GROUP_KEYS.includes(m) ? m : autoGroup(r)) === g.key;
       })
-      .sort(byWeekly);
-    const weeklies = list.map((r) => toNum(r.weekly_pct)).filter((v): v is number => v !== null);
+      .sort(byWeekly)
+      .map((r, i): Record<string, any> => ({ ...r, rank: i + 1 }));
+    const weeklies = list.map((r) => toNum(r.pct_1w)).filter((v): v is number => v !== null);
     return { ...g, list, avgWeekly: weeklies.length ? weeklies.reduce((a, b) => a + b, 0) / weeklies.length : null };
   });
 

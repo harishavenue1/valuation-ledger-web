@@ -1,4 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
+import { ZONES, proximityBucketFor } from "../lib/athZones";
 import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
@@ -245,20 +246,8 @@ const PROXIMITY_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Be
 // ATH zones for the holdings table — the same fixed buckets as above, used on pct_from_ath, with a tint per zone
 // (transparent rgba so it reads on both the light and the dark theme).
 // A = green, B = yellow, C = orange (the user's own letters for the three zones).
-const ZONES: { label: string; letter: string; title: string; tint: string; badge: { bg: string; fg: string } }[] = [
-  { label: "🔥 0% to -10%", letter: "A", title: "A · 🔥 Near ATH — within 10% of the all-time high", tint: "bg-[rgba(46,160,67,0.14)]", badge: { bg: "#2ea043", fg: "#ffffff" } },
-  { label: "🚶 -10% to -25%", letter: "B", title: "B · 🚶 Mid — 10% to 25% below the all-time high", tint: "bg-[rgba(250,204,21,0.17)]", badge: { bg: "#facc15", fg: "#3b3200" } },
-  { label: "🐢 Below -25%", letter: "C", title: "C · 🐢 Below — more than 25% under the all-time high", tint: "bg-[rgba(249,115,22,0.15)]", badge: { bg: "#f97316", fg: "#ffffff" } },
-  { label: "Unclassified", letter: "", title: "No ATH data", tint: "", badge: { bg: "", fg: "" } },
-];
 type AthView = "group" | "color" | "plain";
 
-function proximityBucketFor(pctFromHigh: number | null | undefined): string {
-  if (pctFromHigh == null) return "Unclassified";
-  if (pctFromHigh >= -10) return "🔥 0% to -10%";
-  if (pctFromHigh >= -25) return "🚶 -10% to -25%";
-  return "🐢 Below -25%";
-}
 
 // 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
 // also currency for same USD and INR") — then ("remove all this ... and
