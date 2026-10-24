@@ -67,7 +67,7 @@ function IndexList({ index }: { index: string }) {
   // a fixed share (Symbol also carries the star and the Screener.in link, so it must not be squeezed) and the numeric columns split the rest.
   const cols = useMemo(() => {
     const all = withMom ? [...COLS.slice(0, 2), ...MOM_COLS, ...COLS.slice(2)] : COLS;
-    const fixed = [16, 10]; // Symbol (with its star + Screener link) and Sector; the name is no longer a column but is still searched by the filter box
+    const fixed = [9, 11]; // Symbol (with its star + Screener link) and Sector; the name is no longer a column but is still searched by the filter box
     const rest = (100 - fixed.reduce((a, b) => a + b, 0)) / (all.length - fixed.length);
     return all.map((c, i) => ({ ...c, width: i < fixed.length ? fixed[i] : rest }));
   }, [withMom]);
