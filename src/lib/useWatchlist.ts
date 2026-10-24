@@ -13,13 +13,13 @@ export function useWatchlist() {
     const wasIn = set.has(symbol);
     setBundle((b) => ({
       ...b,
-      watchlist: { tickers: wasIn ? b.watchlist.tickers.filter((t) => t !== symbol) : [...b.watchlist.tickers, symbol] },
+      watchlist: { ...b.watchlist, tickers: wasIn ? b.watchlist.tickers.filter((t) => t !== symbol) : [...b.watchlist.tickers, symbol] },
     }));
     api.updateWatchlist(wasIn ? "remove" : "add", [symbol]).catch(() => {
       // revert to the pre-toggle state on failure
       setBundle((b) => ({
         ...b,
-        watchlist: { tickers: wasIn ? [...b.watchlist.tickers, symbol] : b.watchlist.tickers.filter((t) => t !== symbol) },
+        watchlist: { ...b.watchlist, tickers: wasIn ? [...b.watchlist.tickers, symbol] : b.watchlist.tickers.filter((t) => t !== symbol) },
       }));
     });
   }

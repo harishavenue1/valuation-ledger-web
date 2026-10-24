@@ -220,6 +220,8 @@ export function GenericTable({
   rowClassName,
   // no inner vertical scroll box: the table grows to its full height and the PAGE scrolls (all rows rendered)
   fullHeight = false,
+  // hides the name/sector filter bar (a page that shows several tables under one shared search, e.g. Watchlist's group sections)
+  hideFilters = false,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -231,6 +233,7 @@ export function GenericTable({
   onSortedRows?: (rows: Record<string, any>[]) => void;
   rowClassName?: (row: Record<string, any>) => string;
   fullHeight?: boolean;
+  hideFilters?: boolean;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState(initialSector ?? "All");
@@ -319,6 +322,7 @@ export function GenericTable({
 
   return (
     <>
+      {!hideFilters && (
       <div className="flex items-center gap-3 mb-3">
         <input
           value={q}
@@ -338,6 +342,7 @@ export function GenericTable({
         )}
         <span className="text-xs text-slate-400">{sorted.length} shown</span>
       </div>
+      )}
       {/* max-h + overflow-y-auto + thead sticky top-0 — a plain
           overflow-x-auto wrapper (no height cap) still gets treated by
           the browser as the sticky positioning containing block and

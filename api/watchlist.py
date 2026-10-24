@@ -4,10 +4,14 @@ priced dataset. Symbols added here get their columns (price/RSI D-W-M/
 frontend — no separate fetch pipeline, since nseScreener already
 covers the whole NSE 750 universe.
 
-Meta shape: {"tickers": ["CUPID", "SKYGOLD", ...]}, deduped, order
-preserved (most-recently-added last).
+Meta shape: {"tickers": ["CUPID", "SKYGOLD", ...], "groups": {"CUPID": "Priority"}},
+deduped, order preserved (most-recently-added last). `groups` is an optional
+per-ticker manual override of the Watchlist page's automatic signal buckets
+(2026-10-24, "organize our watchlist"); a ticker with no entry uses the
+automatic bucket.
 
 POST body: {"action": "add"|"remove", "tickers": ["SYM1", "SYM2", ...]}
+        or {"action": "group", "tickers": ["SYM1"], "group": "Priority" | null}
 """
 import os
 import sys
@@ -36,20 +40,36 @@ class handler(BaseHTTPRequestHandler):
         body = read_json_body(self)
         action = body.get("action")
         tickers = body.get("tickers")
-        if action not in ("add", "remove") or not isinstance(tickers, list) or not all(isinstance(t, str) for t in tickers):
-            send_json(self, 400, {"error": "action must be add or remove, tickers must be a list of strings"})
+        if action not in ("add", "remove", "group") or not isinstance(tickers, list) or not all(isinstance(t, str) for t in tickers):
+            send_json(self, 400, {"error": "action must be add, remove or group, tickers must be a list of strings"})
+            return
+        group = body.get("group")
+        if action == "group" and group is not None and (not isinstance(group, str) or not group.strip() or len(group) > 40):
+            send_json(self, 400, {"error": "group must be a short non-empty string, or null to clear"})
             return
         conn = get_conn()
         try:
             data = get_meta(conn, "watchlist", {"tickers": []})
             current = data.get("tickers", [])
+            groups = data.get("groups") or {}
             if action == "add":
                 for t in tickers:
                     if t not in current:
                         current.append(t)
-            else:
+            elif action == "remove":
                 current = [t for t in current if t not in tickers]
+                for t in tickers:
+                    groups.pop(t, None)
+            else:
+                for t in tickers:
+                    if t not in current:
+                        continue
+                    if group is None:
+                        groups.pop(t, None)
+                    else:
+                        groups[t] = group.strip()
             data["tickers"] = current
+            data["groups"] = groups
             set_meta(conn, "watchlist", data)
             send_json(self, 200, data)
         finally:

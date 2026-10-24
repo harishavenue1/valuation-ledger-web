@@ -119,6 +119,8 @@ export type RunRequests = Record<string, RunRequestEntry>;
 // .nseScreener, not from a separate fetch.
 export interface Watchlist {
   tickers: string[];
+  // manual per-ticker group override (api/watchlist.py); absent = automatic bucket
+  groups?: Record<string, string>;
 }
 
 // Guide page's Multibagger Checklist — see api/_multibagger.py's
@@ -427,6 +429,9 @@ export const api = {
 
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
+
+  setWatchlistGroup: (ticker: string, group: string | null): Promise<Watchlist> =>
+    req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "group", tickers: [ticker], group }) }),
 
   // On-demand price/RSI/return-% for watchlisted tickers outside NSE
   // 750 (nseScreener has no data for them) — see api/watchlist_detail.py.

@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
 import { bulkAddCompanies } from "../lib/bulkAdd";
-import { Col, GenericTable, NSE_SCREENER_COLS, ScreenerLoading } from "../components/ScreenerTable";
+import { Col, GenericTable, NSE_SCREENER_COLS, ScreenerLoading, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
 // 2026-09-13 ("can we add one more column to see where the stock lies
@@ -36,10 +36,44 @@ function MomentumTags({ tags }: { tags: string[] }) {
   );
 }
 
-const WATCHLIST_COLS: Col[] = [
+const BASE_COLS: Col[] = [
   ...NSE_SCREENER_COLS,
   { key: "momentumTags", label: "Momentum", render: (r) => <MomentumTags tags={r.momentumTags ?? []} /> },
 ];
+
+// 2026-10-24 ("organize our watchlist as during market downturns its
+// difficult to look into long lists") — the flat list is split into
+// collapsible groups. Most are AUTOMATIC from data the page already has
+// (momentum tags + the NSE Screener's RSI/returns), first match wins:
+//   At highs  -> 52WH or ALTH tag
+//   Strong    -> weekly RSI >= 66 (the user's own momentum line)
+//   Weak      -> 52WL tag, or weekly RSI < 40
+//   Holding up-> positive over the last month (still green while others bleed)
+//   Pullback  -> everything else (negative month, not yet weak)
+// Priority and Parked are MANUAL-only. Every row also has a Group dropdown
+// that overrides the automatic bucket ("Auto" clears the override); the
+// override is stored per ticker in the watchlist meta (api/watchlist.py).
+const GROUPS = [
+  { key: "Priority", label: "⭐ Priority", hint: "Your own picks, pinned to the top", open: true },
+  { key: "At highs", label: "🚀 At highs", hint: "52-week or all-time high", open: true },
+  { key: "Strong", label: "💪 Strong momentum", hint: "Weekly RSI at or above 66", open: true },
+  { key: "Holding up", label: "🛡 Holding up", hint: "Up over the last month", open: true },
+  { key: "Pullback", label: "↩ Pullback", hint: "Down over the month, not weak yet", open: false },
+  { key: "Weak", label: "⚠ Weak", hint: "At a 52-week low or weekly RSI below 40", open: false },
+  { key: "Parked", label: "🅿 Parked", hint: "Set aside, not watching right now", open: false },
+] as const;
+const GROUP_KEYS: string[] = GROUPS.map((g) => g.key);
+
+function autoGroup(r: Record<string, any>): string {
+  const tags: string[] = r.momentumTags ?? [];
+  const rsiW = toNum(r.rsi_w);
+  if (tags.includes("ALTH") || tags.includes("52WH")) return "At highs";
+  if (rsiW !== null && rsiW >= 66) return "Strong";
+  if (tags.includes("52WL") || (rsiW !== null && rsiW < 40)) return "Weak";
+  const m = toNum(r.monthly_pct);
+  if (m !== null && m > 0) return "Holding up";
+  return "Pullback";
+}
 
 // Deliberately NOT its own priced dataset — tickers here are just a
 // persisted list (api/watchlist.py); their columns (price/RSI D-W-M/
@@ -125,7 +159,7 @@ export default function Watchlist() {
   const lastFetchedKey = useRef("");
 
   const outsideNse750: string[] = [];
-  const rows = tickers.map((t) => {
+  const rows: Record<string, any>[] = tickers.map((t) => {
     const nse = nseBySymbol.get(t);
     if (nse) return { ...nse, symbol: t, momentumTags: momentumTagsFor(t) };
     outsideNse750.push(t);
@@ -165,8 +199,58 @@ export default function Watchlist() {
   // math, which should read the same as "couldn't find it" rather
   // than silently passing as fully resolved.
   const stillPartial = outsideNse750.filter((t) => liveDetail[t]?.rsi_d == null);
-  const ownedRows = rows.filter((r) => ownedSymbols.has(String(r.symbol)));
-  const notOwnedRows = rows.filter((r) => !ownedSymbols.has(String(r.symbol)));
+  const manualGroups = bundle.watchlist.groups ?? {};
+  const [view, setView] = useState<"signal" | "owned">("signal");
+  const [search, setSearch] = useState("");
+  const [openMap, setOpenMap] = useState<Record<string, boolean>>(() => Object.fromEntries(GROUPS.map((g) => [g.key, g.open])));
+
+  function setGroup(symbol: string, group: string | null) {
+    const prev = bundle.watchlist.groups ?? {};
+    const next = { ...prev };
+    if (group === null) delete next[symbol];
+    else next[symbol] = group;
+    setBundle((b) => ({ ...b, watchlist: { ...b.watchlist, groups: next } }));
+    api.setWatchlistGroup(symbol, group).catch(() => setBundle((b) => ({ ...b, watchlist: { ...b.watchlist, groups: prev } })));
+  }
+
+  const cols: Col[] = [
+    ...BASE_COLS,
+    {
+      key: "group",
+      label: "Group",
+      render: (r) => (
+        <select
+          value={manualGroups[r.symbol] && GROUP_KEYS.includes(manualGroups[r.symbol]) ? manualGroups[r.symbol] : "auto"}
+          onClick={(e) => e.stopPropagation()}
+          onChange={(e) => setGroup(String(r.symbol), e.target.value === "auto" ? null : e.target.value)}
+          className="border border-slate-300 rounded px-1 py-0.5 text-xs text-slate-700 bg-white max-w-full"
+        >
+          <option value="auto">Auto ({autoGroup(r)})</option>
+          {GROUPS.map((g) => (
+            <option key={g.key} value={g.key}>
+              {g.key}
+            </option>
+          ))}
+        </select>
+      ),
+    },
+  ];
+
+  const needle = search.trim().toLowerCase();
+  const visibleRows = needle ? rows.filter((r) => String(r.symbol).toLowerCase().includes(needle) || String(r.name ?? "").toLowerCase().includes(needle)) : rows;
+  const ownedRows = visibleRows.filter((r) => ownedSymbols.has(String(r.symbol)));
+  const notOwnedRows = visibleRows.filter((r) => !ownedSymbols.has(String(r.symbol)));
+  const byWeekly = (a: Record<string, any>, b: Record<string, any>) => (toNum(b.weekly_pct) ?? -1e9) - (toNum(a.weekly_pct) ?? -1e9);
+  const grouped = GROUPS.map((g) => {
+    const list = visibleRows
+      .filter((r) => {
+        const m = manualGroups[r.symbol];
+        return (m && GROUP_KEYS.includes(m) ? m : autoGroup(r)) === g.key;
+      })
+      .sort(byWeekly);
+    const weeklies = list.map((r) => toNum(r.weekly_pct)).filter((v): v is number => v !== null);
+    return { ...g, list, avgWeekly: weeklies.length ? weeklies.reduce((a, b) => a + b, 0) / weeklies.length : null };
+  });
 
   useEffect(() => {
     if (!outsideKey || outsideKey === lastFetchedKey.current) return;
@@ -230,8 +314,8 @@ export default function Watchlist() {
         Columns match the NSE Screener tab, plus a <b>Momentum</b> tag column (2026-09-13) showing which of the Momentum Screeners' own{" "}
         <b>52WH</b> (52-Week High), <b>52WL</b> (52-Week Low), or <b>ALTH</b> (All-Time High) tabs a stock currently appears in — a stock can
         carry more than one at once, or none. Tickers outside NSE 750 get their price/name from Screener.in (auto-fetched) and RSI/returns
-        from a live yfinance lookup instead. Tap ★ on any screener page to add a stock; tap it again here (or there) to remove it. Split below
-        by whether it's an actual Kite holding (from Portfolio Allocation's last refresh) or a pure watch item.
+        from a live yfinance lookup instead. Tap ★ on any screener page to add a stock; tap it again here (or there) to remove it. Grouped below
+        by signal (automatic, with a Group dropdown on every row to override it); switch to Owned / Not owned for the Kite-holding split (from Portfolio Allocation's last refresh).
       </p>
 
       {tickers.length === 0 ? (
@@ -240,27 +324,82 @@ export default function Watchlist() {
         </div>
       ) : (
         <>
-          <div className="flex items-center gap-2 mb-1 mt-2">
-            <h2 className="text-base font-semibold">💼 Owned ({ownedRows.length})</h2>
+          <div className="flex flex-wrap items-center gap-2 mb-3">
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="🔍 Filter by name/ticker" className="border border-slate-300 rounded px-3 py-1.5 text-sm w-56" />
+            {(["signal", "owned"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)} className={`text-xs px-2.5 py-1.5 rounded border ${view === v ? "border-indigo-500 text-indigo-600 font-medium" : "border-slate-300 hover:border-slate-400"}`}>
+                {v === "signal" ? "By signal" : "Owned / Not owned"}
+              </button>
+            ))}
           </div>
-          <GenericTable
-            rows={ownedRows}
-            cols={WATCHLIST_COLS}
-            navigate={(t) => navigate(`/company/${t}`)}
-            watchlist={watchlist}
-            emptyMessage="None of your watchlist is currently in your portfolio."
-          />
 
-          <div className="flex items-center gap-2 mb-1 mt-8">
-            <h2 className="text-base font-semibold">☆ Not Owned ({notOwnedRows.length})</h2>
-          </div>
-          <GenericTable
-            rows={notOwnedRows}
-            cols={WATCHLIST_COLS}
-            navigate={(t) => navigate(`/company/${t}`)}
-            watchlist={watchlist}
-            emptyMessage="Everything on your watchlist is currently in your portfolio."
-          />
+          {view === "signal" ? (
+            <>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {grouped.map((g) => (
+                  <button
+                    key={g.key}
+                    onClick={() => {
+                      setOpenMap((m) => ({ ...m, [g.key]: true }));
+                      setTimeout(() => document.getElementById(`wl-${g.key.replace(/\s+/g, "-")}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+                    }}
+                    title={g.hint}
+                    className="text-xs px-2.5 py-1 rounded-full border border-slate-300 hover:border-slate-400 bg-white"
+                  >
+                    {g.label} <b className="tabular-nums">{g.list.length}</b>
+                  </button>
+                ))}
+              </div>
+              {grouped.map((g) => (
+                <div key={g.key} id={`wl-${g.key.replace(/\s+/g, "-")}`} className="mb-5">
+                  <button onClick={() => setOpenMap((m) => ({ ...m, [g.key]: !m[g.key] }))} className="flex items-center gap-2 w-full text-left mb-2">
+                    <span className="text-slate-400 text-xs w-3">{openMap[g.key] ? "▼" : "▶"}</span>
+                    <h2 className="text-base font-semibold">
+                      {g.label} ({g.list.length})
+                    </h2>
+                    <span className="text-xs text-slate-400">{g.hint}</span>
+                    {g.avgWeekly !== null && (
+                      <span className="ml-auto text-xs text-slate-500">
+                        avg weekly <Signed v={g.avgWeekly} digits={1} />%
+                      </span>
+                    )}
+                  </button>
+                  {openMap[g.key] &&
+                    (g.list.length > 0 ? (
+                      <GenericTable rows={g.list} cols={cols} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} hideFilters fullHeight />
+                    ) : (
+                      <div className="text-xs text-slate-400 border border-slate-200 rounded py-4 text-center">Nothing here right now.</div>
+                    ))}
+                </div>
+              ))}
+            </>
+          ) : (
+            <>
+              <div className="flex items-center gap-2 mb-1 mt-2">
+                <h2 className="text-base font-semibold">💼 Owned ({ownedRows.length})</h2>
+              </div>
+              <GenericTable
+                rows={ownedRows}
+                cols={cols}
+                navigate={(t) => navigate(`/company/${t}`)}
+                watchlist={watchlist}
+                hideFilters
+                emptyMessage="None of your watchlist is currently in your portfolio."
+              />
+
+              <div className="flex items-center gap-2 mb-1 mt-8">
+                <h2 className="text-base font-semibold">☆ Not Owned ({notOwnedRows.length})</h2>
+              </div>
+              <GenericTable
+                rows={notOwnedRows}
+                cols={cols}
+                navigate={(t) => navigate(`/company/${t}`)}
+                watchlist={watchlist}
+                hideFilters
+                emptyMessage="Everything on your watchlist is currently in your portfolio."
+              />
+            </>
+          )}
 
           {detailLoading && (
             <p className="text-xs text-slate-400 mt-2">⏳ Fetching live details for {outsideNse750.length} off-universe ticker{outsideNse750.length > 1 ? "s" : ""}…</p>
