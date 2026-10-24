@@ -1,5 +1,5 @@
-import { Suspense, lazy, useEffect, useState, createContext, useContext } from "react";
-import { NavLink, Route, Routes, useNavigate } from "react-router-dom";
+import { Suspense, lazy, useEffect, useRef, useState, createContext, useContext } from "react";
+import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError, Bundle } from "./lib/api";
 import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
@@ -193,90 +193,64 @@ export default function App() {
                 "Tracker", "Screen(ers)", "Summary", "Allocation") and
                 tightened text size/gaps rather than adding a scrollbar
                 or wrapping to a second row. */}
-            <nav className="flex gap-2 text-xs whitespace-nowrap">
+            {/* 2026-10-24 ("group headers alot now to view") — 27 flat links
+                became 4 dropdown groups plus the few used daily kept as
+                direct links. Every route is unchanged; only the header
+                changed. A group lights up when any page inside it is open. */}
+            <nav className="flex items-center gap-3 text-xs whitespace-nowrap">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
-              <NavLink to="/companies" className={({ isActive }) => navClass(isActive)}>
-                Companies
+              <NavGroup
+                label="💼 Portfolio"
+                items={[
+                  { to: "/portfolio-allocation", label: "💼 Allocation" },
+                  { to: "/portfolio-charts", label: "📈 Charts" },
+                  { to: "/portfolio-performance", label: "📊 Performance" },
+                  { to: "/mtf-calculator", label: "📐 MTF" },
+                ]}
+              />
+              <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
+                ⭐ Watchlist
               </NavLink>
-              <NavLink to="/guidance-tracker" className={({ isActive }) => navClass(isActive)}>
-                📋 Guidance
-              </NavLink>
-              <NavLink to="/viraj-screen" className={({ isActive }) => navClass(isActive)}>
-                🎯 Viraj
-              </NavLink>
-              <NavLink to="/momentum-screeners" className={({ isActive }) => navClass(isActive)}>
-                📈 Momentum
-              </NavLink>
-              <NavLink to="/technical-summary" className={({ isActive }) => navClass(isActive)}>
-                🏆 Technical
-              </NavLink>
-              <NavLink to="/all-technicals" className={({ isActive }) => navClass(isActive)}>
-                🔬 All Technicals
-              </NavLink>
-              <NavLink to="/all-fundamentals" className={({ isActive }) => navClass(isActive)}>
-                📚 All Fundamentals
-              </NavLink>
-              <NavLink to="/fixed-asset-change" className={({ isActive }) => navClass(isActive)}>
-                🏗️ Fixed Asset Δ
-              </NavLink>
-              {/* External link, not a route — 2026-09-06, "instead of
-                  building page contents from chartink we can have link
-                  to it saying marketBreath" (a market-breadth dashboard
-                  someone else maintains on Chartink; scraping its
-                  widgets was looked into and deliberately not pursued —
-                  see the Technical Summary conversation). Just opens it
-                  in a new tab, no data of ours involved. */}
-              <a href="https://chartink.com/dashboard/163999" target="_blank" rel="noopener noreferrer" className={navClass(false)}>
-                🌬️ Breadth ↗
-              </a>
-              <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
-                💼 Portfolio
-              </NavLink>
-              <NavLink to="/portfolio-charts" className={({ isActive }) => navClass(isActive)}>
-                📈 Charts
-              </NavLink>
-              <NavLink to="/portfolio-performance" className={({ isActive }) => navClass(isActive)}>
-                📊 Perf
-              </NavLink>
-              <NavLink to="/global-macro" className={({ isActive }) => navClass(isActive)}>
-                🌍 Macro
-              </NavLink>
-              <NavLink to="/fii-trend" className={({ isActive }) => navClass(isActive)}>
-                🌊 FII Trend
-              </NavLink>
-              <NavLink to="/sector-directory" className={({ isActive }) => navClass(isActive)}>
-                📚 Directory
-              </NavLink>
+              <NavGroup
+                label="🔎 Screens"
+                items={[
+                  { to: "/viraj-screen", label: "🎯 Viraj" },
+                  { to: "/momentum-screeners", label: "📈 Momentum" },
+                  { to: "/technical-summary", label: "🏆 Technical" },
+                  { to: "/all-technicals", label: "🔬 All Technicals" },
+                  { to: "/all-fundamentals", label: "📚 All Fundamentals" },
+                  { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
+                  // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
+                  { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
+                ]}
+              />
+              <NavGroup
+                label="🌍 Market"
+                items={[
+                  { to: "/global-macro", label: "🌍 Macro" },
+                  { to: "/fii-trend", label: "🌊 FII Trend" },
+                  { to: "/strategic-alpha", label: "📡 Strategic" },
+                  { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
+                  { to: "/sector-directory", label: "📚 Directory" },
+                ]}
+              />
               <NavLink to="/business-radar" className={({ isActive }) => navClass(isActive)}>
                 🧭 Business
                 <BusinessNavBadge />
               </NavLink>
-              <NavLink to="/strategic-alpha" className={({ isActive }) => navClass(isActive)}>
-                📡 Strategic
-              </NavLink>
-              <NavLink to="/top100-us-stocks" className={({ isActive }) => navClass(isActive)}>
-                🇺🇸 Top100 US
-              </NavLink>
-              <NavLink to="/reverse-dcf" className={({ isActive }) => navClass(isActive)}>
-                🔄 Rev DCF
-              </NavLink>
-              <NavLink to="/reverse-dcf-scan" className={({ isActive }) => navClass(isActive)}>
-                📋 DCF Scan
-              </NavLink>
-              <NavLink to="/mtf-calculator" className={({ isActive }) => navClass(isActive)}>
-                📐 MTF
-              </NavLink>
-              <NavLink to="/turtle-wealth" className={({ isActive }) => navClass(isActive)}>
-                🐢 Turtle
-              </NavLink>
-              <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
-                ⭐ Watchlist
-              </NavLink>
-              <NavLink to="/guide" className={({ isActive }) => navClass(isActive)}>
-                🧭 Guide
-              </NavLink>
+              <NavGroup
+                label="🧰 Research"
+                items={[
+                  { to: "/companies", label: "Companies" },
+                  { to: "/guidance-tracker", label: "📋 Guidance" },
+                  { to: "/reverse-dcf", label: "🔄 Rev DCF" },
+                  { to: "/reverse-dcf-scan", label: "📋 DCF Scan" },
+                  { to: "/turtle-wealth", label: "🐢 Turtle" },
+                  { to: "/guide", label: "🧭 Guide" },
+                ]}
+              />
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -328,6 +302,48 @@ export default function App() {
         </main>
       </div>
     </Ctx.Provider>
+  );
+}
+
+type NavItem = { to: string; label: string; external?: boolean };
+
+// Dropdown group for the header nav — click to open, closes on outside click
+// or when the route changes; highlighted while any page inside it is open.
+function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
+  const [open, setOpen] = useState(false);
+  const loc = useLocation();
+  const ref = useRef<HTMLDivElement>(null);
+  const active = items.some((i) => !i.external && loc.pathname.startsWith(i.to));
+  useEffect(() => setOpen(false), [loc.pathname]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button onClick={() => setOpen((o) => !o)} className={navClass(active)} aria-haspopup="menu" aria-expanded={open}>
+        {label} <span className="text-[9px]">▾</span>
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-2 min-w-[180px] bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-30 flex flex-col" role="menu">
+          {items.map((it) =>
+            it.external ? (
+              <a key={it.to} href={it.to} target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-100">
+                {it.label}
+              </a>
+            ) : (
+              <NavLink key={it.to} to={it.to} className={({ isActive }) => `px-3 py-1.5 text-xs hover:bg-slate-100 ${isActive ? "text-indigo-600 font-semibold" : "text-slate-600"}`}>
+                {it.label}
+              </NavLink>
+            )
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
