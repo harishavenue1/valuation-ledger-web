@@ -39,14 +39,14 @@ function MomentumTags({ tags }: { tags: string[] }) {
 
 // 2026-10-24 ("I need columns as same as portfolio-allocation") — same
 // columns, order, labels and widths as Portfolio Allocation's stock table
-// (minus Avg Price, which a watch item doesn't have; plus a Group column at the end for the manual override). For a stock
+// (minus every position/allocation column — Buy %, Current %, Avg Price, P&L % live on Portfolio Allocation — plus a Group column at the end for the manual override). For a stock
 // that is actually held, every value comes from that page's own row; for
-// a pure watch item the position-only columns (Buy %, Current %, P&L %) are a dash and the price/return/EMA/ATH/52WH columns come
+// the price/return/EMA/ATH/52WH columns come
 // from the NSE bhavcopy all-stocks technicals store (the same source All
 // Technicals uses), so every watchlisted NSE stock has them.
 const DASH = <span className="text-slate-300">—</span>;
 const dashOr = (v: any, f: (n: number) => React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : f(v as number));
-const NUM_W = 5.21;
+const NUM_W = 6.63;
 const BASE_COLS: Col[] = [
   { key: "rank", label: "Rank", width: 3 },
   { key: "symbol", label: "Symbol", align: "left", width: 9 },
@@ -71,12 +71,11 @@ const BASE_COLS: Col[] = [
   },
   { key: "sector", label: "Sector", align: "left", width: 5 },
   { key: "market_cap_cr", label: "Market Cap (Cr)", width: NUM_W, render: (r) => dashOr(r.market_cap_cr, (v) => `₹${fmtNum(v, 0)} Cr`) },
-  { key: "pct_of_portfolio_cost", label: "Buy %", width: NUM_W, groupStart: true, render: (r) => dashOr(r.pct_of_portfolio_cost, (v) => <span className="tabular-nums">{fmtNum(v, 1)}%</span>) },
-  { key: "pct_of_portfolio", label: "Current %", width: NUM_W, render: (r) => dashOr(r.pct_of_portfolio, (v) => <span className="font-semibold tabular-nums">{fmtNum(v, 1)}%</span>) },
   {
     key: "price",
     label: "Cur Price",
     width: NUM_W,
+    groupStart: true,
     render: (r) => {
       if (r.price === null || r.price === undefined) return DASH;
       const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -94,7 +93,6 @@ const BASE_COLS: Col[] = [
       );
     },
   },
-  { key: "pnl_pct", label: "P&L %", width: NUM_W, render: (r) => dashOr(r.pnl_pct, (v) => <Signed v={v} digits={1} />) },
   { key: "day_change_pct", label: "Day %", width: NUM_W, groupStart: true, render: (r) => dashOr(r.day_change_pct, (v) => <Signed v={v} digits={1} />) },
   { key: "pct_1w", label: "1W %", width: NUM_W, render: (r) => dashOr(r.pct_1w, (v) => <Signed v={v} digits={1} />) },
   { key: "pct_1m", label: "1M %", width: NUM_W, render: (r) => dashOr(r.pct_1m, (v) => <Signed v={v} digits={1} />) },
@@ -309,10 +307,6 @@ export default function Watchlist() {
       sector: pf?.sector || r.sector,
       exchange: pf?.exchange,
       market_cap_cr: firstNum(pf?.market_cap_cr, fund?.marketcap),
-      pct_of_portfolio_cost: pf?.pct_of_portfolio_cost ?? null,
-      pct_of_portfolio: pf?.pct_of_portfolio ?? null,
-      avg_price: pf?.avg_price ?? null,
-      pnl_pct: pf?.pnl_pct ?? null,
       price: firstNum(pf?.price, bh?.price, r.price),
       day_change_pct: firstNum(pf?.day_change_pct, bh?.change_pct, r.change_pct),
       pct_1w: firstNum(pf?.pct_1w, bh?.w_pct_1w, r.weekly_pct),
