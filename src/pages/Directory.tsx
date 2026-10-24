@@ -23,7 +23,7 @@ const TABS = [
 const COLS: Col[] = [
   { key: "symbol", label: "Symbol", align: "left" },
   { key: "sector", label: "Sector", align: "left" },
-  { key: "market_cap_cr", label: "Market Cap (Cr)", render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`) },
+  { key: "market_cap_cr", label: "Mkt Cap (Cr)", render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`) },
   { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
   { key: "change_pct", label: "Day %", groupStart: true, render: (r) => <Signed v={r.change_pct} digits={1} /> },
   { key: "weekly_pct", label: "1W %", render: (r) => <Signed v={r.weekly_pct} digits={1} /> },
@@ -33,15 +33,15 @@ const COLS: Col[] = [
   { key: "yearly_pct", label: "1Y %", render: (r) => <Signed v={r.yearly_pct} digits={1} /> },
   { key: "pct_200d_ema", label: "% vs 200D EMA", groupStart: true, render: (r) => <Signed v={r.pct_200d_ema} digits={1} /> },
   { key: "pct_33w_ema", label: "% vs 33W EMA", render: (r) => <Signed v={r.pct_33w_ema} digits={1} /> },
-  { key: "pct_from_ath", label: "% from ATH", groupStart: true, render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
-  { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
-  { key: "rsi_w", label: "Weekly RSI", render: (r) => fmtNum(r.rsi_w, 1) },
+  { key: "pct_from_ath", label: "ATH %", groupStart: true, render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
+  { key: "pct_from_52w_high", label: "52WH %", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+  { key: "rsi_w", label: "RSI (W)", render: (r) => fmtNum(r.rsi_w, 1) },
 ];
 
 // Smallcap 250 / Microcap 250 only: the Microcap Momentum score ((0.7 x 6M% + 0.3 x 1M%) / 63-session volatility) and the rank WITHIN that index
 const MOM_COLS: Col[] = [
   { key: "mom_rank", label: "Mom Rank", groupStart: true, render: (r) => (r.mom_rank == null ? <span className="text-slate-300">—</span> : <span className="font-semibold">{r.mom_rank}</span>) },
-  { key: "vol3m", label: "3M Volatility %", render: (r) => fmtNum(r.vol3m, 1) },
+  { key: "vol3m", label: "3M Vol %", render: (r) => fmtNum(r.vol3m, 1) },
 ];
 
 function median(vals: number[]): number | null {
