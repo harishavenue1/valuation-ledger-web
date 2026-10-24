@@ -39,15 +39,14 @@ function MomentumTags({ tags }: { tags: string[] }) {
 
 // 2026-10-24 ("I need columns as same as portfolio-allocation") — same
 // columns, order, labels and widths as Portfolio Allocation's stock table
-// (plus a Group column at the end for the manual override). For a stock
+// (minus Avg Price, which a watch item doesn't have; plus a Group column at the end for the manual override). For a stock
 // that is actually held, every value comes from that page's own row; for
-// a pure watch item the position-only columns (Buy %, Current %, Avg
-// Price, P&L %) are a dash and the price/return/EMA/ATH/52WH columns come
+// a pure watch item the position-only columns (Buy %, Current %, P&L %) are a dash and the price/return/EMA/ATH/52WH columns come
 // from the NSE bhavcopy all-stocks technicals store (the same source All
 // Technicals uses), so every watchlisted NSE stock has them.
 const DASH = <span className="text-slate-300">—</span>;
 const dashOr = (v: any, f: (n: number) => React.ReactNode) => (v === null || v === undefined || v === "" ? DASH : f(v as number));
-const NUM_W = 4.87;
+const NUM_W = 5.21;
 const BASE_COLS: Col[] = [
   { key: "rank", label: "Rank", width: 3 },
   { key: "symbol", label: "Symbol", align: "left", width: 9 },
@@ -74,7 +73,6 @@ const BASE_COLS: Col[] = [
   { key: "market_cap_cr", label: "Market Cap (Cr)", width: NUM_W, render: (r) => dashOr(r.market_cap_cr, (v) => `₹${fmtNum(v, 0)} Cr`) },
   { key: "pct_of_portfolio_cost", label: "Buy %", width: NUM_W, groupStart: true, render: (r) => dashOr(r.pct_of_portfolio_cost, (v) => <span className="tabular-nums">{fmtNum(v, 1)}%</span>) },
   { key: "pct_of_portfolio", label: "Current %", width: NUM_W, render: (r) => dashOr(r.pct_of_portfolio, (v) => <span className="font-semibold tabular-nums">{fmtNum(v, 1)}%</span>) },
-  { key: "avg_price", label: "Avg Price", width: NUM_W, render: (r) => dashOr(r.avg_price, (v) => `₹${fmtNum(v, 2)}`) },
   {
     key: "price",
     label: "Cur Price",
