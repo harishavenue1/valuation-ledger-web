@@ -4695,6 +4695,8 @@ def _rdcf_parse_quarterly(soup):
     sales_row = next((v for k, v in rows.items() if any(x in k.lower() for x in ["sales", "revenue"])), None)
     op_row = next((v for k, v in rows.items() if "operating profit" in k.lower()), None)
     eps_row = next((v for k, v in rows.items() if "eps" in k.lower()), None)
+    # 2026-10-25 ("latest qtr results ... Net Profit > 25%") — Net Profit YoY for the Blockbuster Results page
+    np_row = next((v for k, v in rows.items() if k.lower().startswith("net profit")), None)
     if not sales_row:
         return None
 
@@ -4712,7 +4714,7 @@ def _rdcf_parse_quarterly(soup):
         return None
 
     n = len(q_labels_all)
-    labels, sales_growth, op_growth, eps_growth = [], [], [], []
+    labels, sales_growth, op_growth, eps_growth, np_growth = [], [], [], [], []
     for ci in range(max(0, n - 6), n):
         labels.append(q_labels_all[ci])
         pi = ci - 4
@@ -4725,7 +4727,10 @@ def _rdcf_parse_quarterly(soup):
         e_curr = eps_row[ci] if eps_row and ci < len(eps_row) else None
         e_prev = eps_row[pi] if eps_row and 0 <= pi < len(eps_row) else None
         eps_growth.append(_yoy_with_turned(e_curr, e_prev))
-    return {"labels": labels, "sales_growth": sales_growth, "op_growth": op_growth, "eps_growth": eps_growth}
+        n_curr = np_row[ci] if np_row and ci < len(np_row) else None
+        n_prev = np_row[pi] if np_row and 0 <= pi < len(np_row) else None
+        np_growth.append(_yoy_with_turned(n_curr, n_prev))
+    return {"labels": labels, "sales_growth": sales_growth, "op_growth": op_growth, "eps_growth": eps_growth, "np_growth": np_growth}
 
 
 def _rdcf_fetch_fundamentals(ticker):
@@ -4989,6 +4994,7 @@ def _rdcf_fetch_fundamentals(ticker):
             "q_sales_growth": quarterly["sales_growth"] if quarterly else [],
             "q_op_growth": quarterly["op_growth"] if quarterly else [],
             "q_eps_growth": quarterly["eps_growth"] if quarterly else [],
+            "q_np_growth": quarterly["np_growth"] if quarterly else [],  # Net Profit YoY, same 'T' convention — 2026-10-25
         }
     return None
 
