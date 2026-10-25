@@ -404,7 +404,7 @@ export function FlowSection({ all, rows, months }: { all: PulseRow[]; rows: Puls
   const win = rows.filter((r) => r.fii != null || r.dii != null);
   const [mView, setMView] = useState(24);
   const dayLabel = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  const monLabel = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+  const monLabel = (d: string) => `${new Date(d + "T00:00:00").toLocaleDateString("en-IN", { month: "short" })} '${d.slice(2, 4)}`; // "Oct '26", never "Oct 26" (which reads as a day)
   const cum = useMemo(() => {
     let a = 0;
     let b = 0;
