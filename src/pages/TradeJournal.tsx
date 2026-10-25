@@ -18,6 +18,12 @@ import { Check, Doc, Entry, NEAR_PCT, Review, isClosed, stopState } from "../lib
 // STOP-LOSS ALERT: open entries whose last close is at/under the stop (red) or within NEAR_PCT of it (amber) are
 // flagged on this page and as a count on the 📓 nav link (src/lib/journal.tsx). It runs on the daily store, so it
 // fires after the evening update — it is a reminder, not a live stop order.
+// HISTORY (2026-10-25, "if a future buy it should be able to view back previous buys ... summary on avg price and also
+// reasons ... dates, prices, reasons, weeklyRSI"): typing a symbol you already hold opens a panel with every earlier buy
+// (date, qty, price, allocation, stop, weekly RSI and 200D EMA position on that day, state of mind, the reason), the
+// open position's weighted average price / invested / allocation so far, and what the average and total allocation
+// become if this buy goes ahead — with a warning when it is averaging DOWN, chasing UP, or adding to a position whose
+// stop is already breached. The Positions table rolls the open buys up per symbol the same way.
 // Stored in the watchlist API's `journal` meta (api/watchlist.py, GET ?journal=1 / POST action "journal"), saved ~0.6s
 // after each change, so it is the same from every device.
 
@@ -38,7 +44,24 @@ const STATES = ["Calm / by the plan", "Confident", "FOMO", "Revenge / making it 
 const SETUPS = ["Pullback to EMA", "VCP / base breakout", "52-week high breakout", "Results play", "Theme / sector play", "Averaging up", "Other"];
 const today = () => new Date().toISOString().slice(0, 10);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const score = (e: Entry) => (e.checks.length ? e.checks.filter((c) => c.ok).length / e.checks.length : null);
+const score = (e: Pick<Entry, "checks">) => (e.checks.length ? e.checks.filter((c) => c.ok).length / e.checks.length : null);
+function posStats(es: Pick<Entry, "qty" | "price" | "allocPct" | "rsiW" | "date" | "checks">[]) {
+  const qty = es.reduce((a, e) => a + e.qty, 0);
+  const invested = es.reduce((a, e) => a + e.qty * e.price, 0);
+  const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
+  const dates = es.map((e) => e.date).filter(Boolean).sort();
+  return {
+    n: es.length,
+    qty,
+    invested,
+    avg: qty ? invested / qty : 0,
+    alloc: es.reduce((a, e) => a + (e.allocPct ?? 0), 0),
+    avgRsi: mean(es.map((e) => e.rsiW).filter((v): v is number => v !== null)),
+    avgScore: mean(es.map(score).filter((v): v is number => v !== null)),
+    first: dates[0] ?? "",
+    last: dates[dates.length - 1] ?? "",
+  };
+}
 const R = (v: number) => (v < 0 ? "-" : "") + "₹" + fmt(Math.abs(v), 0);
 const sign = (v: number) => (v < 0 ? "text-red-600" : "text-emerald-700");
 const input = "w-full px-2 py-1.5 border border-slate-300 rounded text-sm";
@@ -66,6 +89,7 @@ export default function TradeJournal() {
   const [editList, setEditList] = useState(false);
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  const [openPos, setOpenPos] = useState<string | null>(null);
 
   const blank = () => ({
     symbol: "", date: today(), qty: "", price: "", setup: SETUPS[0], state: STATES[0], confidence: 3,
@@ -147,7 +171,18 @@ export default function TradeJournal() {
 
   const risk = stopPx > 0 && qty > 0 && price > 0 ? qty * (price - stopPx) : null;
   const portfolioRisk = allocPct > 0 && stopPct > 0 ? (allocPct * stopPct) / 100 : null;
+  const hist = useMemo(() => doc.entries.filter((e) => e.symbol === sym).sort((a, b) => a.date.localeCompare(b.date)), [doc.entries, sym]);
+  const histOpen = hist.filter((e) => !isClosed(e));
+  const hp = posStats(histOpen);
+  const lastBuy = histOpen[histOpen.length - 1];
+  const livePx: number | undefined = row?.price;
+  const proj = histOpen.length > 0 && qty > 0 && price > 0 ? posStats([...histOpen, { qty, price, allocPct: allocPct > 0 ? allocPct : null, rsiW, date: f.date, checks: [] }]) : null;
   const warnings: string[] = [];
+  if (histOpen.length > 0 && price > 0) {
+    if (price < hp.avg * 0.97) warnings.push(`Averaging DOWN: ${fmt((1 - price / hp.avg) * 100, 1, "%")} below your average of ₹${fmt(hp.avg, 2)} on ${histOpen.length} earlier buy${histOpen.length === 1 ? "" : "s"} — is the original reason still valid?`);
+    else if (lastBuy && price > lastBuy.price * 1.1) warnings.push(`Adding ${fmt((price / lastBuy.price - 1) * 100, 1, "%")} above your last buy (₹${fmt(lastBuy.price, 2)}) — chasing, or a planned add on strength?`);
+    if (lastBuy?.stop != null && livePx !== undefined && livePx <= lastBuy.stop) warnings.push(`Your existing stop (₹${fmt(lastBuy.stop, 2)}) is already breached — your own plan says exit, not add.`);
+  }
   if (!(stopPx > 0)) warnings.push("No stop-loss — decide it before you buy.");
   else if (price > 0 && stopPx >= price) warnings.push("Stop-loss is not below the buy price.");
   if (ema200Pct !== null && ema200Pct <= 0) warnings.push(`Price is ${fmt(Math.abs(ema200Pct), 1, "%")} BELOW the 200D EMA.`);
@@ -178,6 +213,17 @@ export default function TradeJournal() {
   const remove = (id: string) => {
     if (window.confirm("Delete this journal entry permanently?")) update((d) => ({ ...d, entries: d.entries.filter((e) => e.id !== id) }));
   };
+
+  const positions = useMemo(() => {
+    const by = new Map<string, Entry[]>();
+    for (const e of doc.entries) if (!isClosed(e)) by.set(e.symbol, [...(by.get(e.symbol) ?? []), e]);
+    return Array.from(by.entries())
+      .map(([sym, entries]) => {
+        entries.sort((a, b) => a.date.localeCompare(b.date));
+        return { sym, entries, s: posStats(entries), last: entries[entries.length - 1], now: px.map.get(sym)?.price as number | undefined };
+      })
+      .sort((a, b) => b.s.invested - a.s.invested);
+  }, [doc.entries, px]);
 
   const shown = useMemo(() => {
     const n = q.trim().toLowerCase();
@@ -323,6 +369,79 @@ export default function TradeJournal() {
           </div>
         </div>
 
+        {hist.length > 0 && (
+          <div className="mb-3 p-3 border border-slate-200 rounded-lg bg-slate-50">
+            <div className="text-sm font-medium text-slate-700 mb-2">
+              📚 Your history in {sym} — {hist.length} earlier buy{hist.length === 1 ? "" : "s"} ({histOpen.length} still open)
+            </div>
+            {histOpen.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 mb-2">
+                <div><div className="text-[11px] text-slate-500">Open quantity</div><div className="font-semibold tabular-nums">{fmt(hp.qty, 0)}</div></div>
+                <div><div className="text-[11px] text-slate-500">Average price</div><div className="font-semibold tabular-nums">₹{fmt(hp.avg, 2)}</div></div>
+                <div><div className="text-[11px] text-slate-500">Invested</div><div className="font-semibold tabular-nums">{R(hp.invested)}</div></div>
+                <div><div className="text-[11px] text-slate-500">Allocated so far</div><div className="font-semibold tabular-nums">{hp.alloc > 0 ? fmt(hp.alloc, 1, "%") : "—"}</div></div>
+                <div>
+                  <div className="text-[11px] text-slate-500">Now</div>
+                  <div className="font-semibold tabular-nums">
+                    {livePx !== undefined ? <>₹{fmt(livePx, 2)} <span className={`text-xs ${sign(livePx / hp.avg - 1)}`}>{fmtSigned((livePx / hp.avg - 1) * 100, 1)}</span></> : "—"}
+                  </div>
+                </div>
+                <div><div className="text-[11px] text-slate-500">Last buy</div><div className="font-semibold tabular-nums">{lastBuy ? `${lastBuy.date} @ ₹${fmt(lastBuy.price, 2)}` : "—"}</div></div>
+                <div><div className="text-[11px] text-slate-500">Avg weekly RSI at buys</div><div className="font-semibold tabular-nums">{hp.avgRsi !== null ? fmt(hp.avgRsi, 1) : "—"}</div></div>
+              </div>
+            )}
+            {proj && (
+              <div className="text-xs text-slate-700 bg-white border border-slate-200 rounded px-3 py-1.5 mb-2">
+                <b>If this buy goes ahead:</b> {fmt(proj.qty, 0)} units at an average of <b>₹{fmt(proj.avg, 2)}</b> ({hp.avg > 0 ? fmtSigned((proj.avg / hp.avg - 1) * 100, 1) : "—"} vs now), {R(proj.invested)} invested
+                {proj.alloc > 0 ? <>, total allocation <b>{fmt(proj.alloc, 1, "%")}</b></> : ""}.
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="text-xs border-collapse w-full" style={{ minWidth: 900 }}>
+                <thead>
+                  <tr className="text-slate-500">
+                    <th className="text-left px-2 py-1 font-normal">Date</th>
+                    <th className="text-right px-2 py-1 font-normal">Qty</th>
+                    <th className="text-right px-2 py-1 font-normal">Price</th>
+                    <th className="text-right px-2 py-1 font-normal">Alloc</th>
+                    <th className="text-right px-2 py-1 font-normal">Stop</th>
+                    <th className="text-right px-2 py-1 font-normal">Wkly RSI</th>
+                    <th className="text-right px-2 py-1 font-normal">vs 200D</th>
+                    <th className="text-left px-2 py-1 font-normal">State</th>
+                    <th className="text-left px-2 py-1 font-normal">Status</th>
+                    <th className="text-left px-2 py-1 font-normal">Why I bought</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hist.map((e) => {
+                    const ex = isClosed(e) ? parseFloat(e.review!.exitPrice) : NaN;
+                    return (
+                      <tr key={e.id} className="border-t border-slate-200 align-top">
+                        <td className="px-2 py-1 tabular-nums whitespace-nowrap">{e.date}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{fmt(e.qty, 0)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{fmt(e.price, 2)}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{e.allocPct !== null ? fmt(e.allocPct, 1, "%") : "—"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{e.stop !== null ? fmt(e.stop, 2) : "—"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{e.rsiW !== null ? fmt(e.rsiW, 1) : "—"}</td>
+                        <td className="px-2 py-1 text-right tabular-nums">{e.ema200Pct !== null ? fmtSigned(e.ema200Pct, 1) : "—"}</td>
+                        <td className="px-2 py-1">{e.state}</td>
+                        <td className="px-2 py-1 whitespace-nowrap">
+                          {Number.isFinite(ex) ? <span className={sign(ex / e.price - 1)}>closed {fmtSigned((ex / e.price - 1) * 100, 1)}</span> : <span className="text-slate-500">open</span>}
+                        </td>
+                        <td className="px-2 py-1 max-w-[28rem]">
+                          {e.fundNote && <b className="text-emerald-700">{e.fundTrigger === "yes" ? "Trigger: " : ""}{e.fundNote} · </b>}
+                          {e.reason}
+                          {e.review?.lesson && <div className="text-slate-500 mt-0.5">Lesson: {e.review.lesson}</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         <div className="grid lg:grid-cols-2 gap-3 mb-3">
           <div className="grid grid-cols-[auto_1fr] gap-3 items-end">
             <F label="Fundamental trigger?">
@@ -437,14 +556,102 @@ export default function TradeJournal() {
         )}
       </div>
 
+      {/* positions */}
+      {positions.length > 0 && (
+        <div className="mb-5">
+          <h2 className="text-sm font-medium text-slate-700 mb-2">Open positions — all buys rolled up per stock</h2>
+          <div className="overflow-x-auto border border-slate-200 rounded-lg">
+            <table className="text-sm border-collapse w-full" style={{ minWidth: 1100 }}>
+              <thead>
+                <tr>
+                  <th className={`${th} text-left`}>Symbol</th>
+                  <th className={th}>Buys</th>
+                  <th className={th}>First → last</th>
+                  <th className={th}>Qty</th>
+                  <th className={th}>Avg price</th>
+                  <th className={th}>Invested</th>
+                  <th className={th}>Now</th>
+                  <th className={th}>P/L %</th>
+                  <th className={th}>P/L ₹</th>
+                  <th className={th}>Alloc %</th>
+                  <th className={th}>Stop</th>
+                  <th className={th}>Avg wkly RSI</th>
+                </tr>
+              </thead>
+              <tbody>
+                {positions.flatMap((p) => {
+                  const isOpenP = openPos === p.sym;
+                  const plp = p.now !== undefined ? (p.now / p.s.avg - 1) * 100 : null;
+                  const ss = p.last ? stopState(p.last, p.now) : "none";
+                  const head = (
+                    <tr key={p.sym} onClick={() => setOpenPos(isOpenP ? null : p.sym)} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${ss === "hit" ? "bg-red-50" : ss === "near" ? "bg-amber-50" : ""}`}>
+                      <td className="px-2 py-1.5 font-medium">
+                        {p.sym}
+                        {ss === "hit" && <span className="ml-1 text-[10px] text-red-600">STOP HIT</span>}
+                        {ss === "near" && <span className="ml-1 text-[10px] text-amber-700">near stop</span>}
+                      </td>
+                      <td className={td}>{p.s.n}</td>
+                      <td className="px-2 py-1.5 text-center text-xs text-slate-600 tabular-nums">{p.s.first === p.s.last ? p.s.first : `${p.s.first} → ${p.s.last}`}</td>
+                      <td className={td}>{fmt(p.s.qty, 0)}</td>
+                      <td className={td}>{fmt(p.s.avg, 2)}</td>
+                      <td className={td}>{R(p.s.invested)}</td>
+                      <td className={td}>{p.now !== undefined ? <PriceLink symbol={p.sym} value={p.now} /> : "—"}</td>
+                      <td className={`${td} ${plp === null ? "" : sign(plp)}`}>{plp === null ? "—" : fmtSigned(plp, 1)}</td>
+                      <td className={`${td} ${p.now === undefined ? "" : sign(p.now - p.s.avg)}`}>{p.now === undefined ? "—" : R((p.now - p.s.avg) * p.s.qty)}</td>
+                      <td className={`${td} text-slate-600`}>{p.s.alloc > 0 ? fmt(p.s.alloc, 1, "%") : "—"}</td>
+                      <td className={`${td} text-slate-600`}>{p.last?.stop != null ? fmt(p.last.stop, 2) : <span className="text-red-500">none</span>}</td>
+                      <td className={`${td} text-slate-600`}>{p.s.avgRsi !== null ? fmt(p.s.avgRsi, 1) : "—"}</td>
+                    </tr>
+                  );
+                  if (!isOpenP) return [head];
+                  return [
+                    head,
+                    <tr key={p.sym + "x"} className="bg-slate-50 border-t border-slate-100">
+                      <td colSpan={12} className="px-4 py-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs text-slate-500">Every open buy in {p.sym}, oldest first — the reasons you gave at the time</span>
+                          <button
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              setF({ ...blank(), symbol: p.sym });
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            className="text-xs px-2 py-1 rounded border border-indigo-400 text-indigo-600 hover:bg-indigo-50"
+                          >
+                            ＋ log another buy in {p.sym}
+                          </button>
+                        </div>
+                        {p.entries.map((e) => (
+                          <div key={e.id} className="text-xs py-1.5 border-t border-slate-200 first:border-t-0">
+                            <b className="tabular-nums">{e.date}</b> · {fmt(e.qty, 0)} @ ₹{fmt(e.price, 2)}
+                            {e.allocPct !== null ? ` · ${fmt(e.allocPct, 1, "%")} alloc${e.allocReason ? ` (${e.allocReason})` : ""}` : ""}
+                            {e.stop !== null ? ` · stop ₹${fmt(e.stop, 2)}` : ""}
+                            {e.rsiW !== null ? ` · wkly RSI ${fmt(e.rsiW, 1)}` : ""}
+                            {e.ema200Pct !== null ? ` · ${fmtSigned(e.ema200Pct, 1)} vs 200D` : ""} · {e.state}
+                            <div className="text-slate-700 mt-0.5">
+                              {e.fundNote && <b className="text-emerald-700">{e.fundTrigger === "yes" ? "Trigger: " : ""}{e.fundNote} · </b>}
+                              {e.reason}
+                            </div>
+                          </div>
+                        ))}
+                      </td>
+                    </tr>,
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* record */}
       <div className="flex flex-wrap items-center gap-3 mb-2">
-        <h2 className="text-sm font-medium text-slate-700">Buy record</h2>
+        <h2 className="text-sm font-medium text-slate-700">All buys (record)</h2>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="search symbol, setup or reason…" className="px-2 py-1.5 border border-slate-300 rounded text-sm w-64" />
         <span className="text-xs text-slate-400">{shown.length} of {doc.entries.length}{px.asOf ? ` · prices as of ${px.asOf}` : ""}</span>
       </div>
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="text-sm border-collapse w-full" style={{ minWidth: 1250 }}>
+        <table className="text-sm border-collapse w-full" style={{ minWidth: 1450 }}>
           <thead>
             <tr>
               <th className={th}>Date</th>
@@ -452,6 +659,8 @@ export default function TradeJournal() {
               <th className={th}>Qty</th>
               <th className={th}>Buy price</th>
               <th className={th}>Alloc %</th>
+              <th className={th}>Wkly RSI</th>
+              <th className={th}>vs 200D</th>
               <th className={th}>Stop (₹ / %)</th>
               <th className={th}>Risk</th>
               <th className={th}>Now / exit</th>
@@ -465,7 +674,7 @@ export default function TradeJournal() {
           <tbody>
             {shown.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-3 py-8 text-center text-slate-400 text-sm">
+                <td colSpan={15} className="px-3 py-8 text-center text-slate-400 text-sm">
                   {loaded ? "No buys logged yet — log your next one above before you place the order." : "Loading…"}
                 </td>
               </tr>
@@ -492,6 +701,8 @@ export default function TradeJournal() {
                   <td className={td}>{fmt(e.qty, 0)}</td>
                   <td className={td}><PriceLink symbol={e.symbol} value={e.price} /></td>
                   <td className={`${td} text-slate-600`}>{e.allocPct !== null ? fmt(e.allocPct, 1, "%") : "—"}</td>
+                  <td className={`${td} text-slate-600`}>{e.rsiW !== null ? fmt(e.rsiW, 1) : "—"}</td>
+                  <td className={`${td} text-slate-600`}>{e.ema200Pct !== null ? fmtSigned(e.ema200Pct, 1) : "—"}</td>
                   <td className={`${td} text-slate-600`}>
                     {e.stop !== null ? `${fmt(e.stop, 2)} / ${fmt((1 - e.stop / e.price) * 100, 1, "%")}` : <span className="text-red-500">none</span>}
                   </td>
@@ -515,7 +726,7 @@ export default function TradeJournal() {
               return [
                 main,
                 <tr key={e.id + "x"} className="bg-slate-50 border-t border-slate-100">
-                  <td colSpan={13} className="px-4 py-3">
+                  <td colSpan={15} className="px-4 py-3">
                     <div className="grid lg:grid-cols-3 gap-4 text-sm">
                       <div className="flex flex-col gap-2">
                         <div className="text-xs text-slate-500">
