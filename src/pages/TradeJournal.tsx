@@ -77,6 +77,87 @@ function F({ label, children, hint }: { label: string; children: React.ReactNode
   );
 }
 
+// Edit a saved buy (2026-10-25, "unable to edit back once added") — every field of the entry, including the checklist
+// ticks and the RSI / 200D values recorded on the day. Fields are held as strings while typing and parsed on Save.
+function EditEntry({ e, onSave, onCancel }: { e: Entry; onSave: (p: Partial<Entry>) => void; onCancel: () => void }) {
+  const n2s = (v: number | null) => (v === null ? "" : String(v));
+  const [d, setD] = useState({
+    symbol: e.symbol, date: e.date, qty: String(e.qty), price: String(e.price), allocPct: n2s(e.allocPct), allocReason: e.allocReason,
+    stop0: n2s(e.stop0), stop: n2s(e.stop), target: n2s(e.target), fundTrigger: e.fundTrigger, fundNote: e.fundNote, setup: e.setup,
+    state: e.state, confidence: e.confidence, reason: e.reason, rsiW: n2s(e.rsiW), ema200Pct: n2s(e.ema200Pct), checks: e.checks.map((c) => ({ ...c })),
+  });
+  const set = (p: Partial<typeof d>) => setD((x) => ({ ...x, ...p }));
+  const opt = (v: string) => (v.trim() !== "" && Number.isFinite(parseFloat(v)) ? parseFloat(v) : null);
+  const ok = d.symbol.trim() !== "" && parseFloat(d.qty) > 0 && parseFloat(d.price) > 0 && !!d.date && d.reason.trim().length >= 3;
+  const save = () =>
+    onSave({
+      symbol: d.symbol.trim().toUpperCase(), date: d.date, qty: parseFloat(d.qty), price: parseFloat(d.price),
+      allocPct: opt(d.allocPct), allocReason: d.allocReason.trim(), stop0: opt(d.stop0), stop: opt(d.stop), target: opt(d.target),
+      fundTrigger: d.fundTrigger, fundNote: d.fundNote.trim(), setup: d.setup, state: d.state, confidence: d.confidence,
+      reason: d.reason.trim(), rsiW: opt(d.rsiW), ema200Pct: opt(d.ema200Pct), checks: d.checks,
+    });
+  const stateOpts = STATES.includes(d.state) ? STATES : [d.state, ...STATES];
+  const setupOpts = SETUPS.includes(d.setup) ? SETUPS : [d.setup, ...SETUPS];
+  return (
+    <div onClick={(ev) => ev.stopPropagation()}>
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 mb-3">
+        <F label="Symbol"><input value={d.symbol} onChange={(ev) => set({ symbol: ev.target.value.toUpperCase() })} className={input} /></F>
+        <F label="Date"><input type="date" value={d.date} onChange={(ev) => set({ date: ev.target.value })} className={input} /></F>
+        <F label="Quantity"><input type="number" value={d.qty} onChange={(ev) => set({ qty: ev.target.value })} className={input} /></F>
+        <F label="Buy price (₹)"><input type="number" step="any" value={d.price} onChange={(ev) => set({ price: ev.target.value })} className={input} /></F>
+        <F label="Allocation (%)"><input type="number" step="any" value={d.allocPct} onChange={(ev) => set({ allocPct: ev.target.value })} className={input} /></F>
+        <F label="Target (₹)"><input type="number" step="any" value={d.target} onChange={(ev) => set({ target: ev.target.value })} className={input} /></F>
+        <F label="Initial stop (₹)"><input type="number" step="any" value={d.stop0} onChange={(ev) => set({ stop0: ev.target.value })} className={input} /></F>
+        <F label="Stop now (₹)"><input type="number" step="any" value={d.stop} onChange={(ev) => set({ stop: ev.target.value })} className={input} /></F>
+        <F label="Weekly RSI on the day"><input type="number" step="any" value={d.rsiW} onChange={(ev) => set({ rsiW: ev.target.value })} className={input} /></F>
+        <F label="% vs 200D EMA on the day"><input type="number" step="any" value={d.ema200Pct} onChange={(ev) => set({ ema200Pct: ev.target.value })} className={input} /></F>
+        <F label="Setup">
+          <select value={d.setup} onChange={(ev) => set({ setup: ev.target.value })} className={input}>{setupOpts.map((x) => <option key={x}>{x}</option>)}</select>
+        </F>
+        <F label="State of mind">
+          <select value={d.state} onChange={(ev) => set({ state: ev.target.value })} className={input}>{stateOpts.map((x) => <option key={x}>{x}</option>)}</select>
+        </F>
+      </div>
+      <div className="grid lg:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-3">
+          <F label="Reason for this allocation"><input value={d.allocReason} onChange={(ev) => set({ allocReason: ev.target.value })} className={input} /></F>
+          <div className="grid grid-cols-[auto_1fr] gap-3 items-end">
+            <F label="Fundamental trigger?">
+              <div className="flex rounded border border-slate-300 overflow-hidden text-sm">
+                {(["yes", "no"] as const).map((v) => (
+                  <button key={v} type="button" onClick={() => set({ fundTrigger: v })} className={`px-4 py-1.5 ${d.fundTrigger === v ? (v === "yes" ? "bg-emerald-600 text-white" : "bg-slate-600 text-white") : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                    {v === "yes" ? "YES" : "NO"}
+                  </button>
+                ))}
+              </div>
+            </F>
+            <F label="The trigger, in a few words"><input value={d.fundNote} onChange={(ev) => set({ fundNote: ev.target.value })} className={input} /></F>
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-600">
+            Conviction
+            <input type="range" min={1} max={5} value={d.confidence} onChange={(ev) => set({ confidence: parseInt(ev.target.value, 10) })} className="accent-indigo-600" />
+            <b className="text-slate-800 w-4">{d.confidence}</b>
+          </label>
+        </div>
+        <F label="Why I bought"><textarea value={d.reason} onChange={(ev) => set({ reason: ev.target.value })} rows={6} className={input} /></F>
+        <div>
+          <div className="text-xs text-slate-600 mb-1">Checklist on that day</div>
+          {d.checks.map((c, i) => (
+            <label key={i} className="flex items-start gap-2 text-xs py-0.5 cursor-pointer">
+              <input type="checkbox" className="mt-0.5" checked={c.ok} onChange={(ev) => set({ checks: d.checks.map((x, j) => (j === i ? { ...x, ok: ev.target.checked } : x)) })} />
+              <span className={c.ok ? "text-emerald-700" : "text-red-600"}>{c.text}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-3 mt-3">
+        <button onClick={save} disabled={!ok} className={`px-4 py-1.5 rounded text-sm font-medium ${ok ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-400 cursor-not-allowed"}`}>Save changes</button>
+        <button onClick={onCancel} className="px-3 py-1.5 rounded text-sm border border-slate-300 text-slate-600 hover:bg-slate-50">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 export default function TradeJournal() {
   const [doc, setDoc] = useState<Doc>({ checklist: null, entries: [] });
   const [loaded, setLoaded] = useState(false);
@@ -90,6 +171,7 @@ export default function TradeJournal() {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [openPos, setOpenPos] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
 
   const blank = () => ({
     symbol: "", date: today(), qty: "", price: "", setup: SETUPS[0], state: STATES[0], confidence: 3,
@@ -727,8 +809,12 @@ export default function TradeJournal() {
                 main,
                 <tr key={e.id + "x"} className="bg-slate-50 border-t border-slate-100">
                   <td colSpan={15} className="px-4 py-3">
+                    {editId === e.id ? (
+                      <EditEntry e={e} onCancel={() => setEditId(null)} onSave={(p) => { patch(e.id, p); setEditId(null); }} />
+                    ) : (
                     <div className="grid lg:grid-cols-3 gap-4 text-sm">
                       <div className="flex flex-col gap-2">
+                        <button onClick={() => setEditId(e.id)} className="self-start text-xs px-2 py-1 rounded border border-indigo-400 text-indigo-600 hover:bg-indigo-50">✎ Edit this entry</button>
                         <div className="text-xs text-slate-500">
                           Why I bought · {e.setup} · conviction {e.confidence}/5{e.target !== null ? ` · target ₹${fmt(e.target, 2)}` : ""}
                         </div>
@@ -753,7 +839,8 @@ export default function TradeJournal() {
                       </div>
                       <div className="flex flex-col gap-2" onClick={(ev) => ev.stopPropagation()}>
                         <F label="Stop-loss now (₹) — trail it up as the trade works" hint={e.stop0 !== null ? `started at ₹${fmt(e.stop0, 2)}` : undefined}>
-                          <input type="number" step="any" value={e.stop ?? ""} onChange={(ev) => patch(e.id, { stop: ev.target.value === "" ? null : parseFloat(ev.target.value) })} className={input} />
+                          <input type="number" step="any" value={e.stop ?? ""} onChange={(ev) => patch(e.id, { stop: ev.target.value === "" ? null : parseFloat(ev.target.value) })}
+                          onBlur={() => e.stop0 === null && e.stop !== null && Number.isFinite(e.stop) && patch(e.id, { stop0: e.stop })} className={input} />
                         </F>
                         <div className="text-xs text-slate-500 mt-1">Review</div>
                         <div className="grid grid-cols-2 gap-2">
@@ -773,10 +860,14 @@ export default function TradeJournal() {
                         </F>
                         <div className="flex justify-between">
                           <span className="text-[11px] text-slate-400">A good process can still lose money — judge the decision, not just the P/L.</span>
-                          <button onClick={() => remove(e.id)} className="text-xs text-red-600 hover:underline">delete entry</button>
+                          <span className="flex gap-3">
+                            <button onClick={() => setEditId(e.id)} className="text-xs text-indigo-600 hover:underline">✎ edit entry</button>
+                            <button onClick={() => remove(e.id)} className="text-xs text-red-600 hover:underline">delete entry</button>
+                          </span>
                         </div>
                       </div>
                     </div>
+                    )}
                   </td>
                 </tr>,
               ];
