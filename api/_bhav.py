@@ -1541,7 +1541,7 @@ def _breadth_rows(df, days, min_universe, list_days=0, names=None):
     chg = (cl / cl.shift(1) - 1) * 100
     listed = set(hi.index[-list_days:]) if list_days else set()
 
-    def names(flags, d, best_first):
+    def pick_rows(flags, d, best_first):
         syms = flags.columns[flags.loc[d].to_numpy()]
         rows = [[s_, round(float(cl.at[d, s_]), 2), None if pd.isna(chg.at[d, s_]) else round(float(chg.at[d, s_]), 1), (names or {}).get(s_, "")[:44]] for s_ in syms]
         rows.sort(key=lambda r_: (r_[2] is None, -(r_[2] or 0) if best_first else (r_[2] or 0)))
@@ -1553,7 +1553,7 @@ def _breadth_rows(df, days, min_universe, list_days=0, names=None):
             continue
         row = {"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])}
         if d in listed:  # the stocks themselves ([symbol, close, day %, name]) for the recent sessions, so a count can be opened up
-            row["wh_list"], row["wl_list"] = names(is_hi, d, True), names(is_lo, d, False)
+            row["wh_list"], row["wl_list"] = pick_rows(is_hi, d, True), pick_rows(is_lo, d, False)
         out.append(row)
     return out
 
