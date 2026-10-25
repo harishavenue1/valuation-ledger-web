@@ -3541,7 +3541,7 @@ def _run_market_pulse(symbols, name_map, sector_map):
     rows = []
     for d in spine_dates:
         a, c = by_all.get(d), by_core.get(d)
-        rows.append({"date": d, "wh": a["wh"] if a else None, "wl": a["wl"] if a else None, "universe": a["universe"] if a else None,
+        rows.append({"date": d, "wh_list": a.get("wh_list") if a else None, "wl_list": a.get("wl_list") if a else None, "wh": a["wh"] if a else None, "wl": a["wl"] if a else None, "universe": a["universe"] if a else None,
                      "wh_core": c["wh"] if c else None, "wl_core": c["wl"] if c else None, "universe_core": c["universe"] if c else None})
     for key, ser in cols.items():
         ser = ser[~ser.index.duplicated(keep="last")].sort_index()

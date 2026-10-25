@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { MethodologyNote, ScreenerLoading, fmtNum, fmtSigned } from "../components/ScreenerTable";
+import { MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
 
 // 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
 // NIFTY500, # of Stocks in 52WH, # of Stocks in 52WLow") — one row per Indian trading day, built by
@@ -18,6 +18,9 @@ interface PulseRow {
   wl?: number | null;
   universe?: number | null;
   // the long-history "core" stocks (~750, the same names every day) — reaches back ~3 years; the all-stocks counts only ~1 year
+  // the stocks behind the all-stocks counts for the last ~30 sessions: [symbol, close, day %]
+  wh_list?: [string, number, number | null][] | null;
+  wl_list?: [string, number, number | null][] | null;
   wh_core?: number | null;
   wl_core?: number | null;
   universe_core?: number | null;
@@ -62,7 +65,7 @@ const W = 640;
 const H = 190;
 const PAD = { l: 54, r: 10, t: 10, b: 22 };
 
-function LineChart({ dates, series, digits, onHover }: { dates: string[]; series: LineSeries[]; digits: number; onHover: (i: number | null) => void }) {
+function LineChart({ dates, series, digits, onHover, onPick }: { dates: string[]; series: LineSeries[]; digits: number; onHover: (i: number | null) => void; onPick?: (i: number) => void }) {
   const ref = useRef<SVGSVGElement>(null);
   const [hi, setHi] = useState<number | null>(null);
   const n = dates.length;
@@ -98,7 +101,7 @@ function LineChart({ dates, series, digits, onHover }: { dates: string[]; series
   };
   const short = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   return (
-    <svg ref={ref} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto select-none" onMouseMove={move} onMouseLeave={leave}>
+    <svg ref={ref} viewBox={`0 0 ${W} ${H}`} className={`w-full h-auto select-none ${onPick ? "cursor-pointer" : ""}`} onMouseMove={move} onMouseLeave={leave} onClick={() => hi != null && onPick?.(hi)}>
       {ticks.map((t, k) => (
         <g key={k}>
           <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="stroke-slate-200" strokeWidth={1} />
@@ -135,6 +138,7 @@ function ChartCard({
   series,
   digits,
   invert,
+  onPick,
 }: {
   title: string;
   unit?: string;
@@ -142,6 +146,7 @@ function ChartCard({
   series: { key: Key; name: string; color: string }[];
   digits: number;
   invert?: Key[];
+  onPick?: (date: string) => void;
 }) {
   const [hover, setHover] = useState<number | null>(null);
   const dates = rows.map((r) => r.date);
@@ -171,7 +176,7 @@ function ChartCard({
           <span className="text-slate-400">{row?.date}</span>
         </div>
       </div>
-      <LineChart dates={dates} digits={digits} onHover={setHover} series={series.map((s) => ({ name: s.name, color: s.color, data: rows.map((r) => (r[s.key] as number | null | undefined) ?? null) }))} />
+      <LineChart dates={dates} digits={digits} onHover={setHover} onPick={onPick ? (i) => onPick(dates[i]) : undefined} series={series.map((s) => ({ name: s.name, color: s.color, data: rows.map((r) => (r[s.key] as number | null | undefined) ?? null) }))} />
     </div>
   );
 }
@@ -205,6 +210,7 @@ export default function MarketPulse() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [basis, setBasis] = useState<"all" | "core">("all");
+  const [pick, setPick] = useState<string | null>(null); // the day whose new-high / new-low stocks are listed (default: the latest)
 
   const all: PulseRow[] = useMemo(() => {
     const sorted = [...((entry?.rows as PulseRow[]) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
@@ -321,12 +327,15 @@ export default function MarketPulse() {
               rows={rows}
               digits={0}
               invert={["wl"]}
+              onPick={setPick}
               series={[
                 { key: "wh", name: "Highs", color: GREEN },
                 { key: "wl", name: "Lows", color: RED },
               ]}
             />
           </div>
+
+          <StocksPanel row={all.find((r) => r.date === (pick ?? last?.date))} core={basis === "core"} />
 
           <div className="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
             <table className="w-full text-xs tabular-nums">
@@ -351,7 +360,7 @@ export default function MarketPulse() {
                 {[...rows].reverse().map((r) => {
                   const p = all[all.findIndex((x) => x.date === r.date) - 1];
                   return (
-                    <tr key={r.date} className="border-t border-slate-100 hover:bg-slate-50">
+                    <tr key={r.date} onClick={() => setPick(r.date)} className={`border-t border-slate-100 hover:bg-slate-50 cursor-pointer ${r.date === (pick ?? last?.date) ? "bg-slate-100" : ""}`}>
                       <td className="px-2 py-1.5 text-left whitespace-nowrap">{r.date}</td>
                       {PRICE_SERIES.map((s) => (
                         <PriceCells key={s.key} v={r[s.key] as number | null | undefined} p={p?.[s.key] as number | null | undefined} digits={s.digits} />
@@ -381,5 +390,59 @@ function PriceCells({ v, p, digits }: { v: number | null | undefined; p: number 
         <Delta v={pct(v, p)} suffix="%" />
       </td>
     </>
+  );
+}
+
+function StockList({ title, list, color }: { title: string; list: [string, number, number | null][]; color: string }) {
+  return (
+    <div className="border border-slate-200 rounded-lg overflow-hidden">
+      <div className="px-3 py-2 text-xs font-semibold bg-slate-100" style={{ color }}>
+        {title} · {list.length}
+      </div>
+      <div className="max-h-80 overflow-auto">
+        <table className="w-full text-xs tabular-nums">
+          <tbody>
+            {list.map(([sym, close, chg]) => (
+              <tr key={sym} className="border-t border-slate-100">
+                <td className="px-3 py-1 text-left font-medium">{sym}</td>
+                <td className="px-2 py-1 text-right">
+                  <PriceLink symbol={sym} value={close} />
+                </td>
+                <td className="px-3 py-1 text-right">
+                  <Signed v={chg} digits={1} />
+                </td>
+              </tr>
+            ))}
+            {list.length === 0 && (
+              <tr>
+                <td className="px-3 py-3 text-slate-400">None</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// The stocks behind one day's 52-week high / low counts — click a day on the breadth chart, or a row in the table below
+function StocksPanel({ row, core }: { row?: PulseRow; core: boolean }) {
+  if (!row) return null;
+  const has = row.wh_list != null && row.wl_list != null;
+  return (
+    <div className="mb-6">
+      <div className="text-sm font-semibold mb-1">
+        Stocks behind the {row.date} counts <span className="text-xs font-normal text-slate-400">click a day on the chart or a row in the table to switch · sorted by the day's move</span>
+      </div>
+      {core && <div className="text-xs text-amber-600 mb-1">These lists are for all NSE stocks, so they won't match the Core ~750 counts above.</div>}
+      {has ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <StockList title="New 52-week highs" list={row.wh_list!} color={GREEN} />
+          <StockList title="New 52-week lows" list={row.wl_list!} color={RED} />
+        </div>
+      ) : (
+        <div className="text-xs text-slate-400 border border-slate-200 rounded-lg px-3 py-4">The stock lists are kept for the last 30 trading sessions — pick a more recent day.</div>
+      )}
+    </div>
   );
 }

@@ -1516,10 +1516,17 @@ def compute_uprun_hold(df, rows):
 # anything priced at or under Rs 10 is left out (the other scans use the same floor). Recomputed from the
 # store on every publish, so there is no state to accumulate.
 
-BREADTH = {"window": 252, "min_periods": 240, "min_price": 10, "days": 300, "core_days": 780, "core_min_sessions": 1000, "core_min_universe": 300}
+BREADTH = {"window": 252, "min_periods": 240, "min_price": 10, "days": 300, "core_days": 780, "list_days": 30, "core_min_sessions": 1000, "core_min_universe": 300}
 
 
-def _breadth_rows(df, days, min_universe):
+def _is_fund(sym):
+    """Liquid / gold / index ETFs creep up every day and would count as a 52-week high forever (LIQUIDSBI, LIQUIDSHRI sat in the first
+    list) — not what the count is about. Name patterns only, so a few exotic funds can still slip through."""
+    return sym.startswith("LIQUID") or sym.endswith(("BEES", "ETF", "CASE", "IETF"))
+
+
+def _breadth_rows(df, days, min_universe, list_days=0):
+    df = df[~df["symbol"].map(_is_fund)]
     hi = df.pivot(index="date", columns="symbol", values="h").sort_index()
     lo = df.pivot(index="date", columns="symbol", values="l").sort_index()
     cl = df.pivot(index="date", columns="symbol", values="c").sort_index()
@@ -1530,11 +1537,24 @@ def _breadth_rows(df, days, min_universe):
     wh = ((hi > hh) & valid).sum(axis=1)
     wl = ((lo < ll) & valid).sum(axis=1)
     uni = valid.sum(axis=1)
+    is_hi, is_lo = (hi > hh) & valid, (lo < ll) & valid
+    chg = (cl / cl.shift(1) - 1) * 100
+    listed = set(hi.index[-list_days:]) if list_days else set()
+
+    def names(flags, d, best_first):
+        syms = flags.columns[flags.loc[d].to_numpy()]
+        rows = [[s_, round(float(cl.at[d, s_]), 2), None if pd.isna(chg.at[d, s_]) else round(float(chg.at[d, s_]), 1)] for s_ in syms]
+        rows.sort(key=lambda r_: (r_[2] is None, -(r_[2] or 0) if best_first else (r_[2] or 0)))
+        return rows[:600]
+
     out = []
     for d in hi.index[-days:]:
         if int(uni[d]) < min_universe:  # a partial or holiday-copy day, or the stretch before a full year of history exists — not a real count
             continue
-        out.append({"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])})
+        row = {"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])}
+        if d in listed:  # the stocks themselves ([symbol, close, day %]) for the recent sessions, so a count can be opened up
+            row["wh_list"], row["wl_list"] = names(is_hi, d, True), names(is_lo, d, False)
+        out.append(row)
     return out
 
 
@@ -1547,7 +1567,7 @@ def compute_breadth(df):
         return {"all": [], "core": []}
     last = df["date"].max()
     recent = df[df["date"] >= last - pd.Timedelta(days=800)]
-    out = {"all": _breadth_rows(recent, BREADTH["days"], 500), "core": []}
+    out = {"all": _breadth_rows(recent, BREADTH["days"], 500, list_days=BREADTH["list_days"]), "core": []}
     sessions = df.groupby("symbol", sort=False).size()
     core = sessions[sessions >= BREADTH["core_min_sessions"]].index
     if len(core) >= BREADTH["core_min_universe"]:
