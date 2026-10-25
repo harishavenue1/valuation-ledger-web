@@ -3510,6 +3510,7 @@ def _run_uprun_hold(symbols, name_map, sector_map):
 # Yahoo (the last close on or before each Indian trading day, so an Indian holiday never leaves a gap), and
 # the 52-week high / low counts bhavTechnicals publishes (api/_bhav.py compute_breadth). The page works out
 # the day-to-day changes itself from consecutive rows.
+MP_DAYS = 780  # ~3 years of Indian trading days
 MP_YAHOO = [("brent", "BZ=F"), ("gold", "GC=F"), ("silver", "SI=F")]
 
 
@@ -3525,15 +3526,17 @@ def _run_market_pulse(symbols, name_map, sector_map):
     # the spine is the longest breadth series (the long-history "core" stocks, ~3 years); the all-stocks counts fill the dates they cover
     by_all = {r["date"]: r for r in breadth["rows"]}
     core = breadth.get("core") or []
-    spine_dates = [r["date"] for r in (core or breadth["rows"])]
     by_core = {r["date"]: r for r in core}
-    spine = pd.to_datetime(spine_dates)
     cols = {}
     nifty = _rfx_nse_frame(hist.get("days") or {}, "Nifty 500") if hist else None
     if nifty is None or nifty.empty:
         nifty = _gxc_fetch_history("^CRSLDX", period="5y")
     if nifty is not None and not nifty.empty:
         cols["nifty500"] = nifty["Close"].dropna()
+    # the 52-week counts only exist for the recent stretch (a count needs a year of lookback); the price series go back ~3 years, so the
+    # spine also takes the Nifty 500's own trading days — the counts are simply blank before the first one
+    spine_dates = sorted({r["date"] for r in (core or breadth["rows"])} | ({d.date().isoformat() for d in cols["nifty500"].index[-MP_DAYS:]} if "nifty500" in cols else set()))
+    spine = pd.to_datetime(spine_dates)
     for key, ticker in MP_YAHOO:
         h = _gxc_fetch_history(ticker, period="5y")
         if h is not None and not h.empty:
