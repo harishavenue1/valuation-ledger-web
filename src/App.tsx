@@ -21,6 +21,7 @@ const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const Directory = lazy(() => import("./pages/Directory"));
 const Business = lazy(() => import("./pages/Business"));
 import { BusinessNavBadge } from "./lib/businessAlerts";
+import { JournalNavBadge } from "./lib/journal";
 const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
 const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
 const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
@@ -28,6 +29,8 @@ const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
 const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
 const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
 const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
+const BlockbusterResults = lazy(() => import("./pages/BlockbusterResults"));
+const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 const Guide = lazy(() => import("./pages/Guide"));
@@ -216,6 +219,10 @@ export default function App() {
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
+              <NavLink to="/trade-journal" className={({ isActive }) => navClass(isActive)}>
+                📓 Journal
+                <JournalNavBadge />
+              </NavLink>
               <NavGroup
                 label="🔎 Screens"
                 items={[
@@ -224,6 +231,7 @@ export default function App() {
                   { to: "/technical-summary", label: "🏆 Technical" },
                   { to: "/all-technicals", label: "🔬 All Technicals" },
                   { to: "/all-fundamentals", label: "📚 All Fundamentals" },
+                  { to: "/blockbuster-results", label: "💥 Blockbuster Results" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
                   { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
@@ -299,6 +307,8 @@ export default function App() {
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
             <Route path="/mtf-playbook" element={<MTFPlaybook />} />
+            <Route path="/blockbuster-results" element={<BlockbusterResults />} />
+            <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />

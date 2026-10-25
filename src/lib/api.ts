@@ -432,6 +432,9 @@ export const api = {
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
 
+  getJournal: (): Promise<{ checklist: any[] | null; entries: any[] }> => req("/api/watchlist?journal=1"),
+  setJournal: (journal: { checklist: any[] | null; entries: any[] }): Promise<{ ok: boolean }> =>
+    req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "journal", tickers: [], journal }) }),
   setThemes: (themes: Record<string, string[]>): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "themes", tickers: [], themes }) }),
 
