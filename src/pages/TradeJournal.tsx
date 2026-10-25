@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { fmt, fmtSigned } from "../lib/model";
 import { PriceLink } from "../components/ScreenerTable";
-import { Check, Doc, Entry, InboxItem, NEAR_PCT, Review, Sell, buildBooks, ema33Level, isClosed, matchSale, stopLevel, stopState } from "../lib/journal";
+import { Check, Doc, Entry, InboxItem, NEAR_PCT, Review, Sell, alertHidden, buildBooks, ema33Level, isClosed, matchSale, stopLevel, stopState } from "../lib/journal";
 
 // Trade Journal — added 2026-10-25 ("a new menu page for checklist + buying record for future review, with reasons as
 // to why I buy, date, qty, price ... keep to process instead of emotions"), extended the same day with "a) is it above
@@ -570,15 +570,34 @@ export default function TradeJournal() {
   const alerts = useMemo(() => {
     const hit: { e: Entry; p: number }[] = [];
     const near: { e: Entry; p: number }[] = [];
+    const rearm: string[] = []; // entries whose cleared alert no longer applies (stock is fine again) — the clear is dropped
+    let hidden = 0;
     for (const e of ents) {
       if ((lotById.get(e.id)?.remaining ?? e.qty) <= 0) continue; // fully sold — nothing left to stop out
       const p = px.map.get(e.symbol)?.price;
-      const s = stopState(e, p);
-      if (s === "hit") hit.push({ e, p });
-      else if (s === "near") near.push({ e, p });
+      const st = stopState(e, p);
+      if (e.alertAck && st === "ok") rearm.push(e.id);
+      if (alertHidden(e, st)) {
+        hidden++;
+        continue;
+      }
+      if (st === "hit") hit.push({ e, p });
+      else if (st === "near") near.push({ e, p });
     }
-    return { hit, near };
+    return { hit, near, hidden, rearm };
   }, [ents, px, lotById]);
+  // drop clears that went stale (the stock recovered, or got worse) so the alert can fire again next time
+  useEffect(() => {
+    if (!loaded || alerts.rearm.length === 0) return;
+    update((d) => ({ ...d, entries: d.entries.map((e) => (alerts.rearm.includes(e.id) ? { ...e, alertAck: undefined } : e)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alerts.rearm.join(","), loaded]);
+  const clearAlerts = (items: { e: Entry }[], state: "hit" | "near", snoozeDays?: number) => {
+    const until = snoozeDays ? new Date(Date.now() + snoozeDays * 86400000).toISOString().slice(0, 10) : undefined;
+    const ids = new Set(items.map((i) => i.e.id));
+    update((d) => ({ ...d, entries: d.entries.map((e) => (ids.has(e.id) ? { ...e, alertAck: until ? { state, until } : { state } } : e)) }));
+  };
+  const showHidden = () => update((d) => ({ ...d, entries: d.entries.map((e) => (e.alertAck ? { ...e, alertAck: undefined } : e)) }));
 
   const streak = useMemo(() => {
     const es = doc.entries.filter((e) => !e.pending).sort((a, b) => b.date.localeCompare(a.date));
@@ -636,19 +655,38 @@ export default function TradeJournal() {
       </div>
       {err && <div className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">Could not load your journal ({err}). Nothing is saved until it loads — reload the page.</div>}
 
-      {(alerts.hit.length > 0 || alerts.near.length > 0) && (
+      {(alerts.hit.length > 0 || alerts.near.length > 0 || alerts.hidden > 0) && (
         <div className="my-3 space-y-2">
-          {alerts.hit.map(({ e, p }) => (
-            <div key={e.id} className="text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
-              🛑 <b>{e.symbol}</b> closed at ₹{fmt(p, 2)} — at or below your stop of ₹{fmt(e.stop!, 2)}{e.stopMode === "ema33w" ? " (the 33W EMA)" : ""}. Your plan said to exit — log the sale below.
+          {alerts.hit.map((it) => (
+            <div key={it.e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
+              <span>
+                🛑 <b>{it.e.symbol}</b> closed at ₹{fmt(it.p, 2)} — at or below your stop of ₹{fmt(it.e.stop!, 2)}{it.e.stopMode === "ema33w" ? " (the 33W EMA)" : ""}. Your plan said to exit.
+              </span>
+              <span className="ml-auto flex items-center gap-2 text-xs whitespace-nowrap">
+                <button onClick={() => { setSellEditId(null); setSf({ ...blankSell(), symbol: it.e.symbol, price: String(it.p) }); document.getElementById("tj-sell")?.scrollIntoView({ behavior: "smooth" }); }} className="px-2 py-1 rounded border border-red-400 hover:bg-red-100">💸 log the sale</button>
+                <button onClick={() => clearAlerts([it], "hit", 7)} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100" title="hide this alert for 7 days">💤 snooze 7d</button>
+                <button onClick={() => clearAlerts([it], "hit")} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100" title="hide until it changes — it comes back if the stock recovers and falls through the stop again">✕ dismiss</button>
+              </span>
             </div>
           ))}
-          {alerts.near.map(({ e, p }) => (
-            <div key={e.id} className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
-              ⚠️ <b>{e.symbol}</b> at ₹{fmt(p, 2)} is within {NEAR_PCT}% of your stop (₹{fmt(e.stop!, 2)}{e.stopMode === "ema33w" ? ", the 33W EMA" : ""}).
+          {alerts.near.map((it) => (
+            <div key={it.e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
+              <span>
+                ⚠️ <b>{it.e.symbol}</b> at ₹{fmt(it.p, 2)} is within {NEAR_PCT}% of your stop (₹{fmt(it.e.stop!, 2)}{it.e.stopMode === "ema33w" ? ", the 33W EMA" : ""}).
+              </span>
+              <span className="ml-auto flex items-center gap-2 text-xs whitespace-nowrap">
+                <button onClick={() => clearAlerts([it], "near", 7)} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100">💤 snooze 7d</button>
+                <button onClick={() => clearAlerts([it], "near")} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100">✕ dismiss</button>
+              </span>
             </div>
           ))}
-          <div className="text-[11px] text-slate-400">Based on the last close in the daily store{px.asOf ? ` (${px.asOf})` : ""}, refreshed each evening — not a live stop order.</div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400">
+            <span>Based on the last close in the daily store{px.asOf ? ` (${px.asOf})` : ""}, refreshed each evening — not a live stop order.</span>
+            {alerts.hit.length + alerts.near.length > 1 && (
+              <button onClick={() => { clearAlerts(alerts.hit, "hit"); clearAlerts(alerts.near, "near"); }} className="text-slate-500 hover:underline">✕ dismiss all</button>
+            )}
+            {alerts.hidden > 0 && <button onClick={showHidden} className="text-slate-500 hover:underline">{alerts.hidden} cleared alert{alerts.hidden === 1 ? "" : "s"} · show again</button>}
+          </div>
         </div>
       )}
 

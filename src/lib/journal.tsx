@@ -23,6 +23,9 @@ export type Entry = {
   // "ema33w" (the default, 2026-10-25 "by default set the stopLoss for all as 33WEMA") = the stop IS the live 33-week EMA,
   // read from the daily store and trailing up with it; "fixed" = the typed `stop` price
   stopMode?: "fixed" | "ema33w";
+  // a stop alert the user cleared (2026-10-25, "allow options to clear alerts"): hidden while the state it was cleared in
+  // is unchanged — until `until` for a snooze — and re-armed when the stock moves back to "ok" (cleaned up on the page)
+  alertAck?: { state: "hit" | "near"; until?: string };
   ema200Pct: number | null; // % above(+)/below(-) the 200D EMA on the day of the buy, from the store
   rsiW: number | null; // weekly RSI on the day of the buy, from the store
   setup: string;
@@ -137,6 +140,12 @@ export function buildBooks(entries: Entry[], sells: Sell[]): Map<string, SymbolB
   return books;
 }
 
+/** True when the user has cleared (or snoozed) the alert this entry is currently in. */
+export function alertHidden(e: Entry, state: StopState, todayIso: string = new Date().toISOString().slice(0, 10)): boolean {
+  const a = e.alertAck;
+  return !!a && a.state === state && (!a.until || todayIso <= a.until);
+}
+
 /** The weekly 33 EMA in ₹, from a daily-store row (price and its % distance above the EMA). */
 export const ema33Level = (row: any): number | null =>
   row && typeof row.price === "number" && typeof row.pct_33w_ema === "number" && row.price > 0 ? row.price / (1 + row.pct_33w_ema / 100) : null;
@@ -177,6 +186,7 @@ export function useStopAlerts(delayMs = 0): { hit: Entry[]; near: Entry[]; pendi
             if (!held.has(e.id)) continue;
             const row = px.get(e.symbol);
             const s = stopState(e, row?.price, stopLevel(e, row));
+            if (alertHidden(e, s)) continue;
             if (s === "hit") hit.push(e);
             else if (s === "near") near.push(e);
           }
