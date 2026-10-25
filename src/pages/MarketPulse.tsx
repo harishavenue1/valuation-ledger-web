@@ -1,0 +1,324 @@
+import { useMemo, useRef, useState } from "react";
+import { useData, useScreeners } from "../App";
+import RunButton from "../components/RunButton";
+import { MethodologyNote, ScreenerLoading, fmtNum, fmtSigned } from "../components/ScreenerTable";
+
+// 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
+// NIFTY500, # of Stocks in 52WH, # of Stocks in 52WLow") — one row per Indian trading day, built by
+// api/momentum_screeners.py's marketPulse runner. Day-to-day changes are worked out here from
+// consecutive rows, so a different range never needs a refetch.
+
+interface PulseRow {
+  date: string;
+  nifty500?: number | null;
+  brent?: number | null;
+  gold?: number | null;
+  silver?: number | null;
+  wh: number;
+  wl: number;
+  universe: number;
+}
+
+type Key = "nifty500" | "brent" | "gold" | "silver" | "wh" | "wl";
+
+const RANGES: { label: string; days: number }[] = [
+  { label: "1M", days: 22 },
+  { label: "3M", days: 66 },
+  { label: "6M", days: 132 },
+];
+
+const PRICE_SERIES: { key: Key; label: string; unit: string; color: string; digits: number }[] = [
+  { key: "nifty500", label: "Nifty 500", unit: "", color: "#6366f1", digits: 0 },
+  { key: "brent", label: "Crude Oil (Brent)", unit: "$/bbl", color: "#0891b2", digits: 2 },
+  { key: "gold", label: "Gold", unit: "$/oz", color: "#d97706", digits: 0 },
+  { key: "silver", label: "Silver", unit: "$/oz", color: "#64748b", digits: 2 },
+];
+
+const GREEN = "#16a34a";
+const RED = "#dc2626";
+
+const pct = (a: number | null | undefined, b: number | null | undefined) =>
+  a == null || b == null || b === 0 ? null : (a / b - 1) * 100;
+
+function Delta({ v, digits = 2, suffix = "", invert = false }: { v: number | null; digits?: number; suffix?: string; invert?: boolean }) {
+  if (v == null) return <span className="text-slate-300">—</span>;
+  const good = invert ? v <= 0 : v >= 0;
+  return <span className={good ? "text-emerald-600" : "text-red-600"}>{fmtSigned(v, digits)}{suffix}</span>;
+}
+
+interface LineSeries {
+  name: string;
+  color: string;
+  data: (number | null)[];
+}
+
+const W = 640;
+const H = 190;
+const PAD = { l: 54, r: 10, t: 10, b: 22 };
+
+function LineChart({ dates, series, digits, onHover }: { dates: string[]; series: LineSeries[]; digits: number; onHover: (i: number | null) => void }) {
+  const ref = useRef<SVGSVGElement>(null);
+  const [hi, setHi] = useState<number | null>(null);
+  const n = dates.length;
+  const vals = series.flatMap((s) => s.data).filter((v): v is number => v != null);
+  if (n < 2 || vals.length < 2) return <div className="text-xs text-slate-400 py-10 text-center">Not enough data yet</div>;
+  const lo = Math.min(...vals);
+  const hiV = Math.max(...vals);
+  const span = hiV - lo || Math.abs(hiV) * 0.02 || 1;
+  const y0 = lo >= 0 ? Math.max(0, lo - span * 0.06) : lo - span * 0.06; // a count or a price never needs an axis below zero
+  const y1 = hiV + span * 0.06;
+  const x = (i: number) => PAD.l + (i / (n - 1)) * (W - PAD.l - PAD.r);
+  const y = (v: number) => PAD.t + (1 - (v - y0) / (y1 - y0)) * (H - PAD.t - PAD.b);
+  const ticks = [0, 1, 2, 3].map((k) => y0 + ((y1 - y0) * k) / 3);
+  const path = (data: (number | null)[]) => {
+    let d = "";
+    data.forEach((v, i) => {
+      if (v == null) return;
+      d += `${d && data[i - 1] != null ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+    });
+    return d;
+  };
+  const move = (e: React.MouseEvent) => {
+    const r = ref.current?.getBoundingClientRect();
+    if (!r) return;
+    const px = ((e.clientX - r.left) / r.width) * W;
+    const i = Math.max(0, Math.min(n - 1, Math.round(((px - PAD.l) / (W - PAD.l - PAD.r)) * (n - 1))));
+    setHi(i);
+    onHover(i);
+  };
+  const leave = () => {
+    setHi(null);
+    onHover(null);
+  };
+  const short = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return (
+    <svg ref={ref} viewBox={`0 0 ${W} ${H}`} className="w-full h-auto select-none" onMouseMove={move} onMouseLeave={leave}>
+      {ticks.map((t, k) => (
+        <g key={k}>
+          <line x1={PAD.l} x2={W - PAD.r} y1={y(t)} y2={y(t)} className="stroke-slate-200" strokeWidth={1} />
+          <text x={PAD.l - 6} y={y(t) + 3} textAnchor="end" className="fill-slate-400" fontSize={10}>
+            {fmtNum(t, digits)}
+          </text>
+        </g>
+      ))}
+      {[0, Math.floor((n - 1) / 2), n - 1].map((i, k) => (
+        <text key={k} x={x(i)} y={H - 6} textAnchor={k === 0 ? "start" : k === 2 ? "end" : "middle"} className="fill-slate-400" fontSize={10}>
+          {short(dates[i])}
+        </text>
+      ))}
+      {series.map((s) => (
+        <path key={s.name} d={path(s.data)} fill="none" stroke={s.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      ))}
+      {hi != null && (
+        <g>
+          <line x1={x(hi)} x2={x(hi)} y1={PAD.t} y2={H - PAD.b} className="stroke-slate-400" strokeWidth={1} strokeDasharray="3 3" />
+          {series.map((s) => {
+            const v = s.data[hi];
+            return v == null ? null : <circle key={s.name} cx={x(hi)} cy={y(v)} r={4} fill={s.color} stroke="white" strokeWidth={2} />;
+          })}
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function ChartCard({
+  title,
+  unit,
+  rows,
+  series,
+  digits,
+  invert,
+}: {
+  title: string;
+  unit?: string;
+  rows: PulseRow[];
+  series: { key: Key; name: string; color: string }[];
+  digits: number;
+  invert?: Key[];
+}) {
+  const [hover, setHover] = useState<number | null>(null);
+  const dates = rows.map((r) => r.date);
+  const i = hover ?? rows.length - 1;
+  const row = rows[i];
+  const prev = rows[i - 1];
+  return (
+    <div className="border border-slate-200 rounded-lg p-3">
+      <div className="flex items-baseline gap-3 flex-wrap mb-1">
+        <div className="text-sm font-semibold">
+          {title} {unit && <span className="text-xs font-normal text-slate-400">{unit}</span>}
+        </div>
+        <div className="ml-auto flex items-baseline gap-3 text-xs tabular-nums">
+          {row &&
+            series.map((s) => {
+              const v = row[s.key] as number | null | undefined;
+              const p = prev?.[s.key] as number | null | undefined;
+              const isCount = s.key === "wh" || s.key === "wl";
+              const d = isCount ? (v != null && p != null ? v - p : null) : pct(v, p);
+              return (
+                <span key={s.key} className="whitespace-nowrap">
+                  <span style={{ color: s.color }}>●</span> {series.length > 1 && <span className="text-slate-500">{s.name} </span>}
+                  <b>{fmtNum(v, digits)}</b> <Delta v={d} digits={isCount ? 0 : 2} suffix={isCount ? "" : "%"} invert={invert?.includes(s.key)} />
+                </span>
+              );
+            })}
+          <span className="text-slate-400">{row?.date}</span>
+        </div>
+      </div>
+      <LineChart dates={dates} digits={digits} onHover={setHover} series={series.map((s) => ({ name: s.name, color: s.color, data: rows.map((r) => (r[s.key] as number | null | undefined) ?? null) }))} />
+    </div>
+  );
+}
+
+function Tile({ label, unit, value, digits, day, month, dayDigits, dayLabel, invert }: { label: string; unit?: string; value: number | null | undefined; digits: number; day: number | null; month: number | null; dayDigits: number; dayLabel: string; invert?: boolean }) {
+  return (
+    <div className="border border-slate-200 rounded-lg p-3">
+      <div className="text-xs text-slate-500">
+        {label} {unit && <span className="text-slate-400">{unit}</span>}
+      </div>
+      <div className="text-2xl font-semibold tabular-nums">{fmtNum(value, digits)}</div>
+      <div className="text-xs mt-1 flex gap-3 tabular-nums">
+        <span>
+          1D <Delta v={day} digits={dayDigits} suffix={dayLabel} invert={invert} />
+        </span>
+        <span>
+          1M <Delta v={month} digits={dayDigits} suffix={dayLabel} invert={invert} />
+        </span>
+      </div>
+    </div>
+  );
+}
+
+export default function MarketPulse() {
+  const { bundle } = useData();
+  const { ready } = useScreeners(["marketPulse"]);
+  const entry = bundle.momentum_screeners.marketPulse;
+  const [range, setRange] = useState(RANGES[1]);
+
+  const all: PulseRow[] = useMemo(() => [...((entry?.rows as PulseRow[]) ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [entry]);
+  const rows = useMemo(() => all.slice(-range.days), [all, range]);
+
+  if (!ready) return <ScreenerLoading label="Market Pulse" />;
+
+  const last = all[all.length - 1];
+  const prev = all[all.length - 2];
+  const monthAgo = all[all.length - 23];
+  const pctChg = (k: Key, ref?: PulseRow) => (last && ref ? pct(last[k] as number | null, ref[k] as number | null) : null);
+  const cntChg = (k: "wh" | "wl", ref?: PulseRow) => (last && ref ? last[k] - ref[k] : null);
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-1 flex-wrap">
+        <h1 className="text-xl font-semibold">📟 Market Pulse</h1>
+        <span className="text-slate-500 text-sm">Day-to-day: crude, gold, silver, Nifty 500 and 52-week highs / lows</span>
+        <span className="ml-auto flex items-center gap-2">
+          <span className="inline-flex rounded-md border border-slate-200 overflow-hidden text-xs">
+            {RANGES.map((r) => (
+              <button key={r.label} onClick={() => setRange(r)} className={`px-2.5 py-1 ${range.label === r.label ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                {r.label}
+              </button>
+            ))}
+          </span>
+          <RunButton screener="marketPulse" />
+        </span>
+      </div>
+      {entry?.as_of && <div className="text-xs text-slate-400 mb-2">as of {entry.as_of}</div>}
+
+      <MethodologyNote>
+        One row per Indian trading day. <b>Nifty 500</b> is NSE's own index close. <b>Crude Oil (Brent)</b>, <b>Gold</b> and <b>Silver</b> are the
+        front-month futures closes in <b>US dollars</b> (Yahoo: BZ=F, GC=F, SI=F) — the last close on or before each Indian trading day, so an
+        Indian holiday never leaves a gap; they are global prices, not MCX rupee prices. <b>52W Highs / Lows</b> count the stocks (all NSE-listed, price
+        above ₹10, at least a year of history) whose high that day was <b>above the highest high of the previous 252 sessions</b>, or whose low
+        was below the lowest low — a stock that just matches its old high does not count, and a frozen price never counts. Prices are
+        split/bonus-adjusted from our own daily NSE store. <b>Net</b> = highs minus lows; more highs than lows means a healthy market, a
+        cluster of lows means selling pressure. Everything refreshes each trading evening once NSE's file lands (~6 PM IST).
+      </MethodologyNote>
+
+      {all.length < 2 ? (
+        <div className="text-sm text-slate-400 text-center py-16">No Market Pulse data yet — click Run now above, or wait for the next evening run.</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+            {PRICE_SERIES.map((s) => (
+              <Tile key={s.key} label={s.label} unit={s.unit} value={last?.[s.key] as number | null} digits={s.digits} day={pctChg(s.key, prev)} month={pctChg(s.key, monthAgo)} dayDigits={2} dayLabel="%" />
+            ))}
+            <Tile label="52W Highs" unit="stocks" value={last?.wh} digits={0} day={cntChg("wh", prev)} month={cntChg("wh", monthAgo)} dayDigits={0} dayLabel="" />
+            <Tile label="52W Lows" unit="stocks" value={last?.wl} digits={0} day={cntChg("wl", prev)} month={cntChg("wl", monthAgo)} dayDigits={0} dayLabel="" invert />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            {PRICE_SERIES.map((s) => (
+              <ChartCard key={s.key} title={s.label} unit={s.unit} rows={rows} digits={s.digits} series={[{ key: s.key, name: s.label, color: s.color }]} />
+            ))}
+          </div>
+          <div className="mb-6">
+            <ChartCard
+              title="Stocks at 52-week highs vs lows"
+              unit="count per day"
+              rows={rows}
+              digits={0}
+              invert={["wl"]}
+              series={[
+                { key: "wh", name: "Highs", color: GREEN },
+                { key: "wl", name: "Lows", color: RED },
+              ]}
+            />
+          </div>
+
+          <div className="overflow-auto max-h-[28rem] border border-slate-200 rounded-lg">
+            <table className="w-full text-xs tabular-nums">
+              <thead className="sticky top-0 bg-slate-100 text-slate-600">
+                <tr>
+                  <th className="text-left px-2 py-2">Date</th>
+                  {PRICE_SERIES.map((s) => (
+                    <th key={s.key} colSpan={2} className="px-2 py-2 text-center border-l border-slate-200">
+                      {s.label}
+                    </th>
+                  ))}
+                  <th colSpan={2} className="px-2 py-2 text-center border-l border-slate-200">
+                    52W Highs
+                  </th>
+                  <th colSpan={2} className="px-2 py-2 text-center border-l border-slate-200">
+                    52W Lows
+                  </th>
+                  <th className="px-2 py-2 text-right border-l border-slate-200">Net</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...rows].reverse().map((r) => {
+                  const p = all[all.findIndex((x) => x.date === r.date) - 1];
+                  return (
+                    <tr key={r.date} className="border-t border-slate-100 hover:bg-slate-50">
+                      <td className="px-2 py-1.5 text-left whitespace-nowrap">{r.date}</td>
+                      {PRICE_SERIES.map((s) => (
+                        <PriceCells key={s.key} v={r[s.key] as number | null | undefined} p={p?.[s.key] as number | null | undefined} digits={s.digits} />
+                      ))}
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wh}</td>
+                      <td className="px-2 py-1.5 text-right">{p ? <Delta v={r.wh - p.wh} digits={0} /> : "—"}</td>
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wl}</td>
+                      <td className="px-2 py-1.5 text-right">{p ? <Delta v={r.wl - p.wl} digits={0} invert /> : "—"}</td>
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">
+                        <Delta v={r.wh - r.wl} digits={0} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PriceCells({ v, p, digits }: { v: number | null | undefined; p: number | null | undefined; digits: number }) {
+  return (
+    <>
+      <td className="px-2 py-1.5 text-right border-l border-slate-100">{fmtNum(v, digits)}</td>
+      <td className="px-2 py-1.5 text-right">
+        <Delta v={pct(v, p)} suffix="%" />
+      </td>
+    </>
+  );
+}

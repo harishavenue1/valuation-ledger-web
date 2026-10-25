@@ -17,6 +17,7 @@ const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
 const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
 const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
 const FIITrend = lazy(() => import("./pages/FIITrend"));
+const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const Directory = lazy(() => import("./pages/Directory"));
 const Business = lazy(() => import("./pages/Business"));
 import { BusinessNavBadge } from "./lib/businessAlerts";
@@ -230,6 +231,7 @@ export default function App() {
                 label="🌍 Market"
                 items={[
                   { to: "/global-macro", label: "🌍 Macro" },
+                  { to: "/market-pulse", label: "📟 Pulse" },
                   { to: "/fii-trend", label: "🌊 FII Trend" },
                   { to: "/strategic-alpha", label: "📡 Strategic" },
                   { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
@@ -283,6 +285,7 @@ export default function App() {
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
+            <Route path="/market-pulse" element={<MarketPulse />} />
             <Route path="/fii-trend" element={<FIITrend />} />
             <Route path="/sector-directory" element={<Directory />} />
             <Route path="/portfolio-charts" element={<PortfolioCharts />} />

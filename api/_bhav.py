@@ -1507,6 +1507,39 @@ def compute_uprun_hold(df, rows):
     return out, funnel
 
 
+# ── Market Pulse breadth (own page, 2026-10-25) ──
+#
+# Day-by-day count of stocks making a new 52-week high / low, from the same adjusted daily store every
+# other scan reads. A stock "makes a 52W high" on a day when that day's high is above the highest high of the
+# previous 252 sessions (strictly above, so a frozen price never counts); the low side mirrors it. A stock only counts on days where it has a
+# full year behind it (240+ of the last 252 sessions), so a fresh listing never shows as a 52-week low, and
+# anything priced at or under Rs 10 is left out (the other scans use the same floor). Recomputed from the
+# store on every publish, so there is no state to accumulate.
+
+BREADTH = {"window": 252, "min_periods": 240, "min_price": 10, "days": 130}
+
+
+def compute_breadth(df):
+    if df.empty:
+        return []
+    hi = df.pivot(index="date", columns="symbol", values="h").sort_index()
+    lo = df.pivot(index="date", columns="symbol", values="l").sort_index()
+    cl = df.pivot(index="date", columns="symbol", values="c").sort_index()
+    w, mp = BREADTH["window"], BREADTH["min_periods"]
+    hh = hi.shift(1).rolling(w, min_periods=mp).max()
+    ll = lo.shift(1).rolling(w, min_periods=mp).min()
+    valid = hh.notna() & (cl > BREADTH["min_price"])
+    wh = ((hi > hh) & valid).sum(axis=1)
+    wl = ((lo < ll) & valid).sum(axis=1)
+    uni = valid.sum(axis=1)
+    out = []
+    for d in hi.index[-BREADTH["days"]:]:
+        if int(uni[d]) < 500:  # a partial or holiday-copy day — not a real count
+            continue
+        out.append({"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])})
+    return out
+
+
 # ── "Momentum Pullback Scan" (CMA Gurvinder Malhotra @cmagurvinder, 2026-10-04) ──
 #
 # Key filters as printed in his infographic: Market Cap > Rs1,000 Cr; Close > the
@@ -2057,6 +2090,11 @@ def publish(budget_s=240):
         up_rows, up_funnel = compute_uprun_hold(df, rows)
     except Exception as e:
         up_funnel = {"error": str(e)[:120]}
+    breadth = []
+    try:
+        breadth = compute_breadth(df)
+    except Exception:
+        breadth = []
     dir_rows, dir_counts = [], {}
     try:
         dir_rows, dir_counts = compute_index_directory(rows, df)
@@ -2093,6 +2131,8 @@ def publish(budget_s=240):
                 set_meta(conn, MICRO_SNAPSHOT_KEY, mc_snap)
                 set_meta(conn, "bhav_scan_microcap", {"as_of": stats.get("latest_trade_date"), "rows": mc_rows, "funnel": mc_funnel, "snapshot": mc_snap, "params": MICRO})
             set_meta(conn, "bhav_scan_pullback", {"as_of": stats.get("latest_trade_date"), "rows": pb_rows, "funnel": pb_funnel, "filters": PB})
+            if breadth:
+                set_meta(conn, "bhav_breadth", {"as_of": stats.get("latest_trade_date"), "rows": breadth, "params": BREADTH})
             set_meta(conn, "bhav_scan_uprun", {"as_of": stats.get("latest_trade_date"), "rows": up_rows, "funnel": up_funnel, "filters": UP})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})

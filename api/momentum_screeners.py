@@ -3502,6 +3502,48 @@ def _run_uprun_hold(symbols, name_map, sector_map):
     return {"label": "Uprun Hold", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
 
 
+# ── marketPulse ──────────────────────────────────────────────────────────────
+#
+# 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
+# NIFTY500, # of Stocks in 52WH, # of Stocks in 52WLow") — one row per Indian trading day: the Nifty 500 close
+# (NSE's own index file history, already kept for ratesFx), Brent / gold / silver futures closes in USD from
+# Yahoo (the last close on or before each Indian trading day, so an Indian holiday never leaves a gap), and
+# the 52-week high / low counts bhavTechnicals publishes (api/_bhav.py compute_breadth). The page works out
+# the day-to-day changes itself from consecutive rows.
+MP_YAHOO = [("brent", "BZ=F"), ("gold", "GC=F"), ("silver", "SI=F")]
+
+
+def _run_market_pulse(symbols, name_map, sector_map):
+    conn = get_conn()
+    try:
+        breadth = get_meta(conn, "bhav_breadth", None)
+        hist = get_meta(conn, RFX_NSE_HISTORY_KEY, None) or {}
+    finally:
+        conn.close()
+    if not breadth or not breadth.get("rows"):
+        return None, "the 52-week breadth has not been published yet (bhavTechnicals computes it each evening)"
+    spine = pd.to_datetime([r["date"] for r in breadth["rows"]])
+    cols = {}
+    nifty = _rfx_nse_frame(hist, "Nifty 500") if hist else None
+    if nifty is None or nifty.empty:
+        nifty = _gxc_fetch_history("^CRSLDX", period="1y")
+    if nifty is not None and not nifty.empty:
+        cols["nifty500"] = nifty["Close"].dropna()
+    for key, ticker in MP_YAHOO:
+        h = _gxc_fetch_history(ticker, period="1y")
+        if h is not None and not h.empty:
+            cols[key] = h["Close"].dropna()
+    rows = []
+    for b in breadth["rows"]:
+        rows.append({"date": b["date"], "wh": b["wh"], "wl": b["wl"], "universe": b["universe"]})
+    for key, ser in cols.items():
+        ser = ser[~ser.index.duplicated(keep="last")].sort_index()
+        aligned = ser.reindex(ser.index.union(spine)).ffill().reindex(spine)
+        for r, v in zip(rows, aligned):
+            r[key] = None if pd.isna(v) else round(float(v), 2)
+    return {"label": "Market Pulse", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": breadth.get("as_of")}, None
+
+
 def _run_gap_hold(symbols, name_map, sector_map):
     """The "Gap-Up Hold" tab (@FibTraderR): reads what bhavTechnicals computed
     for the latest session (api/_bhav.py compute_gap_hold) — all NSE stocks."""
@@ -6572,7 +6614,7 @@ TECHNICAL_BATCH_WEEKLY = [
 # all-stocks technicals -> patch the weekly DC/RSI patterns into them -> the scans that read what was published.
 # As separate crons (13:30 store, 13:50 publish, 13:58-14:05 scans/patterns) nothing guaranteed that order — a late or
 # skipped store run meant the publish/scans re-ran on yesterday's data, and a publish after the patterns wiped them.
-BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory"]
+BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory", "marketPulse"]
 
 TECHNICAL_BATCHES = {
     "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
@@ -6618,6 +6660,7 @@ SCREENER_RUNNERS = {
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
     "uprunHold": _run_uprun_hold,
+    "marketPulse": _run_market_pulse,
     "microcapMom": _run_microcap_mom,
     "indexDirectory": _run_index_directory,
     "bhavUseStore": _run_bhav_use_store,

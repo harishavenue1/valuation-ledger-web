@@ -47,6 +47,7 @@ const CLOUD_SCREENERS = new Set([
   "gapHold",
   "pullBackMom",
   "uprunHold",
+  "marketPulse",
   "microcapMom",
   "indexDirectory",
   "technicalSummary",
