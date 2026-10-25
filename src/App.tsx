@@ -1,5 +1,5 @@
 import { Suspense, lazy, useEffect, useRef, useState, createContext, useContext } from "react";
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiError, Bundle } from "./lib/api";
 import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
@@ -204,6 +204,9 @@ export default function App() {
                 changed. A group lights up when any page inside it is open. */}
             <nav className="flex items-center gap-3 text-xs whitespace-nowrap">
               <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
+                📟 Pulse
+              </NavLink>
+              <NavLink to="/summary" className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
               <NavGroup
@@ -241,7 +244,6 @@ export default function App() {
                 label="🌍 Market"
                 items={[
                   { to: "/global-macro", label: "🌍 Macro" },
-                  { to: "/market-pulse", label: "📟 Pulse" },
                   { to: "/fii-trend", label: "🌊 FII Trend" },
                   { to: "/strategic-alpha", label: "📡 Strategic" },
                   { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
@@ -282,7 +284,8 @@ export default function App() {
           {/* every page except the landing one is its own chunk (2026-10-04): the first load no longer pays for the charting library, the 20+ other pages... */}
           <Suspense fallback={<div className="text-sm text-slate-400 text-center py-16">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<Summary />} />
+            <Route path="/" element={<MarketPulse />} />
+            <Route path="/summary" element={<Summary />} />
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
@@ -295,7 +298,7 @@ export default function App() {
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
-            <Route path="/market-pulse" element={<MarketPulse />} />
+            <Route path="/market-pulse" element={<Navigate to="/" replace />} />
             <Route path="/fii-trend" element={<FIITrend />} />
             <Route path="/sector-directory" element={<Directory />} />
             <Route path="/portfolio-charts" element={<PortfolioCharts />} />
