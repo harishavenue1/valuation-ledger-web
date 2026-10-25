@@ -2964,6 +2964,10 @@ RFX_YAHOO_LIVE = {
     "Nifty Smallcap 250": "NIFTYSMLCAP250.NS",
     "Nifty Microcap 250": "NIFTY_MICROCAP250.NS",
 }
+# Read from the same daily NSE file and kept in the same history, but not shown as a ratesFx row: the 10-year benchmark G-Sec
+# clean-price index, which marketPulse turns into an India 10Y yield history (2026-10-25, "USDINR, US Bond & IN Bond Yields ...
+# and all correlations") because Yahoo carries no Indian yield series at all.
+RFX_NSE_EXTRA = ["Nifty 10 yr Benchmark G-Sec (Clean Price)"]
 RFX_NSE_HISTORY_KEY = "rfx_nse_history"
 RFX_HISTORY_DAYS = 1825  # 5y, same window the ETF/currency tables' "ATH" is bounded by
 
@@ -2999,7 +3003,7 @@ def _rfx_fetch_nse_day(d, session):
     if r.status_code == 404:
         return d, None
     r.raise_for_status()
-    wanted = {spec[1].lower(): spec[1] for spec in RFX_NSE_INDICES}
+    wanted = {n.lower(): n for n in [spec[1] for spec in RFX_NSE_INDICES] + RFX_NSE_EXTRA}
     out = {}
     for row in csv.DictReader(io.StringIO(r.text)):
         name = wanted.get(row.get("Index Name", "").strip().lower())
@@ -3041,7 +3045,7 @@ def _rfx_nse_history_update(time_budget_s=200):
     # bars on the days already stored: re-fetch those days (the same daily file
     # carries every index) until it does. A day NSE never published stays in
     # `checked` and is not asked again.
-    wanted = {spec[1] for spec in RFX_NSE_INDICES}
+    wanted = {spec[1] for spec in RFX_NSE_INDICES} | set(RFX_NSE_EXTRA)
     sig = "|".join(sorted(wanted))
     refetched = set(hist.get("refetched") or []) if hist.get("sig") == sig else set()  # days already re-read for THIS index set
     incomplete = {k for k, v in days.items() if not wanted.issubset(v) and k not in refetched}
@@ -3511,7 +3515,100 @@ def _run_uprun_hold(symbols, name_map, sector_map):
 # the 52-week high / low counts bhavTechnicals publishes (api/_bhav.py compute_breadth). The page works out
 # the day-to-day changes itself from consecutive rows.
 MP_DAYS = 780  # ~3 years of Indian trading days
-MP_YAHOO = [("brent", "BZ=F"), ("gold", "GC=F"), ("silver", "SI=F")]
+MP_YAHOO = [("brent", "BZ=F"), ("gold", "GC=F"), ("silver", "SI=F"),
+            # macro / "geopolitical" drivers (2026-10-25): the rupee, the dollar, US yields (10Y and the 3-month bill, for the curve), both VIXes, the S&P 500
+            ("usdinr", "USDINR=X"), ("dxy", "DX-Y.NYB"), ("us10y", "^TNX"), ("us3m", "^IRX"), ("vix", "^VIX"), ("indiavix", "^INDIAVIX"), ("sp500", "^GSPC")]
+MP_MACRO_KEYS = {"usdinr", "dxy", "us10y", "us3m", "vix", "indiavix", "sp500", "in10y"}
+MP_IN10Y_KEY = "pulse_in10y"  # {date: India 10Y yield %} — real readings, one added each run (CNBC quote + its 5-day bars)
+MP_IN10Y_DURATION = 6.5  # modified duration of the 10Y benchmark, for turning the gilt-index price history into yield moves
+
+
+MP_FIIDII_KEY = "pulse_fiidii"  # {date: [fii net, dii net, fii buy, fii sell, dii buy, dii sell]} in Rs Cr — a month is read each run, so the store keeps growing
+MP_FIIDII_URL = "https://trendlyne.com/macro-data/fii-dii/latest/cash-pastmonth/"
+
+
+def _mp_fiidii_fetch():
+    """(daily {date: [...]}, monthly [(month-end date, fii net, dii net)]) from Trendlyne's FII / DII cash-segment page (NSE + BSE,
+    provisional numbers as the exchanges publish them each evening). The page embeds its tables as JSON: the "past month" table has one
+    row per trading day, the "monthly" table one row per month back to 2013. nseindia.com's own fiidiiTradeReact API answers from a Mac
+    but times out from Vercel, which is why this source is used."""
+    import html as _html
+    import json
+
+    r = requests.get(MP_FIIDII_URL, headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}, timeout=25)
+    r.raise_for_status()
+    daily, monthly = {}, []
+    for m in re.finditer(r' data-jsondata="([^"]*)"', r.text):
+        ctx = r.text[max(0, m.start() - 200):m.start()]
+        kind = "d" if "cash-table-main-pastmonth" in ctx else "m" if "cash-table-main-monthly" in ctx else None
+        if not kind:
+            continue
+        try:
+            data = json.loads(_html.unescape(m.group(1))).get("data") or []
+        except Exception:
+            continue
+        for row in data:
+            if not isinstance(row[0], str) or not re.match(r"^\d{4}-\d{2}-\d{2}$", row[0]) or len(row) < 7:
+                continue  # the "Last 30 Days / 2 Weeks / 1 Week" summary rows
+            fb, fs, fn, dn, ds, db = row[1:7]
+            if kind == "d":
+                daily[row[0]] = [fn, dn, fb, fs, db, ds]
+            else:
+                monthly.append((row[0], fn, dn))
+    return daily, sorted(monthly)[-37:]
+
+
+def _mp_in10y_real():
+    """India 10Y government-bond yield readings from CNBC (the only free source found that is not blocked from Vercel): the latest
+    quote plus the last five days of one-minute bars, reduced to one reading per Indian day = the last bar at or before 07:30 US
+    Eastern (5 pm IST, after the Indian bond market closes). Returns {iso date: yield %}."""
+    out = {}
+    hdr = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get("https://ts-api.cnbc.com/harmony/app/charts/5D.json", params={"symbol": "IN10Y-IN"}, headers=hdr, timeout=15)
+        for b in (r.json().get("barData") or {}).get("priceBars") or []:
+            t = str(b.get("tradeTime") or "")
+            if len(t) >= 14 and t[8:14] <= "073059":
+                v = _rfx_to_float(b.get("close"))
+                if v and 1 < v < 20:
+                    out[f"{t[0:4]}-{t[4:6]}-{t[6:8]}"] = v  # bars are in time order, so the last one at or before 07:30 wins
+    except Exception:
+        pass
+    try:
+        r = requests.get("https://quote.cnbc.com/quote-html-webservice/restQuote/symbolType/symbol", params={"symbols": "IN10Y-IN", "output": "json"}, headers=hdr, timeout=15)
+        q = r.json()["FormattedQuoteResult"]["FormattedQuote"][0]
+        v = _rfx_to_float(str(q.get("last", "")).replace("%", ""))
+        d = str(q.get("last_time", ""))[:10]
+        if v and 1 < v < 20 and len(d) == 10:
+            out[d] = v
+    except Exception:
+        pass
+    return out
+
+
+def _mp_in10y_series(days, conn):
+    """(Series of India 10Y yield %, set of ISO dates that are estimates). Real CNBC readings are stored run by run; before the first one
+    the yield is ESTIMATED from the Nifty 10-yr Benchmark G-Sec clean-price index (yield change ~ -price change / duration), anchored on
+    the earliest real reading so the two join without a jump. Daily changes are good to a basis point or two; the level drifts over months."""
+    store = get_meta(conn, MP_IN10Y_KEY, None) or {}
+    new = _mp_in10y_real()
+    if new:
+        store.update(new)
+        set_meta(conn, MP_IN10Y_KEY, dict(sorted(store.items())[-1500:]))
+    px = _rfx_nse_frame(days, RFX_NSE_EXTRA[0]) if days else None
+    real = pd.Series({pd.Timestamp(k): v for k, v in store.items()}).sort_index() if store else pd.Series(dtype=float)
+    if px is None or px.empty or real.empty:
+        return (real if not real.empty else None), set()
+    p = px["Close"].dropna()
+    anchor = real.index[0]
+    base = p[p.index <= anchor]
+    if base.empty:
+        return real, set()
+    p0 = float(base.iloc[-1])
+    est = (float(real.iloc[0]) - (p / p0 - 1) * 100 / MP_IN10Y_DURATION)
+    est = est[est.index < anchor]
+    out = pd.concat([est, real]).sort_index()
+    return out, {d.date().isoformat() for d in est.index}
 
 
 def _run_market_pulse(symbols, name_map, sector_map):
@@ -3541,6 +3638,33 @@ def _run_market_pulse(symbols, name_map, sector_map):
         h = _gxc_fetch_history(ticker, period="5y")
         if h is not None and not h.empty:
             cols[key] = h["Close"].dropna()
+    in10y_est = set()
+    try:
+        conn = get_conn()
+        try:
+            ys, in10y_est = _mp_in10y_series((hist or {}).get("days") or {}, conn)
+        finally:
+            conn.close()
+        if ys is not None and len(ys):
+            cols["in10y"] = ys
+    except Exception:
+        pass
+    fiidii, months = {}, []
+    try:
+        conn = get_conn()
+        try:
+            fiidii = get_meta(conn, MP_FIIDII_KEY, None) or {}
+            try:
+                got, months = _mp_fiidii_fetch()
+                if got:
+                    fiidii.update(got)
+                    set_meta(conn, MP_FIIDII_KEY, dict(sorted(fiidii.items())[-1500:]))
+            except Exception:
+                pass
+        finally:
+            conn.close()
+    except Exception:
+        pass
     rows = []
     for d in spine_dates:
         a, c = by_all.get(d), by_core.get(d)
@@ -3550,7 +3674,15 @@ def _run_market_pulse(symbols, name_map, sector_map):
         ser = ser[~ser.index.duplicated(keep="last")].sort_index()
         aligned = ser.reindex(ser.index.union(spine)).ffill().reindex(spine)
         for r, v in zip(rows, aligned):
-            r[key] = None if pd.isna(v) else round(float(v), 2)
+            r[key] = None if pd.isna(v) else round(float(v), 3 if key in MP_MACRO_KEYS else 2)
+    for r in rows:
+        if r["date"] in in10y_est:
+            r["in10y_est"] = 1
+        f = fiidii.get(r["date"])
+        if f:
+            r["fii"], r["dii"], r["fii_buy"], r["fii_sell"], r["dii_buy"], r["dii_sell"] = f
+    for d, fn, dn in months:  # one row per month (mrow) for the long FII / DII history; the page keeps them apart from the daily rows
+        rows.append({"date": d, "mrow": 1, "fii": fn, "dii": dn})
     return {"label": "Market Pulse", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": breadth.get("as_of")}, None
 
 
