@@ -1228,7 +1228,7 @@ export default function TradeJournal() {
               const now = soldOut ? exit : live;
               const plPct = soldOut ? (lot!.realized / (lot!.sold * e.price)) * 100 : now !== undefined ? (now / e.price - 1) * 100 : null;
               const sc = score(e);
-              const rk = e.stop0 !== null ? e.qty * (e.price - e.stop0) : null;
+              const rk = e.stop0 !== null && e.stop0 < e.price ? e.qty * (e.price - e.stop0) : null; // blank when the stop sits above the buy price (bought below the 33W EMA)
               const ss = soldOut ? "none" : stopState(e, live);
               const isOpen = open === e.id;
               const reviewed = !!(e.review && (e.review.lesson || e.review.plan || e.review.exitPrice));
