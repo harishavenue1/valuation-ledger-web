@@ -319,7 +319,9 @@ export default function TradeJournal() {
     api
       .getJournal()
       .then((d) => {
-        setDoc({ checklist: d.checklist ?? null, entries: d.entries ?? [], sells: d.sells ?? [] });
+        // a stop typed then cleared used to be stored as 0 — that means "no stop"
+        const nz = (v: any) => (typeof v === "number" && v > 0 ? v : null);
+        setDoc({ checklist: d.checklist ?? null, entries: (d.entries ?? []).map((e: Entry) => ({ ...e, stop: nz(e.stop), stop0: nz(e.stop0) })), sells: d.sells ?? [] });
         setLoaded(true);
         mergeInbox(d.inbox ?? []);
       })

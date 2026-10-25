@@ -135,7 +135,7 @@ export function buildBooks(entries: Entry[], sells: Sell[]): Map<string, SymbolB
 }
 
 export function stopState(e: Entry, price: number | undefined): StopState {
-  if (isClosed(e) || e.stop === null || price === undefined || !Number.isFinite(price)) return "none";
+  if (isClosed(e) || e.stop === null || !(e.stop > 0) || price === undefined || !Number.isFinite(price)) return "none";
   if (price <= e.stop) return "hit";
   if (price <= e.stop * (1 + NEAR_PCT / 100)) return "near";
   return "ok";
