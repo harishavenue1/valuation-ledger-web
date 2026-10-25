@@ -26,6 +26,11 @@ export interface PulseRow {
   us3m?: number | null;
   in10y?: number | null;
   in10y_est?: number; // 1 = estimated from the gilt index (before the first real CNBC reading)
+  // policy rates in %: the US effective Fed funds rate with its target range, and the RBI repo rate
+  effr?: number | null;
+  fedlo?: number | null;
+  fedhi?: number | null;
+  repo?: number | null;
   vix?: number | null;
   indiavix?: number | null;
   sp500?: number | null;
@@ -40,15 +45,18 @@ export interface PulseRow {
   // derived on the page: India 10Y minus US 10Y, and the US 10Y minus the 3-month bill (negative = inverted curve), both in percentage points
   spread?: number | null;
   curve?: number | null;
+  repoGap?: number | null; // RBI repo minus the effective Fed funds rate
+  usTerm?: number | null; // US 10Y minus Fed funds
+  inTerm?: number | null; // India 10Y minus the repo rate
   wh_core?: number | null;
   wl_core?: number | null;
   universe_core?: number | null;
 }
 
-export type Key = "nifty500" | "brent" | "gold" | "silver" | "wh" | "wl" | "usdinr" | "dxy" | "us10y" | "us3m" | "in10y" | "vix" | "indiavix" | "sp500" | "spread" | "curve" | "fii" | "dii";
+export type Key = "nifty500" | "brent" | "gold" | "silver" | "wh" | "wl" | "usdinr" | "dxy" | "us10y" | "us3m" | "in10y" | "vix" | "indiavix" | "sp500" | "spread" | "curve" | "effr" | "fedhi" | "repo" | "repoGap" | "usTerm" | "inTerm" | "fii" | "dii";
 
 // shown as a change in basis points (or Rs Cr for the flows) rather than a % change
-export const YIELD_KEYS: Key[] = ["us10y", "us3m", "in10y", "spread", "curve"];
+export const YIELD_KEYS: Key[] = ["us10y", "us3m", "in10y", "spread", "curve", "effr", "fedhi", "repo", "repoGap", "usTerm", "inTerm"];
 
 
 export const GREEN = "#16a34a";

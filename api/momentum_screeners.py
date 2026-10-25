@@ -3518,7 +3518,7 @@ MP_DAYS = 780  # ~3 years of Indian trading days
 MP_YAHOO = [("brent", "BZ=F"), ("gold", "GC=F"), ("silver", "SI=F"),
             # macro / "geopolitical" drivers (2026-10-25): the rupee, the dollar, US yields (10Y and the 3-month bill, for the curve), both VIXes, the S&P 500
             ("usdinr", "USDINR=X"), ("dxy", "DX-Y.NYB"), ("us10y", "^TNX"), ("us3m", "^IRX"), ("vix", "^VIX"), ("indiavix", "^INDIAVIX"), ("sp500", "^GSPC")]
-MP_MACRO_KEYS = {"usdinr", "dxy", "us10y", "us3m", "vix", "indiavix", "sp500", "in10y"}
+MP_MACRO_KEYS = {"usdinr", "dxy", "us10y", "us3m", "vix", "indiavix", "sp500", "in10y", "effr", "fedlo", "fedhi", "repo"}
 MP_IN10Y_KEY = "pulse_in10y"  # {date: India 10Y yield %} — real readings, one added each run (CNBC quote + its 5-day bars)
 MP_IN10Y_DURATION = 6.5  # modified duration of the 10Y benchmark, for turning the gilt-index price history into yield moves
 
@@ -3556,6 +3556,42 @@ def _mp_fiidii_fetch():
             else:
                 monthly.append((row[0], fn, dn))
     return daily, sorted(monthly)[-37:]
+
+
+MP_REPO_KEY = "pulse_repo"  # {date: RBI policy repo rate %} — a step list: the date each rate was first seen / took effect
+# RBI repo-rate decisions (effective dates), from the RBI's own announcements — the rates before the first live reading the app
+# recorded. The live homepage value is read each run and appended when it differs from the last step, so later changes record themselves.
+MP_REPO_SEED = {"2022-12-07": 6.25, "2023-02-08": 6.50, "2025-02-07": 6.25, "2025-04-09": 6.00, "2025-06-06": 5.50}
+
+
+def _mp_policy_rates(spine_start, conn):
+    """({'effr': Series, 'fedlo': Series, 'fedhi': Series, 'repo': Series}, ...) — the US Fed funds rate and target range (NY Fed's
+    reference-rate API: daily effective rate with the target range in force; reachable from Vercel, unlike FRED) and the RBI repo rate."""
+    out = {}
+    hdr = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get("https://markets.newyorkfed.org/api/rates/unsecured/effr/search.json", params={"startDate": spine_start, "endDate": date.today().isoformat(), "type": "rate"}, headers=hdr, timeout=20)
+        rr = r.json().get("refRates") or []
+        idx = pd.to_datetime([x["effectiveDate"] for x in rr])
+        for key, f in (("effr", "percentRate"), ("fedlo", "targetRateFrom"), ("fedhi", "targetRateTo")):
+            out[key] = pd.Series([x.get(f) for x in rr], index=idx, dtype=float).sort_index()
+    except Exception:
+        pass
+    store = get_meta(conn, MP_REPO_KEY, None) or dict(MP_REPO_SEED)
+    try:
+        r = requests.get("https://www.rbi.org.in/", headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}, timeout=20)
+        m = re.search(r"Policy\s*Repo\s*Rate\s*:\s*([0-9.]+)\s*%", re.sub(r"<[^>]+>|&nbsp;", " ", r.text))
+        live = float(m.group(1)) if m else None
+        if live and 1 < live < 15:
+            steps = sorted(store.items())
+            if not steps or steps[-1][1] != live:
+                store[date.today().isoformat()] = live  # first day the change was seen — the real effective date is the policy day, which the next line can't know
+                set_meta(conn, MP_REPO_KEY, dict(sorted(store.items())))
+    except Exception:
+        pass
+    if store:
+        out["repo"] = pd.Series({pd.Timestamp(k): v for k, v in store.items()}).sort_index()
+    return out
 
 
 def _mp_in10y_real():
@@ -3643,6 +3679,7 @@ def _run_market_pulse(symbols, name_map, sector_map):
         conn = get_conn()
         try:
             ys, in10y_est = _mp_in10y_series((hist or {}).get("days") or {}, conn)
+            cols.update(_mp_policy_rates(spine_dates[0], conn))
         finally:
             conn.close()
         if ys is not None and len(ys):

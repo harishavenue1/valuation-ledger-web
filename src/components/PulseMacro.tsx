@@ -17,6 +17,9 @@ export function withMacroDerived(rows: PulseRow[]): PulseRow[] {
     ...r,
     spread: r.in10y != null && r.us10y != null ? r.in10y - r.us10y : null,
     curve: r.us10y != null && r.us3m != null ? r.us10y - r.us3m : null,
+    repoGap: r.repo != null && r.effr != null ? r.repo - r.effr : null,
+    usTerm: r.us10y != null && r.effr != null ? r.us10y - r.effr : null,
+    inTerm: r.in10y != null && r.repo != null ? r.in10y - r.repo : null,
   }));
 }
 
@@ -68,6 +71,12 @@ function readThrough(all: PulseRow[]): string[] {
     const d = bp(last.spread, m.spread);
     out.push(`India 10Y trades ${fmtNum(last.spread * 100, 0)} bp over the US 10Y${d != null ? `, ${d < -5 ? "narrowed" : d > 5 ? "widened" : "little changed"} by ${fmtNum(Math.abs(d), 0)} bp in a month` : ""}. A narrowing gap leaves less carry to hold rupee debt — a headwind for FPI debt flows and the rupee.`);
   }
+  if (last.repo != null && last.effr != null) {
+    const lines2 = [`Policy rates: RBI repo ${fmtNum(last.repo, 2)}% vs Fed funds ${fmtNum(last.effr, 2)}% (target ${fmtNum(last.fedlo, 2)}–${fmtNum(last.fedhi, 2)}%) — India's policy rate is ${fmtNum(Math.abs(last.repo - last.effr) * 100, 0)} bp ${last.repo >= last.effr ? "above" : "below"} the Fed's.`];
+    if (last.inTerm != null && last.usTerm != null)
+      lines2.push(`The 10-year yield sits ${fmtNum(last.inTerm * 100, 0)} bp over the repo rate in India and ${fmtNum(last.usTerm * 100, 0)} bp ${last.usTerm >= 0 ? "over" : "under"} Fed funds in the US — ${last.inTerm > 0.5 ? "a wide premium like this usually means no repo cuts are priced in" : "a thin premium means the bond market expects a flat-to-lower repo"}${last.usTerm < 0 ? ", while the US 10Y below Fed funds means the market expects the Fed to cut" : ""}.`);
+    out.push(...lines2);
+  }
   if (last.curve != null) out.push(`US 10Y minus 3-month bill is ${fmtSigned(last.curve * 100, 0)} bp — ${last.curve < 0 ? "an inverted curve, the classic late-cycle / recession warning" : "a normal, upward-sloping curve"}.`);
   const oil = pct(last.brent, m.brent);
   if (oil != null && Math.abs(oil) > 3) out.push(`Brent is ${fmtSigned(oil, 1)}% over a month — ${oil > 0 ? "India imports most of its oil, so a rise weighs on the rupee, inflation and the OMC / paint / aviation names" : "cheaper crude eases the import bill, inflation and the rupee"}.`);
@@ -107,6 +116,20 @@ export function MacroSection({ all, rows }: { all: PulseRow[]; rows: PulseRow[] 
         <Tile label="India VIX" value={last?.indiavix} digits={1} day={pc("indiavix", prev)} month={pc("indiavix", month)} dayDigits={1} dayLabel="%" invert />
       </div>
 
+      {last?.repo != null || last?.effr != null ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+          <div title="Effective federal funds rate (NY Fed); the Fed's target range is shown below">
+            <Tile label="US Fed funds (effective)" unit="%" value={last?.effr} digits={2} day={bp(last?.effr, prev?.effr)} month={bp(last?.effr, month?.effr)} dayDigits={0} dayLabel=" bp" invert />
+            {last?.fedlo != null && last?.fedhi != null && <div className="text-[11px] text-slate-400 -mt-1 mb-1 px-1">target range {fmtNum(last.fedlo, 2)}–{fmtNum(last.fedhi, 2)}%</div>}
+          </div>
+          <div title="RBI policy repo rate">
+            <Tile label="RBI repo rate" unit="%" value={last?.repo} digits={2} day={bp(last?.repo, prev?.repo)} month={bp(last?.repo, month?.repo)} dayDigits={0} dayLabel=" bp" invert />
+          </div>
+          {yieldTile("RBI repo − Fed funds", "repoGap", all, "India's policy rate minus the US effective Fed funds rate, in percentage points")}
+          {yieldTile("10Y − policy rate: India", "inTerm", all, "India 10Y yield minus the repo rate — what the bond market charges for going long over the overnight rate; US: " + (last?.usTerm != null ? fmtNum(last.usTerm, 2) + " pp" : "n/a"))}
+        </div>
+      ) : null}
+
       {lines.length > 0 && (
         <div className="border border-slate-200 rounded-lg p-3 mb-4">
           <div className="text-sm font-semibold mb-1">What the numbers say today</div>
@@ -131,6 +154,27 @@ export function MacroSection({ all, rows }: { all: PulseRow[]; rows: PulseRow[] 
           series={[
             { key: "us10y", name: "US 10Y", color: "#6366f1" },
             { key: "in10y", name: "India 10Y", color: "#d97706" },
+          ]}
+        />
+        <ChartCard
+          title="Policy rates: RBI repo vs US Fed funds"
+          unit="%"
+          rows={rows}
+          digits={2}
+          invert={["repo", "effr"]}
+          series={[
+            { key: "repo", name: "RBI repo", color: "#d97706" },
+            { key: "effr", name: "Fed funds", color: "#6366f1" },
+          ]}
+        />
+        <ChartCard
+          title="10-year yield minus policy rate"
+          unit="pp · the bond market's view of the next cuts / hikes"
+          rows={rows}
+          digits={2}
+          series={[
+            { key: "inTerm", name: "India", color: "#d97706" },
+            { key: "usTerm", name: "US", color: "#6366f1" },
           ]}
         />
         <ChartCard title="India − US 10Y spread" unit="pp" rows={rows} digits={2} series={[{ key: "spread", name: "Spread", color: "#16a34a" }]} />
