@@ -3524,7 +3524,7 @@ def _run_market_pulse(symbols, name_map, sector_map):
         return None, "the 52-week breadth has not been published yet (bhavTechnicals computes it each evening)"
     spine = pd.to_datetime([r["date"] for r in breadth["rows"]])
     cols = {}
-    nifty = _rfx_nse_frame(hist, "Nifty 500") if hist else None
+    nifty = _rfx_nse_frame(hist.get("days") or {}, "Nifty 500") if hist else None
     if nifty is None or nifty.empty:
         nifty = _gxc_fetch_history("^CRSLDX", period="1y")
     if nifty is not None and not nifty.empty:
