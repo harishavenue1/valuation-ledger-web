@@ -641,7 +641,12 @@ export default function TradeJournal() {
   }, [doc.entries, books]);
 
   const pct = (v: number | null) => (v === null ? "—" : fmt(v * 100, 0, "%"));
-  const th = "text-center px-2 py-2 border-b border-slate-200 sticky top-0 bg-white text-xs text-slate-500 font-normal";
+  // header alignment follows the cells under it: numbers right, text left, dates / ✓ marks centred (tailwind's text-center
+  // used to win over a trailing text-left, so even the left-aligned headers were centred)
+  const thBase = "px-2 py-2 border-b border-slate-200 sticky top-0 bg-white text-xs text-slate-500 font-normal";
+  const th = `${thBase} text-right`;
+  const thL = `${thBase} text-left`;
+  const thC = `${thBase} text-center`;
   const td = "px-2 py-1.5 text-right tabular-nums";
 
   return (
@@ -1086,9 +1091,9 @@ export default function TradeJournal() {
             <table className="text-sm border-collapse w-full" style={{ minWidth: 1250 }}>
               <thead>
                 <tr>
-                  <th className={`${th} text-left`}>Symbol</th>
-                  <th className={th}>Buys / sells</th>
-                  <th className={th}>First → last buy</th>
+                  <th className={thL}>Symbol</th>
+                  <th className={thC}>Buys / sells</th>
+                  <th className={thC}>First → last buy</th>
                   <th className={th}>Bought</th>
                   <th className={th}>Sold</th>
                   <th className={th}>Left</th>
@@ -1233,8 +1238,8 @@ export default function TradeJournal() {
         <table className="text-sm border-collapse w-full" style={{ minWidth: 1450 }}>
           <thead>
             <tr>
-              <th className={th}>Date</th>
-              <th className={`${th} text-left`}>Symbol</th>
+              <th className={thC}>Date</th>
+              <th className={thL}>Symbol</th>
               <th className={th}>Qty</th>
               <th className={th}>Buy price</th>
               <th className={th}>Alloc %</th>
@@ -1245,9 +1250,9 @@ export default function TradeJournal() {
               <th className={th}>Now / exit</th>
               <th className={th}>P/L %</th>
               <th className={th}>Checklist</th>
-              <th className={`${th} text-left`}>Fund. trigger</th>
-              <th className={`${th} text-left`}>State</th>
-              <th className={th}>Review</th>
+              <th className={thL}>Fund. trigger</th>
+              <th className={thL}>State</th>
+              <th className={thC}>Review</th>
             </tr>
           </thead>
           <tbody>
@@ -1394,17 +1399,17 @@ export default function TradeJournal() {
             <table className="text-sm border-collapse w-full" style={{ minWidth: 1100 }}>
               <thead>
                 <tr>
-                  <th className={th}>Date</th>
-                  <th className={`${th} text-left`}>Symbol</th>
+                  <th className={thC}>Date</th>
+                  <th className={thL}>Symbol</th>
                   <th className={th}>Qty</th>
                   <th className={th}>Sell price</th>
                   <th className={th}>Avg cost</th>
                   <th className={th}>P/L ₹</th>
                   <th className={th}>P/L %</th>
                   <th className={th}>Held (days)</th>
-                  <th className={`${th} text-left`}>Plan</th>
-                  <th className={`${th} text-left`}>State</th>
-                  <th className={`${th} text-left`}>Why I sold</th>
+                  <th className={thL}>Plan</th>
+                  <th className={thL}>State</th>
+                  <th className={thL}>Why I sold</th>
                   <th className={th}></th>
                 </tr>
               </thead>
