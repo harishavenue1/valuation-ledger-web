@@ -27,6 +27,7 @@ const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
 const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
 const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
 const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
+const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 const Guide = lazy(() => import("./pages/Guide"));
@@ -209,6 +210,7 @@ export default function App() {
                   { to: "/portfolio-charts", label: "📈 Charts" },
                   { to: "/portfolio-performance", label: "📊 Performance" },
                   { to: "/mtf-calculator", label: "📐 MTF" },
+                  { to: "/mtf-playbook", label: "📘 MTF Playbook" },
                 ]}
               />
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
@@ -296,6 +298,7 @@ export default function App() {
             <Route path="/reverse-dcf" element={<ReverseDCF />} />
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
+            <Route path="/mtf-playbook" element={<MTFPlaybook />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
