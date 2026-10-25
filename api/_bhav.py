@@ -1525,7 +1525,7 @@ def _is_fund(sym):
     return sym.startswith("LIQUID") or sym.endswith(("BEES", "ETF", "CASE", "IETF"))
 
 
-def _breadth_rows(df, days, min_universe, list_days=0):
+def _breadth_rows(df, days, min_universe, list_days=0, names=None):
     df = df[~df["symbol"].map(_is_fund)]
     hi = df.pivot(index="date", columns="symbol", values="h").sort_index()
     lo = df.pivot(index="date", columns="symbol", values="l").sort_index()
@@ -1543,7 +1543,7 @@ def _breadth_rows(df, days, min_universe, list_days=0):
 
     def names(flags, d, best_first):
         syms = flags.columns[flags.loc[d].to_numpy()]
-        rows = [[s_, round(float(cl.at[d, s_]), 2), None if pd.isna(chg.at[d, s_]) else round(float(chg.at[d, s_]), 1)] for s_ in syms]
+        rows = [[s_, round(float(cl.at[d, s_]), 2), None if pd.isna(chg.at[d, s_]) else round(float(chg.at[d, s_]), 1), (names or {}).get(s_, "")[:44]] for s_ in syms]
         rows.sort(key=lambda r_: (r_[2] is None, -(r_[2] or 0) if best_first else (r_[2] or 0)))
         return rows[:600]
 
@@ -1552,13 +1552,13 @@ def _breadth_rows(df, days, min_universe, list_days=0):
         if int(uni[d]) < min_universe:  # a partial or holiday-copy day, or the stretch before a full year of history exists — not a real count
             continue
         row = {"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])}
-        if d in listed:  # the stocks themselves ([symbol, close, day %]) for the recent sessions, so a count can be opened up
+        if d in listed:  # the stocks themselves ([symbol, close, day %, name]) for the recent sessions, so a count can be opened up
             row["wh_list"], row["wl_list"] = names(is_hi, d, True), names(is_lo, d, False)
         out.append(row)
     return out
 
 
-def compute_breadth(df):
+def compute_breadth(df, names=None):
     """{"all": every NSE stock the store holds (about one year of counts: the rest of the market keeps two years of bars,
     and a count needs a year of lookback), "core": only the stocks with 1000+ stored sessions (the NSE-750, kept five years)
     — the same names on every day, so it reaches back three years. Today's constituents only: names that delisted along the
@@ -1567,7 +1567,7 @@ def compute_breadth(df):
         return {"all": [], "core": []}
     last = df["date"].max()
     recent = df[df["date"] >= last - pd.Timedelta(days=800)]
-    out = {"all": _breadth_rows(recent, BREADTH["days"], 500, list_days=BREADTH["list_days"]), "core": []}
+    out = {"all": _breadth_rows(recent, BREADTH["days"], 500, list_days=BREADTH["list_days"], names=names), "core": []}
     sessions = df.groupby("symbol", sort=False).size()
     core = sessions[sessions >= BREADTH["core_min_sessions"]].index
     if len(core) >= BREADTH["core_min_universe"]:
@@ -2127,7 +2127,7 @@ def publish(budget_s=240):
         up_funnel = {"error": str(e)[:120]}
     breadth = {}
     try:
-        breadth = compute_breadth(df)
+        breadth = compute_breadth(df, state.get("names") or {})
     except Exception:
         breadth = {}
     dir_rows, dir_counts = [], {}

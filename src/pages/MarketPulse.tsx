@@ -1,12 +1,15 @@
 import { useMemo, useRef, useState } from "react";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
-import { MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
+import { MethodologyNote, ScreenerInLink, ScreenerLoading, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
 
 // 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
 // NIFTY500, # of Stocks in 52WH, # of Stocks in 52WLow") — one row per Indian trading day, built by
 // api/momentum_screeners.py's marketPulse runner. Day-to-day changes are worked out here from
 // consecutive rows, so a different range never needs a refetch.
+
+// [symbol, close, day %, company name]
+type ListRow = [string, number, number | null, string?];
 
 interface PulseRow {
   date: string;
@@ -19,8 +22,8 @@ interface PulseRow {
   universe?: number | null;
   // the long-history "core" stocks (~750, the same names every day) — reaches back ~3 years; the all-stocks counts only ~1 year
   // the stocks behind the all-stocks counts for the last ~30 sessions: [symbol, close, day %]
-  wh_list?: [string, number, number | null][] | null;
-  wl_list?: [string, number, number | null][] | null;
+  wh_list?: ListRow[] | null;
+  wl_list?: ListRow[] | null;
   wh_core?: number | null;
   wl_core?: number | null;
   universe_core?: number | null;
@@ -393,7 +396,7 @@ function PriceCells({ v, p, digits }: { v: number | null | undefined; p: number 
   );
 }
 
-function StockList({ title, list, color }: { title: string; list: [string, number, number | null][]; color: string }) {
+function StockList({ title, list, color }: { title: string; list: ListRow[]; color: string }) {
   return (
     <div className="border border-slate-200 rounded-lg overflow-hidden">
       <div className="px-3 py-2 text-xs font-semibold bg-slate-100" style={{ color }}>
@@ -402,12 +405,27 @@ function StockList({ title, list, color }: { title: string; list: [string, numbe
       <div className="max-h-80 overflow-auto">
         <table className="w-full text-xs tabular-nums">
           <tbody>
-            {list.map(([sym, close, chg]) => (
+            {list.map(([sym, close, chg, name]) => (
               <tr key={sym} className="border-t border-slate-100">
-                <td className="px-3 py-1 text-left font-medium">{sym}</td>
-                <td className="px-2 py-1 text-right">
-                  <PriceLink symbol={sym} value={close} />
+                <td className="px-3 py-1 text-left font-medium whitespace-nowrap">
+                  {sym}
+                  <ScreenerInLink symbol={sym} />
                 </td>
+                <td className="px-2 py-1 text-left text-slate-500 truncate max-w-[14rem]" title={name}>
+                  {name || "—"}
+                </td>
+                <td className="px-2 py-1 text-center">
+                  <a
+                    href={`https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(sym)}&interval=D`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-indigo-500 hover:underline whitespace-nowrap"
+                    title={`Open ${sym} on TradingView`}
+                  >
+                    TV ↗
+                  </a>
+                </td>
+                <td className="px-2 py-1 text-right">{fmtNum(close)}</td>
                 <td className="px-3 py-1 text-right">
                   <Signed v={chg} digits={1} />
                 </td>
