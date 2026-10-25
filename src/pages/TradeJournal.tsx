@@ -298,6 +298,11 @@ export default function TradeJournal() {
   const [pf, setPf] = useState<{ value: number; as_of?: string; weights: Record<string, number> } | null>(null);
   const blankSell = () => ({ symbol: "", date: today(), qty: "", price: "", reason: "", state: STATES[0], plan: "" as "" | "yes" | "partly" | "no", lesson: "" });
   const [sf, setSf] = useState(blankSell);
+  // the buy / sell cards fold away (2026-10-25, "allow the section to show/hide for buy and sell"); the choice is remembered per browser
+  const [showBuy, setShowBuy] = useState(() => { try { return localStorage.getItem("tj-show-buy") !== "0"; } catch { return true; } });
+  const [showSell, setShowSell] = useState(() => { try { return localStorage.getItem("tj-show-sell") !== "0"; } catch { return true; } });
+  const flip = (key: string, v: boolean, set: (b: boolean) => void) => { set(v); try { localStorage.setItem(key, v ? "1" : "0"); } catch { /* private window */ } };
+  const openSell = () => { if (!showSell) flip("tj-show-sell", true, setShowSell); setTimeout(() => document.getElementById("tj-sell")?.scrollIntoView({ behavior: "smooth" }), 60); };
   const [sellEditId, setSellEditId] = useState<string | null>(null);
 
   const blank = () => ({
@@ -668,7 +673,7 @@ export default function TradeJournal() {
                 🛑 <b>{it.e.symbol}</b> closed at ₹{fmt(it.p, 2)} — at or below your stop of ₹{fmt(it.e.stop!, 2)}{it.e.stopMode === "ema33w" ? " (the 33W EMA)" : ""}. Your plan said to exit.
               </span>
               <span className="ml-auto flex items-center gap-2 text-xs whitespace-nowrap">
-                <button onClick={() => { setSellEditId(null); setSf({ ...blankSell(), symbol: it.e.symbol, price: String(it.p) }); document.getElementById("tj-sell")?.scrollIntoView({ behavior: "smooth" }); }} className="px-2 py-1 rounded border border-red-400 hover:bg-red-100">💸 log the sale</button>
+                <button onClick={() => { setSellEditId(null); setSf({ ...blankSell(), symbol: it.e.symbol, price: String(it.p) }); openSell(); }} className="px-2 py-1 rounded border border-red-400 hover:bg-red-100">💸 log the sale</button>
                 <button onClick={() => clearAlerts([it], "hit", 7)} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100" title="hide this alert for 7 days">💤 snooze 7d</button>
                 <button onClick={() => clearAlerts([it], "hit")} className="px-2 py-1 rounded border border-slate-400 text-slate-600 hover:bg-slate-100" title="hide until it changes — it comes back if the stock recovers and falls through the stop again">✕ dismiss</button>
               </span>
@@ -759,7 +764,9 @@ export default function TradeJournal() {
             <div className="w-32 h-1.5 bg-slate-200 rounded"><div className="h-1.5 rounded bg-emerald-500 transition-all" style={{ width: `${(stepsDone / 5) * 100}%` }} /></div>
             {stepsDone}/5 steps
           </div>
+          <button onClick={() => flip("tj-show-buy", !showBuy, setShowBuy)} className="text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100">{showBuy ? "▲ hide" : "▼ show"}</button>
         </div>
+        {showBuy && <>
 
         <Step n={1} title="🎯 What are you buying?" done={sym.length > 0 && price > 0}>
           <div className="flex flex-wrap items-end gap-3 mb-2">
@@ -987,6 +994,7 @@ export default function TradeJournal() {
             </div>
           </div>
         </div>
+        </>}
       </div>
 
       {/* checklist editor */}
@@ -1022,7 +1030,9 @@ export default function TradeJournal() {
           <div className="text-base font-semibold text-slate-700">{sellEditId ? "✎ Edit a sale" : "💸 Log a sale"}</div>
           <span className="text-xs text-slate-500">matched to your buys oldest-first (FIFO), so every buy shows what it realised</span>
           {sellEditId && <button onClick={() => { setSellEditId(null); setSf(blankSell()); }} className="text-xs text-slate-500 hover:underline ml-auto">cancel edit</button>}
+          <button onClick={() => flip("tj-show-sell", !showSell, setShowSell)} className={`text-xs px-2 py-1 rounded border border-slate-300 text-slate-600 hover:bg-slate-100 ${sellEditId ? "" : "ml-auto"}`}>{showSell ? "▲ hide" : "▼ show"}</button>
         </div>
+        {showSell && <>
         <div className="flex flex-wrap items-center gap-1.5 mb-3">
           <span className="text-xs text-slate-500 mr-1">Holding:</span>
           {positions.filter((p) => p.book.left > 0).map((p) => (
@@ -1081,6 +1091,7 @@ export default function TradeJournal() {
           {sellEditId ? "Save changes" : "💸 Log the sale"}
         </button>
         <span className="text-[11px] text-slate-400 ml-3">Records the sale only — it does not place an order.</span>
+        </>}
       </div>
 
       {/* positions */}
@@ -1147,7 +1158,7 @@ export default function TradeJournal() {
                           <span className="text-xs text-slate-500">Everything in {p.sym}: every buy with what is left of it, every sale with what it realised</span>
                           <span className="ml-auto flex gap-2">
                             <button onClick={(ev) => { ev.stopPropagation(); setF({ ...blank(), symbol: p.sym }); window.scrollTo({ top: 0, behavior: "smooth" }); }} className="text-xs px-2 py-1 rounded border border-indigo-400 text-indigo-600 hover:bg-indigo-50">＋ log another buy</button>
-                            {!closed && <button onClick={(ev) => { ev.stopPropagation(); setSellEditId(null); setSf({ ...blankSell(), symbol: p.sym, price: p.now ? String(p.now) : "" }); document.getElementById("tj-sell")?.scrollIntoView({ behavior: "smooth" }); }} className="text-xs px-2 py-1 rounded border border-red-400 text-red-600 hover:bg-red-50">💸 sell some / all</button>}
+                            {!closed && <button onClick={(ev) => { ev.stopPropagation(); setSellEditId(null); setSf({ ...blankSell(), symbol: p.sym, price: p.now ? String(p.now) : "" }); openSell(); }} className="text-xs px-2 py-1 rounded border border-red-400 text-red-600 hover:bg-red-50">💸 sell some / all</button>}
                           </span>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3 text-xs">
@@ -1431,7 +1442,7 @@ export default function TradeJournal() {
                       <td className={`px-2 py-1.5 text-xs ${r.sell.pending ? "text-indigo-600" : "text-slate-600"}`}>{r.sell.pending ? "✍ reason owed" : r.sell.state ? `${MOODS[r.sell.state] ?? ""} ${r.sell.state}` : "—"}</td>
                       <td className="px-2 py-1.5 text-xs max-w-[26rem]">{r.sell.reason || "—"}{r.sell.lesson && <div className="text-slate-500">Lesson: {r.sell.lesson}</div>}</td>
                       <td className="px-2 py-1.5 text-xs whitespace-nowrap">
-                        <button onClick={() => { setSellEditId(r.sell.id); setSf({ symbol: r.sell.symbol, date: r.sell.date, qty: String(r.sell.qty), price: String(r.sell.price), reason: r.sell.reason, state: r.sell.state || STATES[0], plan: r.sell.plan, lesson: r.sell.lesson }); document.getElementById("tj-sell")?.scrollIntoView({ behavior: "smooth" }); }} className="text-indigo-600 hover:underline mr-2">✎</button>
+                        <button onClick={() => { setSellEditId(r.sell.id); setSf({ symbol: r.sell.symbol, date: r.sell.date, qty: String(r.sell.qty), price: String(r.sell.price), reason: r.sell.reason, state: r.sell.state || STATES[0], plan: r.sell.plan, lesson: r.sell.lesson }); openSell(); }} className="text-indigo-600 hover:underline mr-2">✎</button>
                         <button onClick={() => removeSell(r.sell.id)} className="text-red-600 hover:underline">✕</button>
                       </td>
                     </tr>
