@@ -10,8 +10,13 @@ per-ticker manual override of the Watchlist page's automatic signal buckets
 (2026-10-24, "organize our watchlist"); a ticker with no entry uses the
 automatic bucket.
 
+Also carries `themes` ({"Pipes": ["WELCORP", ...]}) — the Directory page's Themes tab
+(2026-10-25). Absent until the first edit, when the page falls back to the starting set in
+src/lib/themes.ts; once saved, this stored copy replaces it wholesale.
+
 POST body: {"action": "add"|"remove", "tickers": ["SYM1", "SYM2", ...]}
         or {"action": "group", "tickers": ["SYM1"], "group": "Priority" | null}
+        or {"action": "themes", "tickers": [], "themes": {"Pipes": ["WELCORP", ...], ...}}
 """
 import os
 import sys
@@ -40,19 +45,32 @@ class handler(BaseHTTPRequestHandler):
         body = read_json_body(self)
         action = body.get("action")
         tickers = body.get("tickers")
-        if action not in ("add", "remove", "group") or not isinstance(tickers, list) or not all(isinstance(t, str) for t in tickers):
-            send_json(self, 400, {"error": "action must be add, remove or group, tickers must be a list of strings"})
+        if action not in ("add", "remove", "group", "themes") or not isinstance(tickers, list) or not all(isinstance(t, str) for t in tickers):
+            send_json(self, 400, {"error": "action must be add, remove, group or themes, tickers must be a list of strings"})
             return
         group = body.get("group")
         if action == "group" and group is not None and (not isinstance(group, str) or not group.strip() or len(group) > 40):
             send_json(self, 400, {"error": "group must be a short non-empty string, or null to clear"})
             return
+        themes = body.get("themes")
+        if action == "themes":
+            ok = isinstance(themes, dict) and len(themes) <= 60
+            if ok:
+                for name, syms in themes.items():
+                    if not (isinstance(name, str) and name.strip() and len(name) <= 40 and isinstance(syms, list) and len(syms) <= 300 and all(isinstance(x, str) and 0 < len(x) <= 30 for x in syms)):
+                        ok = False
+                        break
+            if not ok:
+                send_json(self, 400, {"error": "themes must be {name: [symbols]} with short names and at most 300 symbols per theme"})
+                return
         conn = get_conn()
         try:
             data = get_meta(conn, "watchlist", {"tickers": []})
             current = data.get("tickers", [])
             groups = data.get("groups") or {}
-            if action == "add":
+            if action == "themes":
+                data["themes"] = {k.strip(): list(dict.fromkeys(v)) for k, v in themes.items()}
+            elif action == "add":
                 for t in tickers:
                     if t not in current:
                         current.append(t)

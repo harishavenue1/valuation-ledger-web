@@ -121,6 +121,8 @@ export interface Watchlist {
   tickers: string[];
   // manual per-ticker group override (api/watchlist.py); absent = automatic bucket
   groups?: Record<string, string>;
+  // Directory > Themes: {theme name: [symbols]}; absent until the first edit (src/lib/themes.ts is the starting set)
+  themes?: Record<string, string[]>;
 }
 
 // Guide page's Multibagger Checklist — see api/_multibagger.py's
@@ -429,6 +431,9 @@ export const api = {
 
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
+
+  setThemes: (themes: Record<string, string[]>): Promise<Watchlist> =>
+    req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "themes", tickers: [], themes }) }),
 
   setWatchlistGroup: (ticker: string, group: string | null): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "group", tickers: [ticker], group }) }),

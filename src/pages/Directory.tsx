@@ -12,12 +12,15 @@ import { useWatchlist } from "../lib/useWatchlist";
 // (api/_bhav.py compute_index_directory) so they cover every constituent, not
 // just the NSE-750.
 const SectorDirectory = lazy(() => import("./SectorDirectory"));
+// 2026-10-25 ("under directory we need to build themes, like transformers, pipes, datacenters, shipbuilding, etc") — curated, editable stock lists
+const DirectoryThemes = lazy(() => import("./DirectoryThemes"));
 
 const TABS = [
   { key: "sectors", label: "🗂️ Sectors" },
   { key: "midcap", label: "Midcap 150", index: "Midcap 150" },
   { key: "smallcap", label: "Smallcap 250", index: "Smallcap 250" },
   { key: "microcap", label: "Microcap 250", index: "Microcap 250" },
+  { key: "themes", label: "🧩 Themes" },
 ] as const;
 
 const COLS: Col[] = [
@@ -151,7 +154,7 @@ export default function Directory() {
     <div>
       <div className="flex items-center gap-2 mb-3">
         <h1 className="text-xl font-semibold">📚 Directory</h1>
-        <span className="text-slate-500 text-sm">Stocks by sector, and by NSE index</span>
+        <span className="text-slate-500 text-sm">Stocks by sector, by NSE index, and by theme</span>
       </div>
       <div className="flex flex-wrap gap-2 mb-4">
         {TABS.map((t) => (
@@ -166,7 +169,7 @@ export default function Directory() {
           </button>
         ))}
       </div>
-      {tab === "sectors" ? <SectorDirectory /> : <IndexList index={(active as { index: string }).index} />}
+      {tab === "sectors" ? <SectorDirectory /> : tab === "themes" ? <DirectoryThemes /> : <IndexList index={(active as { index: string }).index} />}
     </div>
   );
 }
