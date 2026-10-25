@@ -14,9 +14,13 @@ interface PulseRow {
   brent?: number | null;
   gold?: number | null;
   silver?: number | null;
-  wh: number;
-  wl: number;
-  universe: number;
+  wh?: number | null;
+  wl?: number | null;
+  universe?: number | null;
+  // the long-history "core" stocks (~750, the same names every day) — reaches back ~3 years; the all-stocks counts only ~1 year
+  wh_core?: number | null;
+  wl_core?: number | null;
+  universe_core?: number | null;
 }
 
 type Key = "nifty500" | "brent" | "gold" | "silver" | "wh" | "wl";
@@ -25,6 +29,8 @@ const RANGES: { label: string; days: number }[] = [
   { label: "1M", days: 22 },
   { label: "3M", days: 66 },
   { label: "6M", days: 132 },
+  { label: "1Y", days: 252 },
+  { label: "3Y", days: 756 },
 ];
 
 const PRICE_SERIES: { key: Key; label: string; unit: string; color: string; digits: number }[] = [
@@ -194,9 +200,18 @@ export default function MarketPulse() {
   const { ready } = useScreeners(["marketPulse"]);
   const entry = bundle.momentum_screeners.marketPulse;
   const [range, setRange] = useState(RANGES[1]);
+  // a custom from/to window over everything stored (2026-10-25, "add a date range as well to pull old records")
+  const [custom, setCustom] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [basis, setBasis] = useState<"all" | "core">("all");
 
-  const all: PulseRow[] = useMemo(() => [...((entry?.rows as PulseRow[]) ?? [])].sort((a, b) => a.date.localeCompare(b.date)), [entry]);
-  const rows = useMemo(() => all.slice(-range.days), [all, range]);
+  const all: PulseRow[] = useMemo(() => {
+    const sorted = [...((entry?.rows as PulseRow[]) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
+    return basis === "core" ? sorted.map((r) => ({ ...r, wh: r.wh_core, wl: r.wl_core, universe: r.universe_core })) : sorted;
+  }, [entry, basis]);
+  const rows = useMemo(() => (custom ? all.filter((r) => (!from || r.date >= from) && (!to || r.date <= to)) : all.slice(-range.days)), [all, range, custom, from, to]);
+  const hasCore = ((entry?.rows as PulseRow[]) ?? []).some((r) => r.wh_core != null);
 
   if (!ready) return <ScreenerLoading label="Market Pulse" />;
 
@@ -204,7 +219,7 @@ export default function MarketPulse() {
   const prev = all[all.length - 2];
   const monthAgo = all[all.length - 23];
   const pctChg = (k: Key, ref?: PulseRow) => (last && ref ? pct(last[k] as number | null, ref[k] as number | null) : null);
-  const cntChg = (k: "wh" | "wl", ref?: PulseRow) => (last && ref ? last[k] - ref[k] : null);
+  const cntChg = (k: "wh" | "wl", ref?: PulseRow) => (last && ref && last[k] != null && ref[k] != null ? (last[k] as number) - (ref[k] as number) : null);
 
   return (
     <div>
@@ -214,11 +229,37 @@ export default function MarketPulse() {
         <span className="ml-auto flex items-center gap-2">
           <span className="inline-flex rounded-md border border-slate-200 overflow-hidden text-xs">
             {RANGES.map((r) => (
-              <button key={r.label} onClick={() => setRange(r)} className={`px-2.5 py-1 ${range.label === r.label ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+              <button
+                key={r.label}
+                onClick={() => {
+                  setCustom(false);
+                  setRange(r);
+                }}
+                className={`px-2.5 py-1 ${!custom && range.label === r.label ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+              >
                 {r.label}
               </button>
             ))}
+            <button
+              onClick={() => {
+                if (!custom) {
+                  setFrom(rows[0]?.date ?? all[0]?.date ?? "");
+                  setTo(rows[rows.length - 1]?.date ?? last?.date ?? "");
+                }
+                setCustom(true);
+              }}
+              className={`px-2.5 py-1 border-l border-slate-200 ${custom ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+            >
+              Custom
+            </button>
           </span>
+          {custom && (
+            <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+              <input type="date" value={from} min={all[0]?.date} max={to || last?.date} onChange={(e) => setFrom(e.target.value)} className="border border-slate-300 rounded px-1.5 py-0.5 bg-transparent" />
+              →
+              <input type="date" value={to} min={from || all[0]?.date} max={last?.date} onChange={(e) => setTo(e.target.value)} className="border border-slate-300 rounded px-1.5 py-0.5 bg-transparent" />
+            </span>
+          )}
           <RunButton screener="marketPulse" />
         </span>
       </div>
@@ -227,11 +268,14 @@ export default function MarketPulse() {
       <MethodologyNote>
         One row per Indian trading day. <b>Nifty 500</b> is NSE's own index close. <b>Crude Oil (Brent)</b>, <b>Gold</b> and <b>Silver</b> are the
         front-month futures closes in <b>US dollars</b> (Yahoo: BZ=F, GC=F, SI=F) — the last close on or before each Indian trading day, so an
-        Indian holiday never leaves a gap; they are global prices, not MCX rupee prices. <b>52W Highs / Lows</b> count the stocks (all NSE-listed, price
-        above ₹10, at least a year of history) whose high that day was <b>above the highest high of the previous 252 sessions</b>, or whose low
+        Indian holiday never leaves a gap; they are global prices, not MCX rupee prices. <b>52W Highs / Lows</b> count the stocks (price above ₹10, at least a
+        year of history; <b>All NSE stocks</b> goes back about a year because the store keeps two years of bars for most stocks, while <b>Core ~750</b> — the
+        stocks with five years stored, the same names every day — reaches back three years, but is today's NSE-750 only, so names that delisted along the way are
+        missing and older lows are understated) whose high that day was <b>above the highest high of the previous 252 sessions</b>, or whose low
         was below the lowest low — a stock that just matches its old high does not count, and a frozen price never counts. Prices are
         split/bonus-adjusted from our own daily NSE store. <b>Net</b> = highs minus lows; more highs than lows means a healthy market, a
-        cluster of lows means selling pressure. Everything refreshes each trading evening once NSE's file lands (~6 PM IST).
+        cluster of lows means selling pressure. Pick a preset range or <b>Custom</b> for an exact from/to window over everything stored.
+        Everything refreshes each trading evening once NSE's file lands (~6 PM IST).
       </MethodologyNote>
 
       {all.length < 2 ? (
@@ -250,6 +294,25 @@ export default function MarketPulse() {
             {PRICE_SERIES.map((s) => (
               <ChartCard key={s.key} title={s.label} unit={s.unit} rows={rows} digits={s.digits} series={[{ key: s.key, name: s.label, color: s.color }]} />
             ))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-slate-500">
+            <span>52-week counts for</span>
+            <span className="inline-flex rounded-md border border-slate-200 overflow-hidden">
+              <button onClick={() => setBasis("all")} className={`px-2.5 py-1 ${basis === "all" ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                All NSE stocks
+              </button>
+              {hasCore && (
+                <button onClick={() => setBasis("core")} className={`px-2.5 py-1 border-l border-slate-200 ${basis === "core" ? "bg-slate-800 text-white" : "text-slate-600 hover:bg-slate-100"}`}>
+                  Core ~750 · 3 years
+                </button>
+              )}
+            </span>
+            {rows.some((r) => r.wh == null) && (
+              <span className="text-amber-600">
+                {hasCore && basis === "all" ? "All-stock counts only go back about a year — switch to Core ~750 for the full range." : "No 52-week counts before this point."}
+              </span>
+            )}
+            {basis === "core" && rows[rows.length - 1]?.universe != null && <span>{rows[rows.length - 1].universe} stocks counted</span>}
           </div>
           <div className="mb-6">
             <ChartCard
@@ -293,13 +356,11 @@ export default function MarketPulse() {
                       {PRICE_SERIES.map((s) => (
                         <PriceCells key={s.key} v={r[s.key] as number | null | undefined} p={p?.[s.key] as number | null | undefined} digits={s.digits} />
                       ))}
-                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wh}</td>
-                      <td className="px-2 py-1.5 text-right">{p ? <Delta v={r.wh - p.wh} digits={0} /> : "—"}</td>
-                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wl}</td>
-                      <td className="px-2 py-1.5 text-right">{p ? <Delta v={r.wl - p.wl} digits={0} invert /> : "—"}</td>
-                      <td className="px-2 py-1.5 text-right border-l border-slate-100">
-                        <Delta v={r.wh - r.wl} digits={0} />
-                      </td>
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wh ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-right">{p && r.wh != null && p.wh != null ? <Delta v={r.wh - p.wh} digits={0} /> : "—"}</td>
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wl ?? "—"}</td>
+                      <td className="px-2 py-1.5 text-right">{p && r.wl != null && p.wl != null ? <Delta v={r.wl - p.wl} digits={0} invert /> : "—"}</td>
+                      <td className="px-2 py-1.5 text-right border-l border-slate-100">{r.wh != null && r.wl != null ? <Delta v={r.wh - r.wl} digits={0} /> : "—"}</td>
                     </tr>
                   );
                 })}

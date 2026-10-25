@@ -1516,12 +1516,10 @@ def compute_uprun_hold(df, rows):
 # anything priced at or under Rs 10 is left out (the other scans use the same floor). Recomputed from the
 # store on every publish, so there is no state to accumulate.
 
-BREADTH = {"window": 252, "min_periods": 240, "min_price": 10, "days": 130}
+BREADTH = {"window": 252, "min_periods": 240, "min_price": 10, "days": 300, "core_days": 780, "core_min_sessions": 1000, "core_min_universe": 300}
 
 
-def compute_breadth(df):
-    if df.empty:
-        return []
+def _breadth_rows(df, days, min_universe):
     hi = df.pivot(index="date", columns="symbol", values="h").sort_index()
     lo = df.pivot(index="date", columns="symbol", values="l").sort_index()
     cl = df.pivot(index="date", columns="symbol", values="c").sort_index()
@@ -1533,10 +1531,27 @@ def compute_breadth(df):
     wl = ((lo < ll) & valid).sum(axis=1)
     uni = valid.sum(axis=1)
     out = []
-    for d in hi.index[-BREADTH["days"]:]:
-        if int(uni[d]) < 500:  # a partial or holiday-copy day — not a real count
+    for d in hi.index[-days:]:
+        if int(uni[d]) < min_universe:  # a partial or holiday-copy day, or the stretch before a full year of history exists — not a real count
             continue
         out.append({"date": d.date().isoformat(), "wh": int(wh[d]), "wl": int(wl[d]), "universe": int(uni[d])})
+    return out
+
+
+def compute_breadth(df):
+    """{"all": every NSE stock the store holds (about one year of counts: the rest of the market keeps two years of bars,
+    and a count needs a year of lookback), "core": only the stocks with 1000+ stored sessions (the NSE-750, kept five years)
+    — the same names on every day, so it reaches back three years. Today's constituents only: names that delisted along the
+    way are gone, which flatters the older lows."""
+    if df.empty:
+        return {"all": [], "core": []}
+    last = df["date"].max()
+    recent = df[df["date"] >= last - pd.Timedelta(days=800)]
+    out = {"all": _breadth_rows(recent, BREADTH["days"], 500), "core": []}
+    sessions = df.groupby("symbol", sort=False).size()
+    core = sessions[sessions >= BREADTH["core_min_sessions"]].index
+    if len(core) >= BREADTH["core_min_universe"]:
+        out["core"] = _breadth_rows(df[df["symbol"].isin(core)], BREADTH["core_days"], BREADTH["core_min_universe"])
     return out
 
 
@@ -2090,11 +2105,11 @@ def publish(budget_s=240):
         up_rows, up_funnel = compute_uprun_hold(df, rows)
     except Exception as e:
         up_funnel = {"error": str(e)[:120]}
-    breadth = []
+    breadth = {}
     try:
         breadth = compute_breadth(df)
     except Exception:
-        breadth = []
+        breadth = {}
     dir_rows, dir_counts = [], {}
     try:
         dir_rows, dir_counts = compute_index_directory(rows, df)
@@ -2131,8 +2146,8 @@ def publish(budget_s=240):
                 set_meta(conn, MICRO_SNAPSHOT_KEY, mc_snap)
                 set_meta(conn, "bhav_scan_microcap", {"as_of": stats.get("latest_trade_date"), "rows": mc_rows, "funnel": mc_funnel, "snapshot": mc_snap, "params": MICRO})
             set_meta(conn, "bhav_scan_pullback", {"as_of": stats.get("latest_trade_date"), "rows": pb_rows, "funnel": pb_funnel, "filters": PB})
-            if breadth:
-                set_meta(conn, "bhav_breadth", {"as_of": stats.get("latest_trade_date"), "rows": breadth, "params": BREADTH})
+            if breadth.get("all"):
+                set_meta(conn, "bhav_breadth", {"as_of": stats.get("latest_trade_date"), "rows": breadth["all"], "core": breadth.get("core") or [], "params": BREADTH})
             set_meta(conn, "bhav_scan_uprun", {"as_of": stats.get("latest_trade_date"), "rows": up_rows, "funnel": up_funnel, "filters": UP})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})

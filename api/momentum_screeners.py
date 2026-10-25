@@ -3522,20 +3522,27 @@ def _run_market_pulse(symbols, name_map, sector_map):
         conn.close()
     if not breadth or not breadth.get("rows"):
         return None, "the 52-week breadth has not been published yet (bhavTechnicals computes it each evening)"
-    spine = pd.to_datetime([r["date"] for r in breadth["rows"]])
+    # the spine is the longest breadth series (the long-history "core" stocks, ~3 years); the all-stocks counts fill the dates they cover
+    by_all = {r["date"]: r for r in breadth["rows"]}
+    core = breadth.get("core") or []
+    spine_dates = [r["date"] for r in (core or breadth["rows"])]
+    by_core = {r["date"]: r for r in core}
+    spine = pd.to_datetime(spine_dates)
     cols = {}
     nifty = _rfx_nse_frame(hist.get("days") or {}, "Nifty 500") if hist else None
     if nifty is None or nifty.empty:
-        nifty = _gxc_fetch_history("^CRSLDX", period="1y")
+        nifty = _gxc_fetch_history("^CRSLDX", period="5y")
     if nifty is not None and not nifty.empty:
         cols["nifty500"] = nifty["Close"].dropna()
     for key, ticker in MP_YAHOO:
-        h = _gxc_fetch_history(ticker, period="1y")
+        h = _gxc_fetch_history(ticker, period="5y")
         if h is not None and not h.empty:
             cols[key] = h["Close"].dropna()
     rows = []
-    for b in breadth["rows"]:
-        rows.append({"date": b["date"], "wh": b["wh"], "wl": b["wl"], "universe": b["universe"]})
+    for d in spine_dates:
+        a, c = by_all.get(d), by_core.get(d)
+        rows.append({"date": d, "wh": a["wh"] if a else None, "wl": a["wl"] if a else None, "universe": a["universe"] if a else None,
+                     "wh_core": c["wh"] if c else None, "wl_core": c["wl"] if c else None, "universe_core": c["universe"] if c else None})
     for key, ser in cols.items():
         ser = ser[~ser.index.duplicated(keep="last")].sort_index()
         aligned = ser.reindex(ser.index.union(spine)).ffill().reindex(spine)
