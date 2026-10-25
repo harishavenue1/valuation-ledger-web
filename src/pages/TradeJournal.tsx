@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { fmt, fmtSigned } from "../lib/model";
 import { PriceLink } from "../components/ScreenerTable";
-import { Check, Doc, Entry, InboxItem, NEAR_PCT, Review, Sell, buildBooks, isClosed, matchSale, stopState } from "../lib/journal";
+import { Check, Doc, Entry, InboxItem, NEAR_PCT, Review, Sell, buildBooks, ema33Level, isClosed, matchSale, stopLevel, stopState } from "../lib/journal";
 
 // Trade Journal — added 2026-10-25 ("a new menu page for checklist + buying record for future review, with reasons as
 // to why I buy, date, qty, price ... keep to process instead of emotions"), extended the same day with "a) is it above
@@ -66,14 +66,15 @@ const PLAN_CHIPS: { v: "yes" | "partly" | "no"; label: string }[] = [
 const fmtQty = (v: number) => fmt(v, Number.isInteger(v) ? 0 : 2);
 
 // The "reason owed" card for a Kite trade the PF update queued: tap chips, pick a mood, save — no form to fill.
-function QuickComment({ e, x, sale, checklist, onSaveBuy, onSaveSell, onDrop }: {
-  e?: Entry; x?: Sell; sale?: { pl: number; cost: number; matched: number };
+function QuickComment({ e, x, sale, ema33, checklist, onSaveBuy, onSaveSell, onDrop }: {
+  e?: Entry; x?: Sell; sale?: { pl: number; cost: number; matched: number }; ema33?: number | null;
   checklist: Check[]; onSaveBuy: (p: Partial<Entry>) => void; onSaveSell: (p: Partial<Sell>) => void; onDrop: () => void;
 }) {
   const [reason, setReason] = useState("");
   const [trig, setTrig] = useState<"" | "yes" | "no">("");
   const [trigNote, setTrigNote] = useState("");
   const [stopPct, setStopPct] = useState<number | null>(null);
+  const [useEma, setUseEma] = useState(true); // default stop = the live weekly 33 EMA
   const [state, setState] = useState(STATES[0]);
   const [allocWhy, setAllocWhy] = useState("");
   const [plan, setPlan] = useState<"" | "yes" | "partly" | "no">("");
@@ -82,7 +83,8 @@ function QuickComment({ e, x, sale, checklist, onSaveBuy, onSaveSell, onDrop }: 
   const buy = !!e;
   const it = (e ?? x)!;
   const ok = reason.trim().length >= 10 && (buy ? trig !== "" : true);
-  const stopPx = buy && stopPct ? it.price * (1 - stopPct / 100) : null;
+  const emaOk = !!ema33 && ema33 > 0;
+  const stopPx = buy ? (useEma && emaOk ? ema33! : stopPct ? it.price * (1 - stopPct / 100) : null) : null;
   const save = () => {
     const price = parseFloat(px) > 0 ? parseFloat(px) : it.price;
     if (buy && e) {
@@ -90,7 +92,7 @@ function QuickComment({ e, x, sale, checklist, onSaveBuy, onSaveSell, onDrop }: 
       const okOf = (c: Check) =>
         c.auto === "ema200" ? (e.ema200Pct ?? -1) > 0 : c.auto === "rsiw" ? (e.rsiW ?? 0) > 66 : c.auto === "fund" ? trig === "yes" && trigNote.trim().length >= 3
         : c.auto === "alloc" ? (e.allocPct ?? 0) > 0 && allocWhy.trim().length >= 5 : c.auto === "stop" ? stop !== null : false;
-      onSaveBuy({ price, reason: reason.trim(), fundTrigger: trig === "yes" ? "yes" : "no", fundNote: trigNote.trim(), stop0: stop, stop, state, allocReason: allocWhy.trim(), checks: checklist.map((c) => ({ text: c.text, ok: okOf(c) })), pending: false, priceApprox: false });
+      onSaveBuy({ price, reason: reason.trim(), fundTrigger: trig === "yes" ? "yes" : "no", fundNote: trigNote.trim(), stop0: stop, stop, stopMode: useEma && emaOk ? "ema33w" : "fixed", state, allocReason: allocWhy.trim(), checks: checklist.map((c) => ({ text: c.text, ok: okOf(c) })), pending: false, priceApprox: false });
     } else onSaveSell({ price, reason: reason.trim(), state, plan, lesson: lesson.trim(), pending: false, priceApprox: false });
   };
   return (
@@ -116,8 +118,10 @@ function QuickComment({ e, x, sale, checklist, onSaveBuy, onSaveSell, onDrop }: 
           {(["yes", "no"] as const).map((v) => <button key={v} type="button" onClick={() => setTrig(v)} className={chip(trig === v)}>{v === "yes" ? "👍 YES" : "👎 NO"}</button>)}
           {trig === "yes" && <input value={trigNote} onChange={(ev) => setTrigNote(ev.target.value)} placeholder="in a few words" className="w-56 px-2 py-1 border border-slate-300 rounded-full text-xs" />}
           <span className="text-xs text-slate-500 ml-2">Stop</span>
-          {STOP_PCTS.map((pc) => <button key={pc} type="button" onClick={() => setStopPct(stopPct === pc ? null : pc)} className={chip(stopPct === pc)}>−{pc}%</button>)}
+          {emaOk && <button type="button" onClick={() => { setUseEma(true); setStopPct(null); }} className={chip(useEma)} title="Close below the weekly 33 EMA — trails up on its own">🔔 33W EMA ₹{fmt(ema33!, 2)}</button>}
+          {STOP_PCTS.map((pc) => <button key={pc} type="button" onClick={() => { setUseEma(false); setStopPct(stopPct === pc ? null : pc); }} className={chip(!useEma && stopPct === pc)}>−{pc}%</button>)}
           {stopPx !== null && <span className="text-xs text-slate-500">₹{fmt(stopPx, 2)}</span>}
+          {emaOk && useEma && ema33! >= it.price && <span className="text-xs text-amber-700">price is already below the 33W EMA</span>}
         </div>
       )}
       {buy && e?.allocPct != null && (
@@ -194,7 +198,7 @@ function EditEntry({ e, onSave, onCancel }: { e: Entry; onSave: (p: Partial<Entr
   const n2s = (v: number | null) => (v === null ? "" : String(v));
   const [d, setD] = useState({
     symbol: e.symbol, date: e.date, qty: String(e.qty), price: String(e.price), allocPct: n2s(e.allocPct), allocReason: e.allocReason,
-    stop0: n2s(e.stop0), stop: n2s(e.stop), target: n2s(e.target), fundTrigger: e.fundTrigger, fundNote: e.fundNote, setup: e.setup,
+    stop0: n2s(e.stop0), stop: n2s(e.stop), stopMode: (e.stopMode ?? "fixed") as "fixed" | "ema33w", target: n2s(e.target), fundTrigger: e.fundTrigger, fundNote: e.fundNote, setup: e.setup,
     state: e.state, confidence: e.confidence, reason: e.reason, rsiW: n2s(e.rsiW), ema200Pct: n2s(e.ema200Pct), checks: e.checks.map((c) => ({ ...c })),
   });
   const set = (p: Partial<typeof d>) => setD((x) => ({ ...x, ...p }));
@@ -203,7 +207,7 @@ function EditEntry({ e, onSave, onCancel }: { e: Entry; onSave: (p: Partial<Entr
   const save = () =>
     onSave({
       symbol: d.symbol.trim().toUpperCase(), date: d.date, qty: parseFloat(d.qty), price: parseFloat(d.price),
-      allocPct: opt(d.allocPct), allocReason: d.allocReason.trim(), stop0: opt(d.stop0), stop: opt(d.stop), target: opt(d.target),
+      allocPct: opt(d.allocPct), allocReason: d.allocReason.trim(), stop0: opt(d.stop0), stop: opt(d.stop), stopMode: d.stopMode, target: opt(d.target),
       fundTrigger: d.fundTrigger, fundNote: d.fundNote.trim(), setup: d.setup, state: d.state, confidence: d.confidence,
       reason: d.reason.trim(), rsiW: opt(d.rsiW), ema200Pct: opt(d.ema200Pct), checks: d.checks,
     });
@@ -219,7 +223,12 @@ function EditEntry({ e, onSave, onCancel }: { e: Entry; onSave: (p: Partial<Entr
         <F label="Allocation (%)"><input type="number" step="any" value={d.allocPct} onChange={(ev) => set({ allocPct: ev.target.value })} className={input} /></F>
         <F label="Target (₹)"><input type="number" step="any" value={d.target} onChange={(ev) => set({ target: ev.target.value })} className={input} /></F>
         <F label="Initial stop (₹)"><input type="number" step="any" value={d.stop0} onChange={(ev) => set({ stop0: ev.target.value })} className={input} /></F>
-        <F label="Stop now (₹)"><input type="number" step="any" value={d.stop} onChange={(ev) => set({ stop: ev.target.value })} className={input} /></F>
+        <F label={d.stopMode === "ema33w" ? "Stop now — the live 33W EMA" : "Stop now (₹)"}>
+          <input type="number" step="any" value={d.stopMode === "ema33w" ? "" : d.stop} disabled={d.stopMode === "ema33w"} placeholder={d.stopMode === "ema33w" ? "trailing" : ""} onChange={(ev) => set({ stop: ev.target.value })} className={input} />
+        </F>
+        <label className="flex items-end gap-2 text-xs text-slate-600 pb-2 cursor-pointer">
+          <input type="checkbox" checked={d.stopMode === "ema33w"} onChange={(ev) => set({ stopMode: ev.target.checked ? "ema33w" : "fixed" })} /> Stop = 33W EMA (trailing)
+        </label>
         <F label="Weekly RSI on the day"><input type="number" step="any" value={d.rsiW} onChange={(ev) => set({ rsiW: ev.target.value })} className={input} /></F>
         <F label="% vs 200D EMA on the day"><input type="number" step="any" value={d.ema200Pct} onChange={(ev) => set({ ema200Pct: ev.target.value })} className={input} /></F>
         <F label="Setup">
@@ -293,7 +302,7 @@ export default function TradeJournal() {
 
   const blank = () => ({
     symbol: "", date: today(), qty: "", price: "", setup: SETUPS[0], state: STATES[0], confidence: 3,
-    fundTrigger: "" as "" | "yes" | "no", fundNote: "", allocPct: "", allocReason: "", stopPct: "", stopPx: "", target: "",
+    fundTrigger: "" as "" | "yes" | "no", fundNote: "", allocPct: "", allocReason: "", stopPct: "", stopPx: "", stopMode: "ema33w" as "fixed" | "ema33w", target: "",
     reason: "", ticks: {} as Record<string, boolean>, amount: "",
   });
   const [f, setF] = useState(blank);
@@ -377,13 +386,20 @@ export default function TradeJournal() {
     setDoc(fn);
   };
 
-  const books = useMemo(() => buildBooks(doc.entries, doc.sells), [doc.entries, doc.sells]);
+  // entries as displayed: a trailing-33W-EMA stop is replaced by the live EMA level from the daily store
+  const ents = useMemo(
+    () => doc.entries.map((e) => (e.stopMode === "ema33w" ? { ...e, stop: stopLevel(e, px.map.get(e.symbol)) } : e)),
+    [doc.entries, px],
+  );
+  const books = useMemo(() => buildBooks(ents, doc.sells), [ents, doc.sells]);
   const sym = f.symbol.trim().toUpperCase();
   const row = px.map.get(sym);
   const qty = num(f.qty);
   const price = num(f.price);
-  const stopPx = num(f.stopPx);
-  const stopPct = num(f.stopPct);
+  const ema33 = ema33Level(row); // default stop (2026-10-25): the live weekly 33 EMA
+  const useEma = f.stopMode === "ema33w" && ema33 !== null;
+  const stopPx = useEma ? ema33! : f.stopMode === "ema33w" ? NaN : num(f.stopPx);
+  const stopPct = useEma && price > 0 ? (1 - ema33! / price) * 100 : num(f.stopPct);
   const allocAuto = pf?.value && qty > 0 && price > 0 ? (qty * price) / pf.value * 100 : null; // worked out from the PF update's portfolio value
   const allocPct = f.allocPct.trim() !== "" ? num(f.allocPct) : allocAuto ?? NaN;
   const exW = pf?.weights[sym]; // what this holding already weighs
@@ -405,11 +421,11 @@ export default function TradeJournal() {
 
   const setStopPct = (v: string) => {
     const p = num(v);
-    setF((s) => ({ ...s, stopPct: v, stopPx: p > 0 && p < 100 && price > 0 ? (price * (1 - p / 100)).toFixed(2) : s.stopPx }));
+    setF((s) => ({ ...s, stopMode: "fixed", stopPct: v, stopPx: p > 0 && p < 100 && price > 0 ? (price * (1 - p / 100)).toFixed(2) : s.stopPx }));
   };
   const setStopPx = (v: string) => {
     const x = num(v);
-    setF((s) => ({ ...s, stopPx: v, stopPct: x > 0 && price > 0 ? ((1 - x / price) * 100).toFixed(1) : s.stopPct }));
+    setF((s) => ({ ...s, stopMode: "fixed", stopPx: v, stopPct: x > 0 && price > 0 ? ((1 - x / price) * 100).toFixed(1) : s.stopPct }));
   };
   const setBuyPrice = (v: string) => {
     const p = num(v);
@@ -458,8 +474,9 @@ export default function TradeJournal() {
     else if (lastBuy && price > lastBuy.price * 1.1) warnings.push(`Adding ${fmt((price / lastBuy.price - 1) * 100, 1, "%")} above your last buy (₹${fmt(lastBuy.price, 2)}) — chasing, or a planned add on strength?`);
     if (lastBuy?.stop != null && livePx !== undefined && livePx <= lastBuy.stop) warnings.push(`Your existing stop (₹${fmt(lastBuy.stop, 2)}) is already breached — your own plan says exit, not add.`);
   }
-  if (!(stopPx > 0)) warnings.push("No stop-loss — decide it before you buy.");
-  else if (price > 0 && stopPx >= price) warnings.push("Stop-loss is not below the buy price.");
+  if (f.stopMode === "ema33w" && ema33 === null) warnings.push(sym ? "No 33W EMA data for this symbol — pick a % stop or type a price." : "No stop-loss yet — it defaults to the 33W EMA once you pick a symbol.");
+  else if (!(stopPx > 0)) warnings.push("No stop-loss — decide it before you buy.");
+  else if (price > 0 && stopPx >= price) warnings.push(useEma ? `Price is already below the 33W EMA (₹${fmt(ema33!, 2)}) — your default exit rule is breached before you even buy.` : "Stop-loss is not below the buy price.");
   if (ema200Pct !== null && ema200Pct <= 0) warnings.push(`Price is ${fmt(Math.abs(ema200Pct), 1, "%")} BELOW the 200D EMA.`);
   if (rsiW !== null && rsiW <= 66) warnings.push(`Weekly RSI is ${fmt(rsiW, 1)} — not above 66.`);
   if (f.fundTrigger === "no") warnings.push("No fundamental trigger — this is a pure price/momentum buy.");
@@ -470,11 +487,11 @@ export default function TradeJournal() {
 
   const add = () => {
     if (!canSave) return;
-    const stop = stopPx > 0 ? stopPx : null;
+    const stop = stopPx > 0 ? Math.round(stopPx * 100) / 100 : null;
     const e: Entry = {
       id: uid(), symbol: sym, date: f.date, qty, price,
       allocPct: allocPct > 0 ? allocPct : null, allocReason: f.allocReason.trim(),
-      stop0: stop, stop, target: num(f.target) > 0 ? num(f.target) : null,
+      stop0: stop, stop, stopMode: useEma ? "ema33w" : "fixed", target: num(f.target) > 0 ? num(f.target) : null,
       fundTrigger: f.fundTrigger as "yes" | "no", fundNote: f.fundNote.trim(),
       ema200Pct, rsiW, setup: f.setup, reason: f.reason.trim(), state: f.state, confidence: f.confidence,
       checks: checklist.map((c) => ({ text: c.text, ok: tick(c) })),
@@ -547,13 +564,13 @@ export default function TradeJournal() {
 
   const shown = useMemo(() => {
     const n = q.trim().toLowerCase();
-    return doc.entries.filter((e) => !n || e.symbol.toLowerCase().includes(n) || e.reason.toLowerCase().includes(n) || e.setup.toLowerCase().includes(n)).sort((a, b) => b.date.localeCompare(a.date));
-  }, [doc.entries, q]);
+    return ents.filter((e) => !n || e.symbol.toLowerCase().includes(n) || e.reason.toLowerCase().includes(n) || e.setup.toLowerCase().includes(n)).sort((a, b) => b.date.localeCompare(a.date));
+  }, [ents, q]);
 
   const alerts = useMemo(() => {
     const hit: { e: Entry; p: number }[] = [];
     const near: { e: Entry; p: number }[] = [];
-    for (const e of doc.entries) {
+    for (const e of ents) {
       if ((lotById.get(e.id)?.remaining ?? e.qty) <= 0) continue; // fully sold — nothing left to stop out
       const p = px.map.get(e.symbol)?.price;
       const s = stopState(e, p);
@@ -561,7 +578,7 @@ export default function TradeJournal() {
       else if (s === "near") near.push({ e, p });
     }
     return { hit, near };
-  }, [doc.entries, px, lotById]);
+  }, [ents, px, lotById]);
 
   const streak = useMemo(() => {
     const es = doc.entries.filter((e) => !e.pending).sort((a, b) => b.date.localeCompare(a.date));
@@ -623,12 +640,12 @@ export default function TradeJournal() {
         <div className="my-3 space-y-2">
           {alerts.hit.map(({ e, p }) => (
             <div key={e.id} className="text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
-              🛑 <b>{e.symbol}</b> closed at ₹{fmt(p, 2)} — at or below your stop of ₹{fmt(e.stop!, 2)}. Your plan said to exit — log the sale below.
+              🛑 <b>{e.symbol}</b> closed at ₹{fmt(p, 2)} — at or below your stop of ₹{fmt(e.stop!, 2)}{e.stopMode === "ema33w" ? " (the 33W EMA)" : ""}. Your plan said to exit — log the sale below.
             </div>
           ))}
           {alerts.near.map(({ e, p }) => (
             <div key={e.id} className="text-sm text-amber-800 bg-amber-50 border border-amber-300 rounded px-3 py-2">
-              ⚠️ <b>{e.symbol}</b> at ₹{fmt(p, 2)} is within {NEAR_PCT}% of your stop (₹{fmt(e.stop!, 2)}).
+              ⚠️ <b>{e.symbol}</b> at ₹{fmt(p, 2)} is within {NEAR_PCT}% of your stop (₹{fmt(e.stop!, 2)}{e.stopMode === "ema33w" ? ", the 33W EMA" : ""}).
             </div>
           ))}
           <div className="text-[11px] text-slate-400">Based on the last close in the daily store{px.asOf ? ` (${px.asOf})` : ""}, refreshed each evening — not a live stop order.</div>
@@ -641,7 +658,7 @@ export default function TradeJournal() {
           <div className="text-xs text-slate-500 mb-3">The PF update found these in your holdings and recorded them. The numbers are in — the point of the journal is the <i>why</i>, so say it while you still remember it.</div>
           <div className="space-y-3">
             {pendingBuys.map((e) => (
-              <QuickComment key={e.id} e={e} checklist={checklist} onSaveBuy={(p) => patch(e.id, p)} onSaveSell={() => {}} onDrop={() => remove(e.id, true)} />
+              <QuickComment key={e.id} e={e} ema33={ema33Level(px.map.get(e.symbol))} checklist={checklist} onSaveBuy={(p) => patch(e.id, p)} onSaveSell={() => {}} onDrop={() => remove(e.id, true)} />
             ))}
             {pendingSells.map((x) => (
               <QuickComment key={x.id} x={x} sale={books.get(x.symbol)?.sales.find((r) => r.sell.id === x.id)} checklist={checklist} onSaveBuy={() => {}} onSaveSell={(p) => patchSell(x.id, p)} onDrop={() => removeSell(x.id, true)} />
@@ -826,16 +843,19 @@ export default function TradeJournal() {
 
         <Step n={3} title="🛑 Where's the exit?" done={stopPx > 0 && (!(price > 0) || stopPx < price)}>
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            {STOP_PCTS.map((pc) => <button key={pc} type="button" onClick={() => setStopPct(String(pc))} className={chip(stopPct === pc)}>−{pc}%</button>)}
-            {emaLevels.map((l) => (
-              <button key={l.label} type="button" onClick={() => setStopPx(l.px.toFixed(2))} className={chip(Math.abs(stopPx - l.px) < 0.01)} title={`Stop just under the ${l.label}`}>
+            <button type="button" onClick={() => setF({ ...f, stopMode: "ema33w" })} disabled={ema33 === null} className={`${chip(useEma)} ${ema33 === null ? "opacity-50" : ""}`} title="Your default exit: close below the weekly 33 EMA. It trails up on its own.">
+              🔔 33W EMA{ema33 !== null ? ` ₹${fmt(ema33, 2)}` : " (no data)"} · trailing
+            </button>
+            {STOP_PCTS.map((pc) => <button key={pc} type="button" onClick={() => setStopPct(String(pc))} className={chip(!useEma && stopPct === pc)}>−{pc}%</button>)}
+            {emaLevels.filter((l) => l.label !== "33W EMA").map((l) => (
+              <button key={l.label} type="button" onClick={() => setStopPx(l.px.toFixed(2))} className={chip(!useEma && Math.abs(stopPx - l.px) < 0.01)} title={`Stop just under the ${l.label}`}>
                 {l.label} ₹{fmt(l.px, 2)}
               </button>
             ))}
           </div>
           <div className="flex flex-wrap items-end gap-3">
-            <div className="w-28"><F label="Stop (% below)"><input type="number" step="any" value={f.stopPct} onChange={(e) => setStopPct(e.target.value)} className={input} /></F></div>
-            <div className="w-32"><F label="Stop price (₹)"><input type="number" step="any" value={f.stopPx} onChange={(e) => setStopPx(e.target.value)} className={input} /></F></div>
+            <div className="w-28"><F label="Stop (% below)"><input type="number" step="any" value={useEma ? (stopPct > 0 ? stopPct.toFixed(1) : "") : f.stopPct} onChange={(e) => setStopPct(e.target.value)} className={input} /></F></div>
+            <div className="w-32"><F label="Stop price (₹)" hint={useEma ? "= 33W EMA, trailing" : undefined}><input type="number" step="any" value={useEma ? stopPx.toFixed(2) : f.stopPx} onChange={(e) => setStopPx(e.target.value)} className={input} /></F></div>
             <div className="w-32"><F label="Target (₹, optional)"><input type="number" step="any" value={f.target} onChange={(e) => setF({ ...f, target: e.target.value })} className={input} /></F></div>
             {stopPx > 0 && price > stopPx && (
               <div className="flex gap-1.5 pb-1">
@@ -1071,7 +1091,7 @@ export default function TradeJournal() {
                       <td className={`${td} ${unreal === null ? "" : sign(unreal)}`}>{unreal === null ? "—" : `${R(unreal)} / ${fmtSigned(plp!, 1)}`}</td>
                       <td className={`${td} ${bk.sold ? sign(bk.realized) : ""}`}>{bk.sold ? R(bk.realized) : "—"}</td>
                       <td className={`${td} text-slate-600`}>{!closed && pf?.weights[p.sym] !== undefined ? fmt(pf.weights[p.sym], 1, "%") : !closed && p.s.alloc > 0 ? fmt(p.s.alloc, 1, "%") : "—"}</td>
-                      <td className={`${td} text-slate-600`}>{closed ? "—" : p.last?.stop != null ? fmt(p.last.stop, 2) : <span className="text-red-500">none</span>}</td>
+                      <td className={`${td} text-slate-600`}>{closed ? "—" : p.last?.stop != null ? <>{fmt(p.last.stop, 2)}{p.last.stopMode === "ema33w" && <span className="block text-[10px] text-slate-400">33W EMA</span>}</> : <span className="text-red-500">none</span>}</td>
                     </tr>
                   );
                   if (!isOpenP) return [head];
@@ -1230,7 +1250,7 @@ export default function TradeJournal() {
                   <td className={`${td} text-slate-600`}>{e.rsiW !== null ? fmt(e.rsiW, 1) : "—"}</td>
                   <td className={`${td} text-slate-600`}>{e.ema200Pct !== null ? fmtSigned(e.ema200Pct, 1) : "—"}</td>
                   <td className={`${td} text-slate-600`}>
-                    {e.stop !== null ? `${fmt(e.stop, 2)} / ${fmt((1 - e.stop / e.price) * 100, 1, "%")}` : <span className="text-red-500">none</span>}
+                    {e.stop !== null ? <>{`${fmt(e.stop, 2)} / ${fmt((1 - e.stop / e.price) * 100, 1, "%")}`}{e.stopMode === "ema33w" && <span className="block text-[10px] text-slate-400">33W EMA</span>}</> : <span className="text-red-500">none</span>}
                   </td>
                   <td className={`${td} text-slate-500`}>{rk !== null ? R(rk) : "—"}</td>
                   <td className={td}>
@@ -1282,10 +1302,20 @@ export default function TradeJournal() {
                         ))}
                       </div>
                       <div className="flex flex-col gap-2" onClick={(ev) => ev.stopPropagation()}>
-                        <F label="Stop-loss now (₹) — trail it up as the trade works" hint={e.stop0 !== null ? `started at ₹${fmt(e.stop0, 2)}` : undefined}>
-                          <input type="number" step="any" value={e.stop ?? ""} onChange={(ev) => patch(e.id, { stop: ev.target.value === "" ? null : parseFloat(ev.target.value) })}
-                          onBlur={() => e.stop0 === null && e.stop !== null && Number.isFinite(e.stop) && patch(e.id, { stop0: e.stop })} className={input} />
-                        </F>
+                        {e.stopMode === "ema33w" ? (
+                          <div className="text-xs">
+                            <div className="text-slate-600 mb-1">Stop-loss: <b>33W EMA, trailing</b>{e.stop !== null ? <> — live ₹{fmt(e.stop, 2)}</> : " — no store data yet"}</div>
+                            <button onClick={() => patch(e.id, { stopMode: "fixed" })} className="text-indigo-600 hover:underline">switch to a fixed stop price</button>
+                          </div>
+                        ) : (
+                          <>
+                            <F label="Stop-loss now (₹) — trail it up as the trade works" hint={e.stop0 !== null ? `started at ₹${fmt(e.stop0, 2)}` : undefined}>
+                              <input type="number" step="any" value={e.stop ?? ""} onChange={(ev) => patch(e.id, { stop: ev.target.value === "" ? null : parseFloat(ev.target.value) })}
+                                onBlur={() => e.stop0 === null && e.stop !== null && Number.isFinite(e.stop) && patch(e.id, { stop0: e.stop })} className={input} />
+                            </F>
+                            <button onClick={() => patch(e.id, { stopMode: "ema33w" })} className="text-xs text-indigo-600 hover:underline self-start">↺ use the 33W EMA as the stop</button>
+                          </>
+                        )}
                         <div className="text-xs text-slate-500 mt-1">Review</div>
                         <div className="grid grid-cols-2 gap-2">
                           <F label="Exit date"><input type="date" value={rv.exitDate} onChange={(ev) => patchReview(e.id, { exitDate: ev.target.value })} className={input} /></F>

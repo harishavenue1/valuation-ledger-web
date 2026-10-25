@@ -20,6 +20,9 @@ export type Entry = {
   target: number | null;
   fundTrigger: "yes" | "no";
   fundNote: string; // the fundamental trigger, in a few words
+  // "ema33w" (the default, 2026-10-25 "by default set the stopLoss for all as 33WEMA") = the stop IS the live 33-week EMA,
+  // read from the daily store and trailing up with it; "fixed" = the typed `stop` price
+  stopMode?: "fixed" | "ema33w";
   ema200Pct: number | null; // % above(+)/below(-) the 200D EMA on the day of the buy, from the store
   rsiW: number | null; // weekly RSI on the day of the buy, from the store
   setup: string;
@@ -134,10 +137,24 @@ export function buildBooks(entries: Entry[], sells: Sell[]): Map<string, SymbolB
   return books;
 }
 
-export function stopState(e: Entry, price: number | undefined): StopState {
-  if (isClosed(e) || e.stop === null || !(e.stop > 0) || price === undefined || !Number.isFinite(price)) return "none";
-  if (price <= e.stop) return "hit";
-  if (price <= e.stop * (1 + NEAR_PCT / 100)) return "near";
+/** The weekly 33 EMA in ₹, from a daily-store row (price and its % distance above the EMA). */
+export const ema33Level = (row: any): number | null =>
+  row && typeof row.price === "number" && typeof row.pct_33w_ema === "number" && row.price > 0 ? row.price / (1 + row.pct_33w_ema / 100) : null;
+
+/** The stop price in force right now: the live 33W EMA for an ema33w entry (falling back to its stored number), else the typed stop. */
+export function stopLevel(e: Entry, row: any): number | null {
+  if (e.stopMode === "ema33w") {
+    const l = ema33Level(row);
+    if (l !== null) return l;
+  }
+  return e.stop !== null && e.stop > 0 ? e.stop : null;
+}
+
+export function stopState(e: Entry, price: number | undefined, level?: number | null): StopState {
+  const lv = level !== undefined ? level : e.stop;
+  if (isClosed(e) || lv === null || lv === undefined || !(lv > 0) || price === undefined || !Number.isFinite(price)) return "none";
+  if (price <= lv) return "hit";
+  if (price <= lv * (1 + NEAR_PCT / 100)) return "near";
   return "ok";
 }
 
@@ -150,7 +167,7 @@ export function useStopAlerts(delayMs = 0): { hit: Entry[]; near: Entry[]; pendi
       Promise.all([api.getJournal(), api.getBhavTechnicals()])
         .then(([j, b]) => {
           if (cancelled) return;
-          const px = new Map<string, number>((b.rows ?? []).map((x: any) => [x.symbol, x.price]));
+          const px = new Map<string, any>((b.rows ?? []).map((x: any) => [x.symbol, x]));
           const hit: Entry[] = [];
           const near: Entry[] = [];
           const books = buildBooks(j.entries ?? [], j.sells ?? []);
@@ -158,7 +175,8 @@ export function useStopAlerts(delayMs = 0): { hit: Entry[]; near: Entry[]; pendi
           for (const bk of books.values()) for (const l of bk.lots) if (l.remaining > 0) held.add(l.entry.id);
           for (const e of j.entries ?? []) {
             if (!held.has(e.id)) continue;
-            const s = stopState(e, px.get(e.symbol));
+            const row = px.get(e.symbol);
+            const s = stopState(e, row?.price, stopLevel(e, row));
             if (s === "hit") hit.push(e);
             else if (s === "near") near.push(e);
           }

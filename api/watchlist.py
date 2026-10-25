@@ -104,7 +104,7 @@ def journal_sync(conn, body, hs):
                 "id": f"k-{as_of}-{sym}-b{int(round(adj))}", "type": "buy", "source": "kite", "pending": True,
                 "symbol": sym, "date": as_of, "qty": round(adj, 4), "price": round(price, 2),
                 "allocPct": round(adj * price / pv * 100, 2) if pv > 0 and price > 0 else None, "allocReason": "",
-                "stop0": None, "stop": None, "target": None, "fundTrigger": "no", "fundNote": "",
+                "stop0": None, "stop": None, "stopMode": "ema33w", "target": None, "fundTrigger": "no", "fundNote": "",
                 "ema200Pct": _num(tr.get("pct_200d_ema")), "rsiW": _num(tr.get("rsi_w")),
                 "setup": "Other", "reason": "", "state": "", "confidence": 3, "checks": [],
             }
