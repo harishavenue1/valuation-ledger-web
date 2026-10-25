@@ -63,7 +63,7 @@ def journal_sync(conn, body, hs):
     ids = {x.get("id") for x in entries} | {x.get("id") for x in sells} | {x.get("id") for x in inbox}
 
     def save_snap():
-        set_meta(conn, "journal_snap", {"as_of": as_of, "holdings": holdings, "accounted": sorted(i for i in ids if i)})
+        set_meta(conn, "journal_snap", {"as_of": as_of, "holdings": holdings, "accounted": sorted(i for i in ids if i), "pv": pv or None})
 
     if snap is None or body.get("baseline"):
         save_snap()
@@ -141,6 +141,14 @@ class handler(BaseHTTPRequestHandler):
             if parse_qs(urlparse(self.path).query).get("journal"):
                 doc = get_meta(conn, "journal", {"checklist": None, "entries": [], "sells": []})
                 doc["inbox"] = get_meta(conn, "journal_inbox", [])
+                # portfolio value + each holding's weight as of the last PF update, so the page can work out allocation % itself
+                snap = get_meta(conn, "journal_snap", None) or {}
+                pvv = snap.get("pv")
+                if pvv:
+                    doc["portfolio"] = {
+                        "value": pvv, "as_of": snap.get("as_of"),
+                        "weights": {k: round(h["qty"] * (h.get("ltp") or 0) / pvv * 100, 2) for k, h in (snap.get("holdings") or {}).items() if h.get("ltp")},
+                    }
                 send_json(self, 200, doc)
                 return
             send_json(self, 200, get_meta(conn, "watchlist", {"tickers": []}))

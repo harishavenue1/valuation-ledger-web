@@ -285,6 +285,8 @@ export default function TradeJournal() {
   const [openPos, setOpenPos] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // portfolio value + each holding's weight as of the last PF update — what the allocation % is worked out against
+  const [pf, setPf] = useState<{ value: number; as_of?: string; weights: Record<string, number> } | null>(null);
   const blankSell = () => ({ symbol: "", date: today(), qty: "", price: "", reason: "", state: STATES[0], plan: "" as "" | "yes" | "partly" | "no", lesson: "" });
   const [sf, setSf] = useState(blankSell);
   const [sellEditId, setSellEditId] = useState<string | null>(null);
@@ -323,6 +325,7 @@ export default function TradeJournal() {
         const nz = (v: any) => (typeof v === "number" && v > 0 ? v : null);
         setDoc({ checklist: d.checklist ?? null, entries: (d.entries ?? []).map((e: Entry) => ({ ...e, stop: nz(e.stop), stop0: nz(e.stop0) })), sells: d.sells ?? [] });
         setLoaded(true);
+        setPf(d.portfolio ?? null);
         mergeInbox(d.inbox ?? []);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -338,7 +341,10 @@ export default function TradeJournal() {
     const pull = () =>
       api
         .getJournal()
-        .then((d) => mergeInbox(d.inbox ?? []))
+        .then((d) => {
+          setPf(d.portfolio ?? null);
+          mergeInbox(d.inbox ?? []);
+        })
         .catch(() => {});
     const t = window.setInterval(pull, 90000);
     window.addEventListener("focus", pull);
@@ -378,7 +384,9 @@ export default function TradeJournal() {
   const price = num(f.price);
   const stopPx = num(f.stopPx);
   const stopPct = num(f.stopPct);
-  const allocPct = num(f.allocPct);
+  const allocAuto = pf?.value && qty > 0 && price > 0 ? (qty * price) / pf.value * 100 : null; // worked out from the PF update's portfolio value
+  const allocPct = f.allocPct.trim() !== "" ? num(f.allocPct) : allocAuto ?? NaN;
+  const exW = pf?.weights[sym]; // what this holding already weighs
   const ema200Pct: number | null = row && typeof row.pct_200d_ema === "number" ? row.pct_200d_ema : null;
   const rsiW: number | null = row && typeof row.rsi_w === "number" ? row.rsi_w : null;
 
@@ -411,8 +419,18 @@ export default function TradeJournal() {
     });
   };
 
-  const setQty = (v: string) => setF((s) => ({ ...s, qty: v, amount: num(v) > 0 && num(s.price) > 0 ? String(Math.round(num(v) * num(s.price))) : "" }));
-  const setAmount = (v: string) => setF((s) => ({ ...s, amount: v, qty: num(v) > 0 && num(s.price) > 0 ? String(Math.floor(num(v) / num(s.price))) : s.qty }));
+  const setQty = (v: string) => setF((s) => ({ ...s, qty: v, allocPct: pf?.value ? "" : s.allocPct, amount: num(v) > 0 && num(s.price) > 0 ? String(Math.round(num(v) * num(s.price))) : "" }));
+  const setAmount = (v: string) => setF((s) => ({ ...s, amount: v, allocPct: pf?.value ? "" : s.allocPct, qty: num(v) > 0 && num(s.price) > 0 ? String(Math.floor(num(v) / num(s.price))) : s.qty }));
+  // pick a target % → the quantity that gets there (the % itself then stays derived from quantity × price)
+  const pickAlloc = (a: number) =>
+    setF((s) => {
+      const px0 = num(s.price);
+      if (pf?.value && px0 > 0) {
+        const q0 = Math.max(1, Math.floor((pf.value * a) / 100 / px0));
+        return { ...s, allocPct: "", qty: String(q0), amount: String(Math.round(q0 * px0)) };
+      }
+      return { ...s, allocPct: String(a) };
+    });
   // typing a symbol that has store data fills the price in — one less thing to type
   useEffect(() => {
     if (row?.price && !f.price) setBuyPrice(String(row.price));
@@ -788,10 +806,17 @@ export default function TradeJournal() {
             <div className="w-32"><F label="or ₹ amount"><input type="number" value={f.amount} onChange={(e) => setAmount(e.target.value)} className={input} /></F></div>
             <div className="text-xs text-slate-500 pb-2">{qty > 0 && price > 0 ? `≈ ${R(qty * price)} · ${fmt(qty, 0)} units` : "type units or an amount — the other follows"}</div>
           </div>
-          <div className="text-[11px] text-slate-500 mb-1">Allocation — % of portfolio</div>
+          <div className="text-[11px] text-slate-500 mb-1">
+            Allocation — % of portfolio{" "}
+            {pf?.value ? <span className="text-slate-400">· worked out from your last PF update ({pf.as_of}, ₹{fmt(pf.value / 1e5, 1)}L) — tap a % to size the buy, or type units</span> : <span className="text-amber-700">· run the PF update once and this fills itself; type it for now</span>}
+          </div>
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
-            {ALLOCS.map((a) => <button key={a} type="button" onClick={() => setF({ ...f, allocPct: String(a) })} className={chip(allocPct === a)}>{a}%</button>)}
-            <input type="number" step="any" value={f.allocPct} onChange={(e) => setF({ ...f, allocPct: e.target.value })} placeholder="other" className="w-20 px-2 py-1 border border-slate-300 rounded-full text-xs" />
+            {ALLOCS.map((a) => <button key={a} type="button" onClick={() => pickAlloc(a)} className={chip(Number.isFinite(allocPct) && Math.abs(allocPct - a) < (pf?.value ? 0.15 : 0.001))}>{a}%</button>)}
+            <span className={`px-3 py-1 rounded-full text-xs border ${Number.isFinite(allocPct) && allocPct > 0 ? "border-emerald-400 text-emerald-700" : "border-slate-300 text-slate-400"}`}>
+              {Number.isFinite(allocPct) && allocPct > 0 ? `= ${fmt(allocPct, 2, "%")} of portfolio` : "= —"}
+            </span>
+            {!pf?.value && <input type="number" step="any" value={f.allocPct} onChange={(e) => setF({ ...f, allocPct: e.target.value })} placeholder="other %" className="w-24 px-2 py-1 border border-slate-300 rounded-full text-xs" />}
+            {exW !== undefined && Number.isFinite(allocPct) && allocPct > 0 && <span className="text-xs text-slate-500">· already {fmt(exW, 2, "%")} → <b className="text-slate-800">{fmt(exW + allocPct, 2, "%")}</b> after this buy</span>}
           </div>
           <div className="flex flex-wrap gap-1.5 mb-1.5">
             {ALLOC_WHY.map((w) => <button key={w} type="button" onClick={() => setF({ ...f, allocReason: w })} className={chip(f.allocReason === w)}>{w}</button>)}
@@ -1014,7 +1039,7 @@ export default function TradeJournal() {
                   <th className={th}>Now</th>
                   <th className={th}>Unrealised ₹ / %</th>
                   <th className={th}>Realised ₹</th>
-                  <th className={th}>Alloc %</th>
+                  <th className={th} title="Share of the portfolio as of your last PF update (falls back to what you typed when you bought)">Alloc %</th>
                   <th className={th}>Stop</th>
                 </tr>
               </thead>
@@ -1045,7 +1070,7 @@ export default function TradeJournal() {
                       <td className={td}>{p.now !== undefined ? <PriceLink symbol={p.sym} value={p.now} /> : "—"}</td>
                       <td className={`${td} ${unreal === null ? "" : sign(unreal)}`}>{unreal === null ? "—" : `${R(unreal)} / ${fmtSigned(plp!, 1)}`}</td>
                       <td className={`${td} ${bk.sold ? sign(bk.realized) : ""}`}>{bk.sold ? R(bk.realized) : "—"}</td>
-                      <td className={`${td} text-slate-600`}>{!closed && p.s.alloc > 0 ? fmt(p.s.alloc, 1, "%") : "—"}</td>
+                      <td className={`${td} text-slate-600`}>{!closed && pf?.weights[p.sym] !== undefined ? fmt(pf.weights[p.sym], 1, "%") : !closed && p.s.alloc > 0 ? fmt(p.s.alloc, 1, "%") : "—"}</td>
                       <td className={`${td} text-slate-600`}>{closed ? "—" : p.last?.stop != null ? fmt(p.last.stop, 2) : <span className="text-red-500">none</span>}</td>
                     </tr>
                   );
