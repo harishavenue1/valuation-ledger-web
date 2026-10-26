@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { fmt, fmtSigned } from "../lib/model";
 import { PriceLink } from "../components/ScreenerTable";
 import { Check, Doc, Entry, InboxItem, NEAR_PCT, Review, Sell, alertHidden, buildBooks, ema33Level, isClosed, matchSale, stopLevel, stopState } from "../lib/journal";
+import { Fold } from "../components/Fold";
 
 // Trade Journal — added 2026-10-25 ("a new menu page for checklist + buying record for future review, with reasons as
 // to why I buy, date, qty, price ... keep to process instead of emotions"), extended the same day with "a) is it above
@@ -666,7 +667,8 @@ export default function TradeJournal() {
       {err && <div className="mb-3 text-xs text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">Could not load your journal ({err}). Nothing is saved until it loads — reload the page.</div>}
 
       {(alerts.hit.length > 0 || alerts.near.length > 0 || alerts.hidden > 0) && (
-        <div className="my-3 space-y-2">
+        <Fold id="tj-alerts" title={`🛑 Stop-loss alerts (${alerts.hit.length + alerts.near.length})`} className="my-3">
+        <div className="space-y-2">
           {alerts.hit.map((it) => (
             <div key={it.e.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2">
               <span>
@@ -698,11 +700,12 @@ export default function TradeJournal() {
             {alerts.hidden > 0 && <button onClick={showHidden} className="text-slate-500 hover:underline">{alerts.hidden} cleared alert{alerts.hidden === 1 ? "" : "s"} · show again</button>}
           </div>
         </div>
+        </Fold>
       )}
 
       {(pendingBuys.length > 0 || pendingSells.length > 0) && (
-        <div className="my-3 p-4 border border-indigo-400 rounded-lg">
-          <div className="text-sm font-semibold mb-1">✍️ {pendingBuys.length + pendingSells.length} Kite trade{pendingBuys.length + pendingSells.length === 1 ? "" : "s"} waiting for your reason</div>
+        <Fold id="tj-owed" title={`✍️ ${pendingBuys.length + pendingSells.length} Kite trade${pendingBuys.length + pendingSells.length === 1 ? "" : "s"} waiting for your reason`} className="my-3">
+        <div className="p-4 border border-indigo-400 rounded-lg">
           <div className="text-xs text-slate-500 mb-3">The PF update found these in your holdings and recorded them. The numbers are in — the point of the journal is the <i>why</i>, so say it while you still remember it.</div>
           <div className="space-y-3">
             {pendingBuys.map((e) => (
@@ -713,9 +716,11 @@ export default function TradeJournal() {
             ))}
           </div>
         </div>
+        </Fold>
       )}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 bg-slate-50 rounded-lg p-4 my-3">
+      <Fold id="tj-stats" title="📊 Summary" className="my-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 bg-slate-50 rounded-lg p-4">
         <div>
           <div className="text-xs text-slate-500">Buys logged</div>
           <div className="text-lg font-semibold tabular-nums">{stats.n}</div>
@@ -751,6 +756,7 @@ export default function TradeJournal() {
           <div className="text-lg font-semibold tabular-nums">{pct(stats.followed)}</div>
         </div>
       </div>
+      </Fold>
 
       {/* new buy — a guided, tap-first flow */}
       {toast && <div className="mb-3 text-sm text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg px-4 py-2.5">{toast}</div>}
@@ -1096,8 +1102,7 @@ export default function TradeJournal() {
 
       {/* positions */}
       {positions.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-sm font-medium text-slate-700 mb-2">Positions — buys, sales and what's left, per stock / ETF</h2>
+        <Fold id="tj-positions" title="Positions — buys, sales and what's left, per stock / ETF" className="mb-5">
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
             <table className="text-sm border-collapse w-full" style={{ minWidth: 1250 }}>
               <thead>
@@ -1238,15 +1243,14 @@ export default function TradeJournal() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Fold>
       )}
 
       {/* record */}
-      <div className="flex flex-wrap items-center gap-3 mb-2">
-        <h2 className="text-sm font-medium text-slate-700">All buys (record)</h2>
+      <Fold id="tj-buys" title="All buys (record)" className="mb-4" right={<>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="search symbol, setup or reason…" className="px-2 py-1.5 border border-slate-300 rounded text-sm w-64" />
         <span className="text-xs text-slate-400">{shown.length} of {doc.entries.length}{px.asOf ? ` · prices as of ${px.asOf}` : ""}</span>
-      </div>
+      </>}>
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
         <table className="text-sm border-collapse w-full" style={{ minWidth: 1450 }}>
           <thead>
@@ -1405,9 +1409,9 @@ export default function TradeJournal() {
           </tbody>
         </table>
       </div>
+      </Fold>
       {doc.sells.length > 0 && (
-        <div className="mt-5">
-          <h2 className="text-sm font-medium text-slate-700 mb-2">Sales record ({doc.sells.length})</h2>
+        <Fold id="tj-sales" title={`Sales record (${doc.sells.length})`} className="mt-5">
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
             <table className="text-sm border-collapse w-full" style={{ minWidth: 1100 }}>
               <thead>
@@ -1452,7 +1456,7 @@ export default function TradeJournal() {
               </tbody>
             </table>
           </div>
-        </div>
+        </Fold>
       )}
 
       <p className="text-[11px] text-slate-400 mt-2">

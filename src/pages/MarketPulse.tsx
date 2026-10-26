@@ -4,6 +4,7 @@ import RunButton from "../components/RunButton";
 import { MethodologyNote, ScreenerInLink, ScreenerLoading, Signed, fmtNum, fmtSigned } from "../components/ScreenerTable";
 import { ChartCard, Delta, GREEN, RED, Tile, pct } from "../components/PulseCharts";
 import type { Key, ListRow, PulseRow } from "../components/PulseCharts";
+import { Fold } from "../components/Fold";
 import { CorrelationSection, FlowSection, MacroSection, withMacroDerived } from "../components/PulseMacro";
 
 // 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
@@ -118,6 +119,7 @@ export default function MarketPulse() {
         <div className="text-sm text-slate-400 text-center py-16">No Market Pulse data yet — click Run now above, or wait for the next evening run.</div>
       ) : (
         <>
+          <Fold id="pulse-prices" title="📟 Nifty 500, crude, gold, silver and 52-week counts" className="mb-2">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
             {PRICE_SERIES.map((s) => (
               <Tile key={s.key} label={s.label} unit={s.unit} value={last?.[s.key] as number | null} digits={s.digits} day={pctChg(s.key, prev)} month={pctChg(s.key, monthAgo)} dayDigits={2} dayLabel="%" />
@@ -131,11 +133,12 @@ export default function MarketPulse() {
               <ChartCard key={s.key} title={s.label} unit={s.unit} rows={rows} digits={s.digits} series={[{ key: s.key, name: s.label, color: s.color }]} />
             ))}
           </div>
+          </Fold>
           <MacroSection all={all} rows={rows} />
           <FlowSection all={all} rows={rows} months={months} />
           <CorrelationSection all={all} />
 
-          <h2 className="text-base font-semibold mt-6 mb-2">📈 52-week highs &amp; lows</h2>
+          <Fold id="pulse-52w" title="📈 52-week highs & lows" className="mt-6">
           <div className="flex flex-wrap items-center gap-2 mb-2 text-xs text-slate-500">
             <span>52-week counts for</span>
             <span className="inline-flex rounded-md border border-slate-200 overflow-hidden">
@@ -211,6 +214,7 @@ export default function MarketPulse() {
               </tbody>
             </table>
           </div>
+          </Fold>
         </>
       )}
     </div>

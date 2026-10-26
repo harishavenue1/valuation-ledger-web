@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { fmtNum, fmtSigned } from "./ScreenerTable";
+import { Fold } from "./Fold";
 import { ChartCard, Delta, GREEN, LineChart, RED, Tile, YIELD_KEYS, pct } from "./PulseCharts";
 import type { Key, PulseRow } from "./PulseCharts";
 import { CORR_SERIES, dailyChanges, MIN_PAIRS, pairCorr, rollingCorr } from "../lib/pulseMacro";
@@ -103,8 +104,8 @@ export function MacroSection({ all, rows }: { all: PulseRow[]; rows: PulseRow[] 
   const estNow = last?.in10y_est === 1;
   const pc = (k: Key, ref?: PulseRow) => (last && ref ? pct(last[k] as number | null, ref[k] as number | null) : null);
   return (
-    <>
-      <SectionHead title="🌍 Macro & geopolitical drivers" note="the prices through which wars, sanctions, oil shocks and Fed moves reach Indian stocks" />
+    <Fold id="pulse-macro" title="🌍 Macro & geopolitical drivers" note="the prices through which wars, sanctions, oil shocks and Fed moves reach Indian stocks" className="mt-6">
+
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-4">
         <Tile label="USD/INR" unit="₹" value={last?.usdinr} digits={2} day={pc("usdinr", prev)} month={pc("usdinr", month)} dayDigits={2} dayLabel="%" invert />
         <Tile label="Dollar Index" value={last?.dxy} digits={2} day={pc("dxy", prev)} month={pc("dxy", month)} dayDigits={2} dayLabel="%" />
@@ -197,7 +198,7 @@ export function MacroSection({ all, rows }: { all: PulseRow[]; rows: PulseRow[] 
           the level drifts over months. Real readings (CNBC) are stored from then on.
         </div>
       )}
-    </>
+    </Fold>
   );
 }
 
@@ -250,8 +251,8 @@ export function CorrelationSection({ all }: { all: PulseRow[] }) {
 
   if (all.length < 40 || !all.some((r) => r.usdinr != null)) return null;
   return (
-    <>
-      <SectionHead title="🔗 Correlations" note={`daily changes over the last ${win.label}; +1 = move together, −1 = move opposite`} />
+    <Fold id="pulse-corr" title="🔗 Correlations" note={`daily changes over the last ${win.label}; +1 = move together, −1 = move opposite`} className="mt-6">
+
       <div className="flex flex-wrap items-center gap-3 mb-2 text-xs text-slate-500">
         <span className="inline-flex rounded-md border border-slate-200 overflow-hidden">
           {WINDOWS.map((w) => (
@@ -343,7 +344,7 @@ export function CorrelationSection({ all }: { all: PulseRow[] }) {
         Pearson correlation of daily changes — % for prices and the VIXes, points for yields, ₹ Cr for FII / DII flows — using only days both series have; needs at least {MIN_PAIRS} overlapping days (FII / DII daily history builds up from the
         past month onward, so those cells fill in over time). India 10Y is partly estimated before its first real reading.
       </div>
-    </>
+    </Fold>
   );
 }
 
@@ -438,8 +439,8 @@ export function FlowSection({ all, rows, months }: { all: PulseRow[]; rows: Puls
     </div>
   );
   return (
-    <>
-      <SectionHead title="🏦 FII & DII flows" note={`cash segment, net buying (+) or selling (−) · latest ${last.date} · NSE + BSE provisional`} />
+    <Fold id="pulse-flows" title="🏦 FII & DII flows" note={`cash segment, net buying (+) or selling (−) · latest ${last.date} · NSE + BSE provisional`} className="mt-6">
+
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
         <T label="FII today" v={last.fii ?? 0} sub={streak("fii")} />
         <T label="DII today" v={last.dii ?? 0} sub={streak("dii")} />
@@ -481,6 +482,6 @@ export function FlowSection({ all, rows, months }: { all: PulseRow[]; rows: Puls
         FII = foreign institutional / portfolio investors, DII = domestic institutions (mutual funds, insurers, banks). Source: Trendlyne's FII / DII table (NSE + BSE cash segment, provisional until the exchanges finalise). Daily history
         starts from the first run and grows every day; the monthly view goes back years. Both lines up together is rare: usually FIIs sell into rallies that DIIs absorb, and the gap between them is what to watch.
       </div>
-    </>
+    </Fold>
   );
 }
