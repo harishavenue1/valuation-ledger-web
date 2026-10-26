@@ -30,6 +30,7 @@ const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
 const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
 const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
 const BlockbusterResults = lazy(() => import("./pages/BlockbusterResults"));
+const BlockbusterGuidance = lazy(() => import("./pages/BlockbusterGuidance"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
@@ -235,6 +236,7 @@ export default function App() {
                   { to: "/all-technicals", label: "🔬 All Technicals" },
                   { to: "/all-fundamentals", label: "📚 All Fundamentals" },
                   { to: "/blockbuster-results", label: "💥 Blockbuster Results" },
+                  { to: "/blockbuster-guidance", label: "📣 Blockbuster Guidances" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
                   { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
@@ -311,6 +313,7 @@ export default function App() {
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
             <Route path="/mtf-playbook" element={<MTFPlaybook />} />
             <Route path="/blockbuster-results" element={<BlockbusterResults />} />
+            <Route path="/blockbuster-guidance" element={<BlockbusterGuidance />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
