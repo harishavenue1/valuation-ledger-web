@@ -1252,7 +1252,8 @@ export default function TradeJournal() {
         <span className="text-xs text-slate-400">{shown.length} of {doc.entries.length}{px.asOf ? ` · prices as of ${px.asOf}` : ""}</span>
       </>}>
       <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="text-sm border-collapse w-full" style={{ minWidth: 1450 }}>
+        <table className="text-sm border-collapse w-full table-fixed" style={{ minWidth: 1450 }}>
+          <colgroup>{[7, 9, 7, 6, 5, 5, 6, 8, 6, 7, 5, 5, 12, 8, 4].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
           <thead>
             <tr>
               <th className={thC}>Date</th>
@@ -1294,7 +1295,7 @@ export default function TradeJournal() {
               const reviewed = !!(e.review && (e.review.lesson || e.review.plan || e.review.exitPrice));
               const tone = ss === "hit" ? "bg-red-50" : ss === "near" ? "bg-amber-50" : isOpen ? "bg-slate-50" : "";
               const main = (
-                <tr key={e.id} onClick={() => setOpen(isOpen ? null : e.id)} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${tone}`}>
+                <tr key={e.id} onClick={() => setOpen(isOpen ? null : e.id)} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${tone}`} style={{ height: 48 }}>
                   <td className="px-2 py-1.5 text-center tabular-nums text-slate-600">{e.date}</td>
                   <td className="px-2 py-1.5 font-medium">
                     {e.symbol}
@@ -1413,7 +1414,8 @@ export default function TradeJournal() {
       {doc.sells.length > 0 && (
         <Fold id="tj-sales" title={`Sales record (${doc.sells.length})`} className="mt-5">
           <div className="overflow-x-auto border border-slate-200 rounded-lg">
-            <table className="text-sm border-collapse w-full" style={{ minWidth: 1100 }}>
+            <table className="text-sm border-collapse w-full table-fixed" style={{ minWidth: 1450 }}>
+              <colgroup>{[7, 9, 7, 6, 5, 5, 6, 8, 6, 7, 5, 5, 12, 8, 4].map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}</colgroup>
               <thead>
                 <tr>
                   <th className={thC}>Date</th>
@@ -1424,10 +1426,10 @@ export default function TradeJournal() {
                   <th className={th}>P/L ₹</th>
                   <th className={th}>P/L %</th>
                   <th className={th}>Held (days)</th>
-                  <th className={thL}>Plan</th>
-                  <th className={thL}>State</th>
-                  <th className={thL}>Why I sold</th>
-                  <th className={th}></th>
+                  <th className={thL} colSpan={2}>Plan</th>
+                  <th className={thL} colSpan={2}>State</th>
+                  <th className={thL} colSpan={3}>Why I sold</th>
+                  <th className={thC}></th>
                 </tr>
               </thead>
               <tbody>
@@ -1435,19 +1437,19 @@ export default function TradeJournal() {
                   .flatMap((b) => b.sales)
                   .sort((a, b) => b.sell.date.localeCompare(a.sell.date))
                   .map((r) => (
-                    <tr key={r.sell.id} className="border-t border-slate-100 align-top">
+                    <tr key={r.sell.id} className="border-t border-slate-100" style={{ height: 48 }}>
                       <td className="px-2 py-1.5 text-center tabular-nums text-slate-600">{r.sell.date}</td>
                       <td className="px-2 py-1.5 font-medium">{r.sell.symbol}</td>
-                      <td className={td}>{fmtQty(r.sell.qty)}{r.short > 0 && <span className="text-[10px] text-amber-700" title="part of this sale has no buy to match"> ({fmtQty(r.short)} unmatched)</span>}</td>
+                      <td className={td}>{fmtQty(r.sell.qty)}{r.short > 0 && <span className="block text-[10px] text-amber-700" title="part of this sale has no buy to match">{fmtQty(r.short)} unmatched</span>}</td>
                       <td className={td}>{fmt(r.sell.price, 2)}{r.sell.priceApprox && <span className="text-[10px] text-amber-700" title="price inferred — correct it"> ~</span>}</td>
                       <td className={`${td} text-slate-600`}>{r.matched ? fmt(r.cost / r.matched, 2) : "—"}</td>
                       <td className={`${td} ${r.matched ? sign(r.pl) : ""}`}>{r.matched ? R(r.pl) : "—"}</td>
                       <td className={`${td} ${r.matched ? sign(r.pl) : ""}`}>{r.matched ? fmtSigned((r.pl / r.cost) * 100, 1) : "—"}</td>
                       <td className={`${td} text-slate-600`}>{r.heldDays ?? "—"}</td>
-                      <td className="px-2 py-1.5 text-xs">{r.sell.plan ? PLAN_CHIPS.find((c) => c.v === r.sell.plan)?.label : "—"}</td>
-                      <td className={`px-2 py-1.5 text-xs ${r.sell.pending ? "text-indigo-600" : "text-slate-600"}`}>{r.sell.pending ? "✍ reason owed" : r.sell.state ? `${MOODS[r.sell.state] ?? ""} ${r.sell.state}` : "—"}</td>
-                      <td className="px-2 py-1.5 text-xs max-w-[26rem]">{r.sell.reason || "—"}{r.sell.lesson && <div className="text-slate-500">Lesson: {r.sell.lesson}</div>}</td>
-                      <td className="px-2 py-1.5 text-xs whitespace-nowrap">
+                      <td className="px-2 py-1.5 text-xs" colSpan={2}>{r.sell.plan ? PLAN_CHIPS.find((c) => c.v === r.sell.plan)?.label : "—"}</td>
+                      <td colSpan={2} className={`px-2 py-1.5 text-xs ${r.sell.pending ? "text-indigo-600" : "text-slate-600"}`}>{r.sell.pending ? "✍ reason owed" : r.sell.state ? `${MOODS[r.sell.state] ?? ""} ${r.sell.state}` : "—"}</td>
+                      <td colSpan={3} className="px-2 py-1.5 text-xs">{r.sell.reason || "—"}{r.sell.lesson && <div className="text-slate-500">Lesson: {r.sell.lesson}</div>}</td>
+                      <td className="px-2 py-1.5 text-xs whitespace-nowrap text-center">
                         <button onClick={() => { setSellEditId(r.sell.id); setSf({ symbol: r.sell.symbol, date: r.sell.date, qty: String(r.sell.qty), price: String(r.sell.price), reason: r.sell.reason, state: r.sell.state || STATES[0], plan: r.sell.plan, lesson: r.sell.lesson }); openSell(); }} className="text-indigo-600 hover:underline mr-2">✎</button>
                         <button onClick={() => removeSell(r.sell.id)} className="text-red-600 hover:underline">✕</button>
                       </td>
