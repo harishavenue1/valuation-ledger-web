@@ -1126,13 +1126,15 @@ export default function TradeJournal() {
                   const plp = p.now !== undefined && !closed ? (p.now / p.s.avg - 1) * 100 : null;
                   const ss = !closed && p.last ? stopState(p.last, p.now) : "none";
                   const head = (
-                    <tr key={p.sym} onClick={() => setOpenPos(isOpenP ? null : p.sym)} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${ss === "hit" ? "bg-red-50" : ss === "near" ? "bg-amber-50" : ""} ${closed ? "opacity-70" : ""}`}>
-                      <td className="px-2 py-1.5 font-medium">
-                        {p.sym}
-                        {closed && <span className="ml-1 text-[10px] text-slate-500">closed</span>}
-                        {ss === "hit" && <span className="ml-1 text-[10px] text-red-600">STOP HIT</span>}
-                        {ss === "near" && <span className="ml-1 text-[10px] text-amber-700">near stop</span>}
-                        {(p.book.lots.some((l) => l.entry.pending) || p.book.sales.some((r) => r.sell.pending)) && <span className="ml-1 text-[10px] text-indigo-600">✍ reason owed</span>}
+                    <tr key={p.sym} onClick={() => setOpenPos(isOpenP ? null : p.sym)} className={`border-t border-slate-100 cursor-pointer hover:bg-slate-50 ${ss === "hit" ? "bg-red-50" : ss === "near" ? "bg-amber-50" : ""}`} style={{ height: 52 }}>
+                      <td className="px-2 py-1.5 align-middle">
+                        <div className="font-medium leading-tight">{p.sym}</div>
+                        <div className="text-[10px] leading-tight min-h-[12px] whitespace-nowrap">
+                          {closed && <span className="mr-1.5 text-slate-500">closed</span>}
+                          {ss === "hit" && <span className="mr-1.5 text-red-600">STOP HIT</span>}
+                          {ss === "near" && <span className="mr-1.5 text-amber-700">near stop</span>}
+                          {(p.book.lots.some((l) => l.entry.pending) || p.book.sales.some((r) => r.sell.pending)) && <span className="text-indigo-600">✍ reason owed</span>}
+                        </div>
                       </td>
                       <td className="px-2 py-1.5 text-center tabular-nums">{bk.lots.length} / {bk.sales.length}</td>
                       <td className="px-2 py-1.5 text-center text-xs text-slate-600 tabular-nums">{bk.lots[0].entry.date === bk.lots[bk.lots.length - 1].entry.date ? bk.lots[0].entry.date : `${bk.lots[0].entry.date} → ${bk.lots[bk.lots.length - 1].entry.date}`}</td>
@@ -1145,7 +1147,7 @@ export default function TradeJournal() {
                       <td className={`${td} ${unreal === null ? "" : sign(unreal)}`}>{unreal === null ? "—" : `${R(unreal)} / ${fmtSigned(plp!, 1)}`}</td>
                       <td className={`${td} ${bk.sold ? sign(bk.realized) : ""}`}>{bk.sold ? R(bk.realized) : "—"}</td>
                       <td className={`${td} text-slate-600`}>{!closed && pf?.weights[p.sym] !== undefined ? fmt(pf.weights[p.sym], 1, "%") : !closed && p.s.alloc > 0 ? fmt(p.s.alloc, 1, "%") : "—"}</td>
-                      <td className={`${td} text-slate-600`}>{closed ? "—" : p.last?.stop != null ? <>{fmt(p.last.stop, 2)}{p.last.stopMode === "ema33w" && <span className="block text-[10px] text-slate-400">33W EMA</span>}</> : <span className="text-red-500">none</span>}</td>
+                      <td className={`${td} text-slate-600`}>{closed ? <><div>—</div><div className="min-h-[12px]" /></> : p.last?.stop != null ? <><div>{fmt(p.last.stop, 2)}</div><div className="text-[10px] leading-tight min-h-[12px] text-slate-400">{p.last.stopMode === "ema33w" ? "33W EMA" : "fixed"}</div></> : <><div className="text-red-500">none</div><div className="min-h-[12px]" /></>}</td>
                     </tr>
                   );
                   if (!isOpenP) return [head];
