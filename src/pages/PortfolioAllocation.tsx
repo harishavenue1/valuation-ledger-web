@@ -742,8 +742,7 @@ export default function PortfolioAllocation() {
         render: (r) => {
           const d = r.hold_days as number | null | undefined;
           if (d == null) return <span className="text-slate-300">—</span>;
-          const txt = d < 45 ? `${Math.round(d)}d` : d < 365 ? `${(d / 30.4).toFixed(1)}m` : `${(d / 365).toFixed(1)}y`;
-          return <span title={`${Math.round(d)} days — quantity-weighted age of the lots still held (tradebook, FIFO)`}>{txt}</span>;
+          return <span title="quantity-weighted age of the lots still held (tradebook, FIFO), in days">{Math.round(d)}d</span>;
         },
       },
       {
@@ -752,11 +751,11 @@ export default function PortfolioAllocation() {
         width: 4.7,
         render: (r) => {
           const v = r.cagr_pct as number | null | undefined;
-          if (v == null) return <span className="text-slate-300" title="needs at least 30 days of holding to annualise">—</span>;
+          if (v == null) return <span className="text-slate-300" title="bought today — nothing to annualise yet">—</span>;
           const short = (r.hold_days ?? 0) < 90;
           return (
-            <span className={short ? "opacity-60" : ""} title={short ? "annualised over under 3 months — a small move looks huge; read it loosely" : "avg price → now, annualised over the average holding period"}>
-              <Signed v={v} digits={Math.abs(v) >= 100 ? 0 : 1} />
+            <span className={short ? "opacity-60" : ""} title={short ? "annualised over under 3 months — a small move looks huge, so it is shown faded; read it loosely" : "avg price → now, annualised over the average holding period"}>
+              {Math.abs(v) >= 10000 ? <span className={v > 0 ? "text-emerald-600" : "text-red-600"}>{v > 0 ? ">" : "<−"}9,999</span> : <Signed v={v} digits={Math.abs(v) >= 100 ? 0 : 1} />}
             </span>
           );
         },
