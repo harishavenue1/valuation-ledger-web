@@ -752,7 +752,7 @@ export default function PortfolioAllocation() {
         width: 4.7,
         render: (r) => {
           const v = r.cagr_pct as number | null | undefined;
-          if (v == null) return <span className="text-slate-300" title="needs at least 15 days of holding to annualise">—</span>;
+          if (v == null) return <span className="text-slate-300" title="needs at least 30 days of holding to annualise">—</span>;
           const short = (r.hold_days ?? 0) < 90;
           return (
             <span className={short ? "opacity-60" : ""} title={short ? "annualised over under 3 months — a small move looks huge; read it loosely" : "avg price → now, annualised over the average holding period"}>
