@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { guidedGrowth } from "../lib/guidanceGrowth";
+import { useWatchlist } from "../lib/useWatchlist";
 import type { Metric } from "../lib/guidanceGrowth";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, fmtNum } from "../components/ScreenerTable";
 
@@ -32,6 +33,7 @@ function Num({ label, value, onChange, suffix }: { label: string; value: number;
 
 export default function BlockbusterGuidance() {
   const navigate = useNavigate();
+  const watchlist = useWatchlist();
   const [feed, setFeed] = useState<Record<string, { date: string; url: string; ppt?: string; lines: any[] }[]> | null>(null);
   const [updated, setUpdated] = useState<string | undefined>();
   const [tech, setTech] = useState<Map<string, any>>(new Map());
@@ -181,7 +183,7 @@ export default function BlockbusterGuidance() {
         </p>
       </MethodologyNote>
 
-      <GenericTable rows={rows} cols={cols} navigate={navigate} fullHeight emptyMessage="No management guidance clears these filters — lower the growth bar or widen the call dates." />
+      <GenericTable rows={rows} cols={cols} navigate={navigate} watchlist={watchlist} fullHeight emptyMessage="No management guidance clears these filters — lower the growth bar or widen the call dates." />
     </div>
   );
 }
