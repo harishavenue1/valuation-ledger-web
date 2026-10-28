@@ -71,6 +71,9 @@ export default function BlockbusterResults() {
           op: last<G>(f.q_op_growth),
           np: last<G>(f.q_np_growth),
           eps: last<G>(f.q_eps_growth),
+          // 2026-10-28 ("add a column marketCap/(latestOperatingProfit*4) name as Mcap/OpProfit & PEG Ratio")
+          opProfit: last<number | null>(f.q_op) ?? null, // latest quarter's Operating Profit, Rs Cr
+          pe: f.marketcap && f.net_profit_hist?.length && f.net_profit_hist[f.net_profit_hist.length - 1] > 0 ? f.marketcap / f.net_profit_hist[f.net_profit_hist.length - 1] : null, // market cap / trailing-twelve-month net profit (Screener's last annual column is TTM)
         };
       })
       .filter(Boolean) as Record<string, any>[];
@@ -83,11 +86,17 @@ export default function BlockbusterResults() {
   }, [base]);
   const activeQ = qtr ?? quarters[0]?.[0] ?? "All";
   const hasNp = base.some((r) => r.np !== undefined);
+  const hasOp = base.some((r) => r.opProfit != null);
 
   const rows = useMemo(
     () =>
       base
         .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk))
+        .map((r): Record<string, any> => ({
+          ...r,
+          mcapOp: r.opProfit != null && r.opProfit > 0 && r.mcap ? r.mcap / (r.opProfit * 4) : null,
+          peg: r.pe != null && typeof r.eps === "number" && r.eps > 0 ? r.pe / r.eps : null,
+        }))
         .sort((a, b) => Math.min(rank(b.sales), rank(b.op), rank(b.np), rank(b.eps)) - Math.min(rank(a.sales), rank(a.op), rank(a.np), rank(a.eps))),
     [base, activeQ, minCap, minSales, minOp, minNp, minEps, tOk],
   );
@@ -111,6 +120,28 @@ export default function BlockbusterResults() {
     { key: "op", label: "Operating Profit YoY %", width: 9, render: (r) => <Gr v={r.op} /> },
     { key: "np", label: "Net Profit YoY %", width: 9, render: (r) => <Gr v={r.np} /> },
     { key: "eps", label: "EPS YoY %", width: 9, render: (r) => <Gr v={r.eps} /> },
+    {
+      key: "mcapOp",
+      label: "Mcap / OpProfit",
+      width: 9,
+      render: (r) =>
+        r.mcapOp == null ? (
+          <span className="text-slate-300" title="needs the latest quarter's Operating Profit — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
+        ) : (
+          <span title={`Market cap ₹${fmtNum(r.mcap, 0)} Cr ÷ (latest quarter Operating Profit ₹${fmtNum(r.opProfit, 0)} Cr × 4 = ₹${fmtNum(r.opProfit * 4, 0)} Cr)`}>{fmtNum(r.mcapOp, 1)}x</span>
+        ),
+    },
+    {
+      key: "peg",
+      label: "PEG Ratio",
+      width: 8,
+      render: (r) =>
+        r.peg == null ? (
+          <span className="text-slate-300" title="needs a positive PE and a numeric EPS growth (a turnaround quarter has no honest %)">—</span>
+        ) : (
+          <span title={`PE ${fmtNum(r.pe, 1)} (market cap ÷ trailing-12-month net profit) ÷ latest-quarter EPS growth ${fmtNum(r.eps, 1)}%`}>{fmtNum(r.peg, 2)}</span>
+        ),
+    },
   ];
 
   if (!ready) return <ScreenerLoading label="quarterly results" />;
@@ -153,11 +184,19 @@ export default function BlockbusterResults() {
         </div>
       )}
 
+      {!hasOp && (
+        <div className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          Mcap / OpProfit needs each company's latest-quarter Operating Profit, which the fundamentals cache only started storing on 28 Oct — it fills in as the refresh runs (Sun / Wed / Fri, or Run now on the Fundamentals page).
+        </div>
+      )}
+
       <MethodologyNote>
         <p>
           One row per NSE 750 stock, using each company's <b>latest reported quarter</b> compared with the same quarter a year earlier (Screener.in's quarterly results). A stock shows only if Market Cap, Sales, Operating Profit,
           Net Profit and EPS growth <i>all</i> clear the thresholds above. Sorted by the weakest of the four growth rates, so the most all-round blockbusters come first. <b>T</b> means the year-ago quarter was a loss and the line
-          turned profitable.
+          turned profitable. <b>Mcap / OpProfit</b> = market cap ÷ (the latest quarter's Operating Profit × 4) — how many years of the latest quarter's run-rate operating profit the market cap is worth (lower = cheaper; it ignores debt, tax and
+          seasonality). <b>PEG Ratio</b> = PE ÷ the latest quarter's EPS growth %, where PE = market cap ÷ trailing-12-month net profit; a quarter that jumped off a tiny base gives a very small PEG, so read it beside the growth columns, and it is blank
+          for a loss-to-profit turnaround.
         </p>
         <p>
           Results arrive over several weeks, so the <b>Quarter reported</b> filter defaults to the newest quarter in the data — pick another or "All" to see everyone's latest. The cache refreshes Sundays, Wednesdays and
