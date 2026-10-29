@@ -133,6 +133,30 @@ export default function DirectoryThemes() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stocks, themes]);
 
+  // click a column heading of the all-themes table to sort by it; click again to flip the direction (2026-10-29: "add column sorting")
+  type OvKey = "name" | "n" | "d1" | "m1" | "m3" | "m6" | "y1" | "above200" | "nearAth" | "best";
+  const [ovSort, setOvSort] = useState<{ key: OvKey; dir: "asc" | "desc" }>({ key: "m3", dir: "desc" });
+  const sortedOverview = useMemo(() => {
+    const { key, dir } = ovSort;
+    const f = dir === "asc" ? 1 : -1;
+    return [...overview].sort((a: any, b: any) => {
+      const x = a[key];
+      const y = b[key];
+      const xn = x === null || x === undefined || (typeof x === "number" && !Number.isFinite(x));
+      const yn = y === null || y === undefined || (typeof y === "number" && !Number.isFinite(y));
+      if (xn !== yn) return xn ? 1 : -1; // blanks always last
+      if (xn) return 0;
+      return typeof x === "string" ? f * x.localeCompare(y) : f * (x - y);
+    });
+  }, [overview, ovSort]);
+  const sortBy = (key: OvKey) => setOvSort((o) => (o.key === key ? { key, dir: o.dir === "desc" ? "asc" : "desc" } : { key, dir: key === "name" || key === "best" ? "asc" : "desc" }));
+  const Th = ({ k, label, left }: { k: OvKey; label: string; left?: boolean }) => (
+    <th className={`${left ? "text-left px-3" : "text-right px-2"} py-2 cursor-pointer select-none hover:text-slate-900 whitespace-nowrap`} onClick={() => sortBy(k)} title="Click to sort">
+      {label}
+      <span className={ovSort.key === k ? "text-slate-700" : "text-slate-300"}> {ovSort.key === k ? (ovSort.dir === "desc" ? "▼" : "▲") : "↕"}</span>
+    </th>
+  );
+
   const save = (next: Record<string, string[]>) => {
     const prev = bundle.watchlist.themes;
     setBundle((b) => ({ ...b, watchlist: { ...b.watchlist, themes: next } }));
@@ -241,7 +265,7 @@ export default function DirectoryThemes() {
         A theme is a named list of NSE stocks — the supply-chain names behind one story (transformers, pipes, data centers, shipbuilding…). The starting lists were
         built by matching company names against our daily NSE store, so every symbol is real, but <b>membership is a judgement call, not an official index</b> — edit
         it: pick a theme, type a symbol in <b>Add stock</b>, or press ✕ on a row; <b>＋ New theme</b> starts a new list. A stock can sit in several themes. Columns are
-        the same as the index lists (latest session, split-adjusted). <b>All themes</b> ranks the themes by their <b>median 3M return</b>, with the share of members above
+        the same as the index lists (latest session, split-adjusted). <b>All themes</b> ranks the themes by their <b>median 3M return</b> to start with — click any column heading to sort by it, again to flip the direction — with the share of members above
         their 200D EMA and within 10% of the all-time high — a quick read on which theme is leading and which is breaking down.
       </MethodologyNote>
 
@@ -250,20 +274,20 @@ export default function DirectoryThemes() {
           <table className="w-full text-xs tabular-nums">
             <thead className="bg-slate-100 text-slate-600">
               <tr>
-                <th className="text-left px-3 py-2">Theme</th>
-                <th className="text-right px-2 py-2">Stocks</th>
-                <th className="text-right px-2 py-2">Day %</th>
-                <th className="text-right px-2 py-2">1M %</th>
-                <th className="text-right px-2 py-2">3M % ▼</th>
-                <th className="text-right px-2 py-2">6M %</th>
-                <th className="text-right px-2 py-2">1Y %</th>
-                <th className="text-right px-2 py-2">&gt; 200D EMA</th>
-                <th className="text-right px-2 py-2">Near ATH</th>
-                <th className="text-left px-3 py-2">Best 3M</th>
+                <Th k="name" label="Theme" left />
+                <Th k="n" label="Stocks" />
+                <Th k="d1" label="Day %" />
+                <Th k="m1" label="1M %" />
+                <Th k="m3" label="3M %" />
+                <Th k="m6" label="6M %" />
+                <Th k="y1" label="1Y %" />
+                <Th k="above200" label="> 200D EMA" />
+                <Th k="nearAth" label="Near ATH" />
+                <Th k="best" label="Best 3M" left />
               </tr>
             </thead>
             <tbody>
-              {overview.map((t) => (
+              {sortedOverview.map((t) => (
                 <tr key={t.name} onClick={() => select(t.name)} className="border-t border-slate-100 hover:bg-slate-50 cursor-pointer">
                   <td className="px-3 py-2 font-medium">{t.name}</td>
                   <td className="px-2 py-2 text-right">{t.n}</td>
