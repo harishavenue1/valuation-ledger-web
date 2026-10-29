@@ -346,12 +346,12 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
 }
 
 // 2026-10-29 ("since I have 100+ stocks can we have category of investments into major medium minor allocation — major >= 1%,
-// medium 1-0.5%, below 0.5% minor") — by each holding's own share of the portfolio (pct_of_portfolio, market value).
+// medium 1-0.5%, below 0.5% minor"; renamed H / M / L the same day) — by each holding's own share of the portfolio (pct_of_portfolio, market value).
 type SizeKey = "major" | "medium" | "minor";
 const SIZE_BUCKETS: { key: SizeKey; label: string; short: string; rule: string; badge: string }[] = [
-  { key: "major", label: "Major", short: "Major", rule: "1% or more", badge: "bg-indigo-100 text-indigo-700" },
-  { key: "medium", label: "Medium", short: "Medium", rule: "0.5% up to 1%", badge: "bg-sky-100 text-sky-700" },
-  { key: "minor", label: "Minor", short: "Minor", rule: "under 0.5%", badge: "bg-slate-100 text-slate-600" },
+  { key: "major", label: "H", short: "H", rule: "1% or more", badge: "bg-indigo-100 text-indigo-700" },
+  { key: "medium", label: "M", short: "M", rule: "0.5% up to 1%", badge: "bg-sky-100 text-sky-700" },
+  { key: "minor", label: "L", short: "L", rule: "under 0.5%", badge: "bg-slate-100 text-slate-600" },
 ];
 const sizeOf = (pct: number | null | undefined): SizeKey => ((pct ?? 0) >= 1 ? "major" : (pct ?? 0) >= 0.5 ? "medium" : "minor");
 
@@ -982,7 +982,7 @@ export default function PortfolioAllocation() {
               {label} <span className={sizeFilter === k ? "opacity-80" : "text-slate-400"}>{n}</span>
             </button>
           ))}
-          <span className="text-slate-400">Major ≥ 1% · Medium 0.5–1% · Minor under 0.5% of the portfolio</span>
+          <span className="text-slate-400">H = 1% or more · M = 0.5% up to 1% · L = under 0.5% of the portfolio</span>
         </div>
       )}
 
