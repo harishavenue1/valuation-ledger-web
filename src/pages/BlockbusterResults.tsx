@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
+import { api } from "../lib/api";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 
 // Blockbuster Results — added 2026-10-25 ("a new page for latest qtr results with block buster results ...
@@ -29,6 +30,17 @@ function Gr({ v }: { v: G }) {
   return <Signed v={v} digits={1} />;
 }
 
+// % below a high (0 = at the high); green within 10%, amber 10-25% below, red further — the same zones as the Portfolio page
+function FromHigh({ v, what, at }: { v: number | null | undefined; what: string; at: string }) {
+  if (v == null) return <span className="text-slate-300" title={`no ${what} figure in the daily store for this stock`}>—</span>;
+  const cls = v >= -10 ? "text-emerald-600" : v >= -25 ? "text-amber-600" : "text-red-600";
+  return (
+    <span className={`${cls} font-medium`} title={v >= -0.05 ? `at or making a fresh ${what}` : `${fmtNum(-v, 1)}% below the ${what}`}>
+      {v >= -0.05 ? at : fmtNum(v, 1)}
+    </span>
+  );
+}
+
 function Num({ label, value, onChange, suffix }: { label: string; value: number; onChange: (v: number) => void; suffix: string }) {
   return (
     <label className="flex flex-col gap-1 text-xs text-slate-600">
@@ -54,6 +66,11 @@ export default function BlockbusterResults() {
   const [minEps, setMinEps] = useState(25);
   const [tOk, setTOk] = useState(true);
   const [qtr, setQtr] = useState<string | null>(null); // null = newest quarter once the data is in
+  // % from the all-time high, from the daily NSE store (the same all-stocks feed All Technicals reads) — 2026-10-29
+  const [tech, setTech] = useState<Map<string, any>>(new Map());
+  useEffect(() => {
+    api.getBhavTechnicals().then((b) => setTech(new Map<string, any>((b.rows ?? []).map((x: any) => [x.symbol, x])))).catch(() => {});
+  }, []);
 
   const base = useMemo(() => {
     const names = new Map<string, string>((ms?.nseScreener?.rows ?? []).map((r: any) => [r.symbol, r.name]));
@@ -94,11 +111,13 @@ export default function BlockbusterResults() {
         .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk))
         .map((r): Record<string, any> => ({
           ...r,
+          ath: tech.get(r.symbol)?.pct_from_ath ?? null,
+          wh52: tech.get(r.symbol)?.pct_from_52w_high ?? null,
           mcapOp: r.opProfit != null && r.opProfit > 0 && r.mcap ? r.mcap / (r.opProfit * 4) : null,
           peg: r.pe != null && typeof r.eps === "number" && r.eps > 0 ? r.pe / r.eps : null,
         }))
         .sort((a, b) => Math.min(rank(b.sales), rank(b.op), rank(b.np), rank(b.eps)) - Math.min(rank(a.sales), rank(a.op), rank(a.np), rank(a.eps))),
-    [base, activeQ, minCap, minSales, minOp, minNp, minEps, tOk],
+    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk],
   );
 
   const cols: Col[] = [
@@ -116,6 +135,8 @@ export default function BlockbusterResults() {
     { key: "mcap", label: "Market Cap (₹ Cr)", width: 14, render: (r) => fmtNum(r.mcap, 0) },
     { key: "price", label: "Price (₹)", width: 11, render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
     { key: "quarter", label: "Quarter", align: "center", width: 9 },
+    { key: "ath", label: "From ATH %", width: 9, render: (r) => <FromHigh v={r.ath} what="all-time high" at="at ATH" /> },
+    { key: "wh52", label: "From 52W High %", width: 9, render: (r) => <FromHigh v={r.wh52} what="52-week high" at="at 52W high" /> },
     { key: "sales", label: "Sales YoY %", width: 9, render: (r) => <Gr v={r.sales} /> },
     { key: "op", label: "Operating Profit YoY %", width: 9, render: (r) => <Gr v={r.op} /> },
     { key: "np", label: "Net Profit YoY %", width: 9, render: (r) => <Gr v={r.np} /> },
@@ -194,7 +215,7 @@ export default function BlockbusterResults() {
         <p>
           One row per NSE 750 stock, using each company's <b>latest reported quarter</b> compared with the same quarter a year earlier (Screener.in's quarterly results). A stock shows only if Market Cap, Sales, Operating Profit,
           Net Profit and EPS growth <i>all</i> clear the thresholds above. Sorted by the weakest of the four growth rates, so the most all-round blockbusters come first. <b>T</b> means the year-ago quarter was a loss and the line
-          turned profitable. <b>Mcap / OpProfit</b> = market cap ÷ (the latest quarter's Operating Profit × 4) — how many years of the latest quarter's run-rate operating profit the market cap is worth (lower = cheaper; it ignores debt, tax and
+          turned profitable. <b>From ATH %</b> and <b>From 52W High %</b> are how far the price sits below its all-time high / its highest high of the last 52 weeks (0 = at the high; green within 10%, amber 10–25% below, red further), from the daily NSE store, adjusted for splits and bonuses; the ATH is the highest high in that store's years of history, not a literal all-time figure. <b>Mcap / OpProfit</b> = market cap ÷ (the latest quarter's Operating Profit × 4) — how many years of the latest quarter's run-rate operating profit the market cap is worth (lower = cheaper; it ignores debt, tax and
           seasonality). <b>PEG Ratio</b> = PE ÷ the latest quarter's EPS growth %, where PE = market cap ÷ trailing-12-month net profit; a quarter that jumped off a tiny base gives a very small PEG, so read it beside the growth columns, and it is blank
           for a loss-to-profit turnaround.
         </p>
