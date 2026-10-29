@@ -345,6 +345,16 @@ function RatesFxCard({ rows, asOf }: { rows: any[]; asOf?: string | null }) {
   );
 }
 
+// 2026-10-29 ("since I have 100+ stocks can we have category of investments into major medium minor allocation — major >= 1%,
+// medium 1-0.5%, below 0.5% minor") — by each holding's own share of the portfolio (pct_of_portfolio, market value).
+type SizeKey = "major" | "medium" | "minor";
+const SIZE_BUCKETS: { key: SizeKey; label: string; short: string; rule: string; badge: string }[] = [
+  { key: "major", label: "Major", short: "Major", rule: "1% or more", badge: "bg-indigo-100 text-indigo-700" },
+  { key: "medium", label: "Medium", short: "Medium", rule: "0.5% up to 1%", badge: "bg-sky-100 text-sky-700" },
+  { key: "minor", label: "Minor", short: "Minor", rule: "under 0.5%", badge: "bg-slate-100 text-slate-600" },
+];
+const sizeOf = (pct: number | null | undefined): SizeKey => ((pct ?? 0) >= 1 ? "major" : (pct ?? 0) >= 0.5 ? "medium" : "minor");
+
 function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (marketCapCr: number | null | undefined) => string | null }) {
   const stocks = statsForSegment(
     rows.filter((r) => !r.is_fund),
@@ -393,8 +403,13 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
   // leading "Dimension" column (rowSpan'd once per group, the
   // standard HTML way to show grouping without repeating the label on
   // every row) rather than separate <table>s.
+  const sizeBuckets = SIZE_BUCKETS.map((b) => {
+    const inB = rows.filter((r) => sizeOf(r.pct_of_portfolio) === b.key);
+    return statsForSegment(inB, `${b.label} (${b.rule}) · ${inB.length}`);
+  }).filter((st) => st.allocationPct > 0);
   const dimensionGroups: { dimension: string; stats: SegmentStat[] }[] = [
     { dimension: "Segment", stats: [stocks, funds, total] },
+    ...(sizeBuckets.length > 0 ? [{ dimension: "Position Size", stats: sizeBuckets }] : []),
     ...(capBuckets.length > 0 ? [{ dimension: "Market Cap", stats: capBuckets }] : []),
     ...(athBuckets.length > 0 ? [{ dimension: "ATH Proximity", stats: athBuckets }] : []),
     ...(high52wBuckets.length > 0 ? [{ dimension: "52W High Proximity", stats: high52wBuckets }] : []),
@@ -608,15 +623,22 @@ export default function PortfolioAllocation() {
       // best-effort persistence only
     }
   }
+  const [sizeFilter, setSizeFilter] = useState<SizeKey | "all">("all");
+  const sizeCounts = useMemo(() => {
+    const c: Record<SizeKey, number> = { major: 0, medium: 0, minor: 0 };
+    for (const r of rows) c[sizeOf(r.pct_of_portfolio)]++;
+    return c;
+  }, [rows]);
+  const bySize = (r: any) => sizeFilter === "all" || sizeOf(r.pct_of_portfolio) === sizeFilter;
   const stockRows = useMemo(() => {
-    const filtered = selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund);
+    const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null }));
-  }, [rows, selectedRealSectors]);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0 }));
+  }, [rows, selectedRealSectors, sizeFilter]);
   const fundRows = useMemo(() => {
-    const filtered = selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null }));
-  }, [rows, selectedRealSectors]);
+    const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0 }));
+  }, [rows, selectedRealSectors, sizeFilter]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -629,6 +651,16 @@ export default function PortfolioAllocation() {
       // stay equidistant among themselves.
       { key: "rank", label: "Rank", width: 3 },
       { key: "symbol", label: "Symbol", align: "left", width: 9 },
+      {
+        key: "size",
+        label: "Size",
+        width: 3.5,
+        align: "center",
+        render: (r) => {
+          const b = SIZE_BUCKETS.find((x) => x.key === sizeOf(r.pct_of_portfolio))!;
+          return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${b.badge}`} title={`${b.label}: ${b.rule} of the portfolio (this one is ${fmtNum(r.pct_of_portfolio, 2)}%)`}>{b.short}</span>;
+        },
+      },
       {
         // 2026-10-12 ("instead of chart column add a column with A, B, C" — A green, B yellow, C orange): replaces the
         // 📈 chart-link column. The zone comes from % from ATH with the same fixed buckets as the ATH summary
@@ -659,7 +691,7 @@ export default function PortfolioAllocation() {
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 4.7,
+        width: 4.5,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -672,7 +704,7 @@ export default function PortfolioAllocation() {
         // this page. "—" only if this row had no avg_price.
         key: "pct_of_portfolio_cost",
         label: "Buy %",
-        width: 4.7,
+        width: 4.5,
         groupStart: true,
         render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
@@ -680,7 +712,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
         key: "pct_of_portfolio",
         label: "Current %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       {
@@ -691,7 +723,7 @@ export default function PortfolioAllocation() {
         // compute_portfolio_allocation.py's build_rows).
         key: "avg_price",
         label: "Avg Price",
-        width: 4.7,
+        width: 4.5,
         render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       {
@@ -705,7 +737,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 to read clearly next to Avg Price.
         key: "price",
         label: "Cur Price",
-        width: 4.7,
+        width: 4.5,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -729,7 +761,7 @@ export default function PortfolioAllocation() {
         // read runs left to right without jumping further down the row.
         key: "pnl_pct",
         label: "P&L %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <Signed v={r.pnl_pct} digits={1} />,
       },
       {
@@ -738,7 +770,7 @@ export default function PortfolioAllocation() {
         // cagr_pct = the return from avg price annualised over that age. Both "—" when the skill could not date the holding.
         key: "hold_days",
         label: "Avg hold",
-        width: 4.7,
+        width: 4.5,
         render: (r) => {
           const d = r.hold_days as number | null | undefined;
           if (d == null) return <span className="text-slate-300">—</span>;
@@ -748,7 +780,7 @@ export default function PortfolioAllocation() {
       {
         key: "cagr_pct",
         label: "CAGR %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => {
           const v = r.cagr_pct as number | null | undefined;
           if (v == null) return <span className="text-slate-300" title="bought today — nothing to annualise yet">—</span>;
@@ -769,7 +801,7 @@ export default function PortfolioAllocation() {
         // of its own). "—" means the skill had neither figure for this row.
         key: "day_change_pct",
         label: "Day %",
-        width: 4.7,
+        width: 4.5,
         groupStart: true,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
@@ -782,13 +814,13 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
@@ -797,13 +829,13 @@ export default function PortfolioAllocation() {
         // skill already fetches for 1W/1M — no extra request.
         key: "pct_3m",
         label: "3M %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <Signed v={r.pct_3m} digits={1} />,
       },
       {
         key: "pct_6m",
         label: "6M %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => <Signed v={r.pct_6m} digits={1} />,
       },
       {
@@ -817,14 +849,14 @@ export default function PortfolioAllocation() {
         // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 4.7,
+        width: 4.5,
         groupStart: true,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 4.7,
+        width: 4.5,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
       {
@@ -846,7 +878,7 @@ export default function PortfolioAllocation() {
         // tables even though every column otherwise fits exactly. Shorter
         // labels (the user's own "ATH%"/"52WH%" shorthand) keep it inside.
         label: "ATH %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => (r.pct_from_ath === null || r.pct_from_ath === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_ath} digits={1} />),
       },
       {
@@ -859,7 +891,7 @@ export default function PortfolioAllocation() {
         // capped to the trailing 52 bars.
         key: "pct_from_52w_high",
         label: "52WH %",
-        width: 4.7,
+        width: 4.5,
         render: (r) => (r.pct_from_52w_high === null || r.pct_from_52w_high === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_52w_high} digits={1} />),
       },
     ],
@@ -952,6 +984,23 @@ export default function PortfolioAllocation() {
           Funds & ETFs) rather than keeping the whole-portfolio rank
           from the push, which would otherwise show gaps like 1, 3, 7
           in a filtered table. */}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
+          <span className="text-slate-500">Position size:</span>
+          {([["all", "All", rows.length, ""], ...SIZE_BUCKETS.map((b) => [b.key, b.label, sizeCounts[b.key], b.rule])] as [SizeKey | "all", string, number, string][]).map(([k, label, n, rule]) => (
+            <button
+              key={k}
+              onClick={() => setSizeFilter(k)}
+              title={rule ? `${label}: ${rule} of the portfolio` : "every holding"}
+              className={`px-2.5 py-1 rounded-full border ${sizeFilter === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}
+            >
+              {label} <span className={sizeFilter === k ? "opacity-80" : "text-slate-400"}>{n}</span>
+            </button>
+          ))}
+          <span className="text-slate-400">Major ≥ 1% · Medium 0.5–1% · Minor under 0.5% of the portfolio</span>
+        </div>
+      )}
+
       {selectedSector && (
         <div className="flex items-center gap-2 mb-3 text-xs">
           <span className="text-slate-500">Filtered to:</span>
