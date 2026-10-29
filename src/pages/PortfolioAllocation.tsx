@@ -246,7 +246,7 @@ const PROXIMITY_BUCKET_ORDER = ["🔥 0% to -10%", "🚶 -10% to -25%", "🐢 Be
 // ATH zones for the holdings table — the same fixed buckets as above, used on pct_from_ath, with a tint per zone
 // (transparent rgba so it reads on both the light and the dark theme).
 // A = green, B = yellow, C = orange (the user's own letters for the three zones).
-type AthView = "group" | "color" | "plain";
+type AthView = "group" | "size" | "color" | "plain";
 
 
 // 2026-10-02 ("major bond market like US & IN Yield changes, D/W/M/Y &
@@ -610,7 +610,7 @@ export default function PortfolioAllocation() {
   const [athView, setAthViewState] = useState<AthView>(() => {
     try {
       const v = localStorage.getItem("pf.athView");
-      return v === "color" || v === "plain" ? v : "group";
+      return v === "color" || v === "plain" || v === "size" ? v : "group";
     } catch {
       return "group";
     }
@@ -691,7 +691,7 @@ export default function PortfolioAllocation() {
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
         label: "Market Cap (Cr)",
-        width: 4.5,
+        width: 4.7,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -704,7 +704,7 @@ export default function PortfolioAllocation() {
         // this page. "—" only if this row had no avg_price.
         key: "pct_of_portfolio_cost",
         label: "Buy %",
-        width: 4.5,
+        width: 4.7,
         groupStart: true,
         render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
@@ -712,7 +712,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
         key: "pct_of_portfolio",
         label: "Current %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <span className="font-semibold tabular-nums">{fmtNum(r.pct_of_portfolio, 1)}%</span>,
       },
       {
@@ -723,7 +723,7 @@ export default function PortfolioAllocation() {
         // compute_portfolio_allocation.py's build_rows).
         key: "avg_price",
         label: "Avg Price",
-        width: 4.5,
+        width: 4.7,
         render: (r) => (r.avg_price == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.avg_price, 2)}`),
       },
       {
@@ -737,7 +737,7 @@ export default function PortfolioAllocation() {
         // 2026-09-23 to read clearly next to Avg Price.
         key: "price",
         label: "Cur Price",
-        width: 4.5,
+        width: 4.7,
         render: (r) => {
           if (r.price === null || r.price === undefined) return <span className="text-slate-300">—</span>;
           const prefix = r.exchange === "BSE" ? "BSE" : "NSE";
@@ -761,35 +761,20 @@ export default function PortfolioAllocation() {
         // read runs left to right without jumping further down the row.
         key: "pnl_pct",
         label: "P&L %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <Signed v={r.pnl_pct} digits={1} />,
       },
       {
-        // 2026-10-27 ("add a column to include average holding period next to P&L%" / "also cagr next to it") — pushed by the
+        // 2026-10-27 ("add a column to include average holding period next to P&L%") — pushed by the
         // PortfolioAllocation skill: hold_days = age of the lots still held, quantity-weighted, from the Zerodha tradebooks (FIFO);
-        // cagr_pct = the return from avg price annualised over that age. Both "—" when the skill could not date the holding.
+        // "—" when the skill could not date the holding. (A CAGR column was tried next to it and removed 2026-10-29: annualising short holds gave absurd values.)
         key: "hold_days",
         label: "Avg hold",
-        width: 4.5,
+        width: 4.7,
         render: (r) => {
           const d = r.hold_days as number | null | undefined;
           if (d == null) return <span className="text-slate-300">—</span>;
           return <span title="quantity-weighted age of the lots still held (tradebook, FIFO), in days">{Math.round(d)}d</span>;
-        },
-      },
-      {
-        key: "cagr_pct",
-        label: "CAGR %",
-        width: 4.5,
-        render: (r) => {
-          const v = r.cagr_pct as number | null | undefined;
-          if (v == null) return <span className="text-slate-300" title="bought today — nothing to annualise yet">—</span>;
-          const short = (r.hold_days ?? 0) < 90;
-          return (
-            <span className={short ? "opacity-60" : ""} title={short ? "annualised over under 3 months — a small move looks huge, so it is shown faded; read it loosely" : "avg price → now, annualised over the average holding period"}>
-              {Math.abs(v) >= 10000 ? <span className={v > 0 ? "text-emerald-600" : "text-red-600"}>{v > 0 ? ">" : "<−"}9,999</span> : <Signed v={v} digits={Math.abs(v) >= 100 ? 0 : 1} />}
-            </span>
-          );
         },
       },
       {
@@ -801,7 +786,7 @@ export default function PortfolioAllocation() {
         // of its own). "—" means the skill had neither figure for this row.
         key: "day_change_pct",
         label: "Day %",
-        width: 4.5,
+        width: 4.7,
         groupStart: true,
         render: (r) => (r.day_change_pct === null || r.day_change_pct === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.day_change_pct} digits={1} />),
       },
@@ -814,13 +799,13 @@ export default function PortfolioAllocation() {
         // weekly/monthly/quarterly % columns, not calendar-exact).
         key: "pct_1w",
         label: "1W %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <Signed v={r.pct_1w} digits={1} />,
       },
       {
         key: "pct_1m",
         label: "1M %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <Signed v={r.pct_1m} digits={1} />,
       },
       {
@@ -829,13 +814,13 @@ export default function PortfolioAllocation() {
         // skill already fetches for 1W/1M — no extra request.
         key: "pct_3m",
         label: "3M %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <Signed v={r.pct_3m} digits={1} />,
       },
       {
         key: "pct_6m",
         label: "6M %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => <Signed v={r.pct_6m} digits={1} />,
       },
       {
@@ -849,14 +834,14 @@ export default function PortfolioAllocation() {
         // same thing, its width folded in here.
         key: "pct_200d_ema",
         label: "% vs 200D EMA",
-        width: 4.5,
+        width: 4.7,
         groupStart: true,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
         label: "% vs 33W EMA",
-        width: 4.5,
+        width: 4.7,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
       {
@@ -878,7 +863,7 @@ export default function PortfolioAllocation() {
         // tables even though every column otherwise fits exactly. Shorter
         // labels (the user's own "ATH%"/"52WH%" shorthand) keep it inside.
         label: "ATH %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => (r.pct_from_ath === null || r.pct_from_ath === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_ath} digits={1} />),
       },
       {
@@ -891,7 +876,7 @@ export default function PortfolioAllocation() {
         // capped to the trailing 52 bars.
         key: "pct_from_52w_high",
         label: "52WH %",
-        width: 4.5,
+        width: 4.7,
         render: (r) => (r.pct_from_52w_high === null || r.pct_from_52w_high === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_from_52w_high} digits={1} />),
       },
     ],
@@ -1014,8 +999,8 @@ export default function PortfolioAllocation() {
       )}
       <div className="flex flex-wrap items-center gap-3 mb-2">
         <h2 className="text-sm font-medium text-slate-700">📈 Stocks ({stockRows.length})</h2>
-        <span className="text-xs text-slate-500">ATH zones:</span>
-        {([["group", "Grouped"], ["color", "Colour-coded"], ["plain", "Plain"]] as [AthView, string][]).map(([k, label]) => (
+        <span className="text-xs text-slate-500">View:</span>
+        {([["group", "Grouped by ATH zone"], ["size", "Grouped by position size"], ["color", "Colour-coded by ATH zone"], ["plain", "Plain"]] as [AthView, string][]).map(([k, label]) => (
           <button
             key={k}
             onClick={() => setAthView(k)}
@@ -1024,7 +1009,7 @@ export default function PortfolioAllocation() {
             {label}
           </button>
         ))}
-        {athView !== "plain" && (
+        {(athView === "group" || athView === "color") && (
           <span className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             {ZONES.slice(0, 3).map((z) => (
               <span key={z.label} className="inline-flex items-center gap-1" title={z.title}>
@@ -1047,6 +1032,24 @@ export default function PortfolioAllocation() {
               <div key={z.label}>
                 <div className="text-xs font-medium text-slate-600 mb-1">
                   {z.title} <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
+                </div>
+                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
+              </div>
+            );
+          })}
+          {stockRows.length === 0 && <div className="text-sm text-slate-500">No individual stock holdings.</div>}
+        </div>
+      ) : athView === "size" ? (
+        <div className="mb-6 space-y-5">
+          {SIZE_BUCKETS.map((b) => {
+            const group = (stockRows as any[]).filter((r) => sizeOf(r.pct_of_portfolio) === b.key).map((r, i) => ({ ...r, rank: i + 1 }));
+            if (group.length === 0) return null;
+            const weight = group.reduce((sum, r) => sum + (r.pct_of_portfolio ?? 0), 0);
+            return (
+              <div key={b.key}>
+                <div className="text-xs font-medium text-slate-600 mb-1">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium mr-1.5 ${b.badge}`}>{b.label}</span>
+                  {b.rule} of the portfolio each <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
                 </div>
                 <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
               </div>
