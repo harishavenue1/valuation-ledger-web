@@ -633,11 +633,11 @@ export default function PortfolioAllocation() {
   const stockRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0 }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null }));
   }, [rows, selectedRealSectors, sizeFilter]);
   const fundRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0 }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null }));
   }, [rows, selectedRealSectors, sizeFilter]);
 
   const COLS: Col[] = useMemo(
@@ -684,7 +684,22 @@ export default function PortfolioAllocation() {
           );
         },
       },
-      { key: "sector", label: "Sector", align: "left", width: 5 },
+      {
+        // 2026-10-29 ("instead of sector name, we can have a latest qtr eps growth") — the Sector column is replaced by the latest reported
+        // quarter's YoY EPS growth the PortfolioAllocation skill pushes (qtr_eps_growth_pct; read off Screener.in's Quarterly Results). "T" =
+        // the year-ago quarter was a loss, so no honest %; "—" for a fund/ETF or a company with no quarterly figures yet. The sector is still on
+        // each row (the donut, the sector filter and the Portfolio Breakdown use it), just not shown as a column.
+        key: "qtr_eps_sort", // numeric twin of qtr_eps_growth_pct (a turnaround "T" sorts as the highest), so the header sort works
+        label: "Qtr EPS Growth %",
+        align: "center",
+        width: 5,
+        render: (r) => {
+          const v = r.qtr_eps_growth_pct as number | "T" | null | undefined;
+          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
+          if (v == null) return <span className="text-slate-300" title="a fund/ETF, or no quarterly results on Screener.in yet">—</span>;
+          return <Signed v={v} digits={1} />;
+        },
+      },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
