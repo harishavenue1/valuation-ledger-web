@@ -25,6 +25,9 @@ const qKey = (l: string) => {
 };
 const pass = (v: G, min: number, tOk: boolean) => (v === "T" ? tOk : typeof v === "number" && v > min);
 const rank = (v: G) => (v === "T" ? 1e6 : typeof v === "number" ? v : -1e6);
+// operating leverage: growth steps up down the P&L — EPS > Net Profit > Operating Profit > Sales. A loss-to-profit "T" outranks any %, and two Ts in a row still count as a step up.
+const up = (a: G, b: G) => rank(a) > rank(b) || (rank(a) >= 1e6 && rank(b) >= 1e6);
+const levOf = (r: Record<string, any>) => up(r.eps, r.np) && up(r.np, r.op) && up(r.op, r.sales);
 
 function Gr({ v }: { v: G }) {
   if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
@@ -55,6 +58,7 @@ export default function BlockbusterResults() {
   const [minNp, setMinNp] = useState(25);
   const [minEps, setMinEps] = useState(25);
   const [tOk, setTOk] = useState(true);
+  const [levOnly, setLevOnly] = useState(false); // only stocks where growth steps up down the P&L: EPS > Net Profit > Operating Profit > Sales
   const [qtr, setQtr] = useState<string | null>(null); // null = newest quarter once the data is in
   // % from the all-time high, from the daily NSE store (the same all-stocks feed All Technicals reads) — 2026-10-29
   const [tech, setTech] = useState<Map<string, any>>(new Map());
@@ -98,16 +102,19 @@ export default function BlockbusterResults() {
   const rows = useMemo(
     () =>
       base
-        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk))
+        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk) && (!levOnly || levOf(r)))
         .map((r): Record<string, any> => ({
           ...r,
+          // 2026-10-29 ("add opLev col if EPS > Net Profit > Op Profit > Sales Growth") — each line grows faster than the one above it;
+          // a loss-to-profit "T" outranks any %, and two Ts in a row still count as a step up
+          opLev: levOf(r) ? 1 : 0,
           ath: tech.get(r.symbol)?.pct_from_ath ?? null,
           wh52: tech.get(r.symbol)?.pct_from_52w_high ?? null,
           mcapOp: r.opProfit != null && r.opProfit > 0 && r.mcap ? r.mcap / (r.opProfit * 4) : null,
           peg: r.pe != null && typeof r.eps === "number" && r.eps > 0 ? r.pe / r.eps : null,
         }))
         .sort((a, b) => Math.min(rank(b.sales), rank(b.op), rank(b.np), rank(b.eps)) - Math.min(rank(a.sales), rank(a.op), rank(a.np), rank(a.eps))),
-    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk],
+    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk, levOnly],
   );
 
   const cols: Col[] = [
@@ -131,6 +138,18 @@ export default function BlockbusterResults() {
     { key: "op", label: "Operating Profit YoY %", width: 9, render: (r) => <Gr v={r.op} /> },
     { key: "np", label: "Net Profit YoY %", width: 9, render: (r) => <Gr v={r.np} /> },
     { key: "eps", label: "EPS YoY %", width: 9, render: (r) => <Gr v={r.eps} /> },
+    {
+      key: "opLev",
+      label: "OpLev",
+      align: "center",
+      width: 6,
+      render: (r) =>
+        r.opLev === 1 ? (
+          <span className="text-emerald-600 font-semibold" title="Operating leverage: EPS growth > Net Profit growth > Operating Profit growth > Sales growth — each line grows faster than the one above it">✓</span>
+        ) : (
+          <span className="text-slate-300" title="Growth does not step up from Sales to Operating Profit to Net Profit to EPS">—</span>
+        ),
+    },
     {
       key: "mcapOp",
       label: "Mcap / OpProfit",
@@ -187,6 +206,9 @@ export default function BlockbusterResults() {
         <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="A profit line that went from a loss to a profit has no meaningful %, so it shows T">
           <input type="checkbox" checked={tOk} onChange={(e) => setTOk(e.target.checked)} /> count turnarounds (T)
         </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="EPS growth > Net Profit growth > Operating Profit growth > Sales growth">
+          <input type="checkbox" checked={levOnly} onChange={(e) => setLevOnly(e.target.checked)} /> operating leverage only
+        </label>
       </div>
 
       {!hasNp && (
@@ -205,7 +227,7 @@ export default function BlockbusterResults() {
         <p>
           One row per NSE 750 stock, using each company's <b>latest reported quarter</b> compared with the same quarter a year earlier (Screener.in's quarterly results). A stock shows only if Market Cap, Sales, Operating Profit,
           Net Profit and EPS growth <i>all</i> clear the thresholds above. Sorted by the weakest of the four growth rates, so the most all-round blockbusters come first. <b>T</b> means the year-ago quarter was a loss and the line
-          turned profitable. <b>From ATH %</b> and <b>From 52W High %</b> are how far the price sits below its all-time high / its highest high of the last 52 weeks (0 = at the high; green within 10%, amber 10–25% below, red further), from the daily NSE store, adjusted for splits and bonuses; the ATH is the highest high in that store's years of history, not a literal all-time figure. <b>Mcap / OpProfit</b> = market cap ÷ (the latest quarter's Operating Profit × 4) — how many years of the latest quarter's run-rate operating profit the market cap is worth (lower = cheaper; it ignores debt, tax and
+          turned profitable. <b>OpLev</b> ✓ marks operating leverage: EPS growth &gt; Net Profit growth &gt; Operating Profit growth &gt; Sales growth, each line growing faster than the one above it (a turnaround T counts as the highest; tick <i>operating leverage only</i> to keep just those). <b>From ATH %</b> and <b>From 52W High %</b> are how far the price sits below its all-time high / its highest high of the last 52 weeks (0 = at the high; green within 10%, amber 10–25% below, red further), from the daily NSE store, adjusted for splits and bonuses; the ATH is the highest high in that store's years of history, not a literal all-time figure. <b>Mcap / OpProfit</b> = market cap ÷ (the latest quarter's Operating Profit × 4) — how many years of the latest quarter's run-rate operating profit the market cap is worth (lower = cheaper; it ignores debt, tax and
           seasonality). <b>PEG Ratio</b> = PE ÷ the latest quarter's EPS growth %, where PE = market cap ÷ trailing-12-month net profit; a quarter that jumped off a tiny base gives a very small PEG, so read it beside the growth columns, and it is blank
           for a loss-to-profit turnaround.
         </p>
