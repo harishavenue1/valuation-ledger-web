@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import { api } from "../lib/api";
+import { FromHigh } from "../components/FromHigh";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 
 // Blockbuster Results — added 2026-10-25 ("a new page for latest qtr results with block buster results ...
@@ -28,17 +29,6 @@ const rank = (v: G) => (v === "T" ? 1e6 : typeof v === "number" ? v : -1e6);
 function Gr({ v }: { v: G }) {
   if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
   return <Signed v={v} digits={1} />;
-}
-
-// % below a high (0 = at the high); green within 10%, amber 10-25% below, red further — the same zones as the Portfolio page
-function FromHigh({ v, what, at }: { v: number | null | undefined; what: string; at: string }) {
-  if (v == null) return <span className="text-slate-300" title={`no ${what} figure in the daily store for this stock`}>—</span>;
-  const cls = v >= -10 ? "text-emerald-600" : v >= -25 ? "text-amber-600" : "text-red-600";
-  return (
-    <span className={`${cls} font-medium`} title={v >= -0.05 ? `at or making a fresh ${what}` : `${fmtNum(-v, 1)}% below the ${what}`}>
-      {v >= -0.05 ? at : fmtNum(v, 1)}
-    </span>
-  );
 }
 
 function Num({ label, value, onChange, suffix }: { label: string; value: number; onChange: (v: number) => void; suffix: string }) {

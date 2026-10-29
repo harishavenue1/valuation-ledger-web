@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../lib/api";
 import { guidedGrowth } from "../lib/guidanceGrowth";
 import { useWatchlist } from "../lib/useWatchlist";
+import { FromHigh } from "../components/FromHigh";
 import type { Metric } from "../lib/guidanceGrowth";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, fmtNum } from "../components/ScreenerTable";
 
@@ -74,7 +75,7 @@ export default function BlockbusterGuidance() {
     const filtered = all
       .map((r): Record<string, any> => {
         const t = tech.get(r.symbol);
-        return { ...r, name: t?.name || r.symbol, mcap: t?.market_cap_cr, price: t?.price };
+        return { ...r, name: t?.name || r.symbol, mcap: t?.market_cap_cr, price: t?.price, ath: t?.pct_from_ath ?? null, wh52: t?.pct_from_52w_high ?? null };
       })
       .filter((r) => r.growth >= minGrowth && (r.mcap ?? 0) > minCap && (metric === "All" || r.metric === metric) && (since === 0 || callKey(r.date) >= newest - since + 1));
     filtered.sort((a, b) => b.growth - a.growth || callKey(b.date) - callKey(a.date));
@@ -97,6 +98,8 @@ export default function BlockbusterGuidance() {
     },
     { key: "mcap", label: "Market Cap (₹ Cr)", width: 8, render: (r) => fmtNum(r.mcap, 0) },
     { key: "price", label: "Price (₹)", width: 7, render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+    { key: "ath", label: "From ATH %", width: 7, render: (r) => <FromHigh v={r.ath} what="all-time high" at="at ATH" /> },
+    { key: "wh52", label: "From 52W High %", width: 7, render: (r) => <FromHigh v={r.wh52} what="52-week high" at="at 52W high" /> },
     { key: "metric", label: "Guided on", align: "center", width: 7 },
     { key: "growth", label: "Guided growth", width: 8, render: (r) => <b className="text-emerald-600">{r.label.includes("x") || r.label === "doubling" ? r.label : `${r.label}`}</b> },
     { key: "horizon", label: "Period", align: "center", width: 7, render: (r) => r.horizon || "—" },
@@ -104,7 +107,7 @@ export default function BlockbusterGuidance() {
       key: "text",
       label: "What management said",
       align: "left",
-      width: 33,
+      width: 29,
       render: (r) => (
         <span className="text-xs leading-snug block" style={{ whiteSpace: "normal", overflow: "visible", textOverflow: "clip" }} title={r.text}>
           “{r.text.length > 260 ? r.text.slice(0, 257) + "…" : r.text}”
@@ -179,7 +182,7 @@ export default function BlockbusterGuidance() {
         </p>
         <p>
           This is pattern matching, not comprehension — it can mislabel a multi-year ambition as a one-year guide or pick the wrong metric, which is why every row shows the <b>full sentence</b>, who said it and the <b>transcript link</b> for that
-          call; open the PDF before relying on any number. Universe is companies whose transcripts have been read so far (largest companies, holdings and watchlist first), not every listed company. Sorted by guided growth.
+          call; open the PDF before relying on any number. Universe is companies whose transcripts have been read so far (largest companies, holdings and watchlist first), not every listed company. Sorted by guided growth. <b>From ATH %</b> and <b>From 52W High %</b> show how far the price sits below its all-time / 52-week high (0 = at the high; green within 10%, amber 10–25% below, red further), from the daily NSE store.
         </p>
       </MethodologyNote>
 
