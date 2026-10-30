@@ -3631,25 +3631,70 @@ def _hp_block(title, ups, downs, weights):
     return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "r", "r", "r"])
 
 
-def _hp_movers_text(holding_rows, universe):
-    """Two sections after the market block: your held STOCKS' top 5 gainers and losers today (with portfolio weight), then the same across the NSE 750
-    (with the price). 2026-10-30 ("top 5 Highs & top 5 Lows of my holdings ... and also from Nifty750")."""
-    out = ""
+def _hp_movers_data(holding_rows, universe):
+    """The numbers behind the two movers sections: your held STOCKS' top 5 gainers and losers today, then the same across the NSE 750; {"w": symbol ->
+    portfolio weight %, "held": {"ups", "downs"} | None, "uni": {"ups", "downs", "note"} | None}. 2026-10-30 ("top 5 Highs & top 5 Lows of my
+    holdings ... and also from Nifty750")."""
     held = [r for r in holding_rows if r.get("symbol") and not r.get("is_fund")]
-    w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in holding_rows if r.get("symbol")}  # symbol -> % of the portfolio; anything not in it is 0
+    w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in holding_rows if r.get("symbol")}  # anything not in it is 0
+    out = {"w": w, "held": None, "uni": None}
     if held:
-        moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
+        moves, _found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
         ups, downs = _hp_top(moves)
-        out += _hp_block("💼 Your holdings · top 5 up / down <i>(price, day %, weight %)</i>", ups, downs, w)
+        out["held"] = {"ups": ups, "downs": downs, "weights": w, "note": ""}
     if universe:
         moves, found = _hp_day_moves([(sym, None) for sym in universe])
         ups, downs = _hp_top(moves)
-        note = "" if found >= len(universe) * 0.9 else f"\n<i>({found} of {len(universe)} stocks had a live price)</i>"
-        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(price, day %, weight %)</i>", ups, downs, w) + note
+        out["uni"] = {"ups": ups, "downs": downs, "weights": w, "note": "" if found >= len(universe) * 0.9 else f"{found} of {len(universe)} had a live price"}
     return out
 
 
-def _run_hourly_ping(dry=False, force=False):
+def _hp_movers_text(data):
+    """The same two sections as text (the fallback message, and what a dry run shows)."""
+    out = ""
+    if data.get("held"):
+        out += _hp_block("💼 Your holdings · top 5 up / down <i>(price, day %, weight %)</i>", data["held"]["ups"], data["held"]["downs"], data["w"])
+    if data.get("uni"):
+        note = f"\n<i>({data['uni']['note']})</i>" if data["uni"]["note"] else ""
+        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(price, day %, weight %)</i>", data["uni"]["ups"], data["uni"]["downs"], data["w"]) + note
+    return out
+
+
+def _hp_tiles(quotes, snap, now_ist):
+    """One tile per HP_ITEMS entry for the picture, plus whether a 'since the last ping' figure exists (a ping under ~2.5h old)."""
+    try:
+        last_ts = datetime.fromisoformat(snap["ts"]) if snap and snap.get("ts") else None
+    except Exception:
+        last_ts = None
+    fresh = last_ts is not None and 0 < (now_ist - last_ts).total_seconds() <= 150 * 60
+    tiles = []
+    for label, _t, is_nse in HP_ITEMS:
+        q = quotes.get(label)
+        if not q:
+            continue
+        price, prev = q
+        since = (price / snap["vals"][label] - 1) * 100 if fresh and snap.get("vals", {}).get(label) else None
+        tiles.append({"group": "idx" if is_nse else "oth", "label": label, "price": price, "day": (price / prev - 1) * 100 if prev else 0.0, "since": since})
+    return tiles, fresh
+
+
+def _hp_caption(tiles, mv, now_ist):
+    """The line under the picture (Telegram allows 1024 characters): the headline numbers, so the notification preview already says something."""
+    import html as _html
+
+    def t(label):
+        x = next((i for i in tiles if i["label"] == label), None)
+        return f"{_html.escape(label)} {x['day']:+.2f}%" if x else ""
+
+    lines = [f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>", " · ".join(v for v in (t("Nifty 50"), t("Smallcap"), t("Brent"), t("Gold"), t("USD/INR")) if v)]
+    for icon, key in (("💼", "held"), ("🌐", "uni")):
+        blk = (mv or {}).get(key)
+        if blk and blk["ups"] and blk["downs"]:
+            lines.append(f"{icon} ▲ <b>{_html.escape(blk['ups'][0][0])}</b> {blk['ups'][0][1]:+.1f}%  ·  ▼ <b>{_html.escape(blk['downs'][0][0])}</b> {blk['downs'][0][1]:+.1f}%")
+    return "\n".join(lines)
+
+
+def _run_hourly_ping(dry=False, force=False, card=True):
     from concurrent.futures import ThreadPoolExecutor
 
     now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
@@ -3666,6 +3711,7 @@ def _run_hourly_ping(dry=False, force=False):
     finally:
         conn.close()
     text = _hp_text(quotes, snap, now_ist)
+    mv = None
     try:  # the holdings / Nifty 750 movers — never let a failure here stop the index message
         conn = get_conn()
         try:
@@ -3676,7 +3722,8 @@ def _run_hourly_ping(dry=False, force=False):
             universe = [sym for sym, _n, _i in _ms_get_universe_symbols()]
         except Exception:
             universe = []
-        text += _hp_movers_text(pa_rows, universe)
+        mv = _hp_movers_data(pa_rows, universe)
+        text += _hp_movers_text(mv)
     except Exception:
         pass
     if dry:
@@ -3684,19 +3731,35 @@ def _run_hourly_ping(dry=False, force=False):
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chat:
         return {"ok": False, "sent": False, "error": "set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the Vercel project's environment variables", "text": text}
-    try:
-        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=15)
-        ok = r.status_code == 200 and r.json().get("ok")
-        detail = None if ok else r.text.replace(token, "***")[:300]
-    except Exception as e:
-        ok, detail = False, str(e).replace(token, "***")[:300]
+    ok, detail, mode = False, None, "text"
+    if card:  # the picture first; any trouble drawing or uploading it falls back to the plain text below
+        try:
+            from _pingcard import render
+
+            tiles, fresh = _hp_tiles(quotes, snap, now_ist)
+            market_open = now_ist.weekday() < 5 and (9, 15) <= (now_ist.hour, now_ist.minute) <= (15, 45)
+            png = render({"now_ist": now_ist, "market_open": market_open, "fresh": fresh, "tiles": tiles, "held": (mv or {}).get("held"), "uni": (mv or {}).get("uni")})
+            r = requests.post(f"https://api.telegram.org/bot{token}/sendPhoto", data={"chat_id": chat, "caption": _hp_caption(tiles, mv, now_ist), "parse_mode": "HTML"}, files={"photo": ("market_pulse.png", png, "image/png")}, timeout=30)
+            ok = r.status_code == 200 and bool(r.json().get("ok"))
+            detail = None if ok else r.text.replace(token, "***")[:300]
+            mode = "card"
+        except Exception as e:
+            ok, detail = False, str(e).replace(token, "***")[:300]
+    if not ok:
+        try:
+            r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=15)
+            ok = r.status_code == 200 and bool(r.json().get("ok"))
+            detail = None if ok else r.text.replace(token, "***")[:300]
+            mode = "text"
+        except Exception as e:
+            ok, detail = False, str(e).replace(token, "***")[:300]
     if ok:
         conn = get_conn()
         try:
             set_meta(conn, HP_KEY, {"ts": now_ist.isoformat(), "vals": {k: v[0] for k, v in quotes.items()}})
         finally:
             conn.close()
-    return {"ok": bool(ok), "sent": bool(ok), "error": detail, "text": text}
+    return {"ok": bool(ok), "sent": bool(ok), "mode": mode, "error": detail, "text": text}
 
 
 # ── marketPulse ──────────────────────────────────────────────────────────────
@@ -7109,7 +7172,7 @@ class handler(BaseHTTPRequestHandler):
 
         # ?hourly_ping=1 — the hourly Telegram post (see _run_hourly_ping); called by an external hourly scheduler
         if (query.get("hourly_ping") or [None])[0]:
-            out = _run_hourly_ping(dry=bool((query.get("dry") or [""])[0]), force=bool((query.get("force") or [""])[0]))
+            out = _run_hourly_ping(dry=bool((query.get("dry") or [""])[0]), force=bool((query.get("force") or [""])[0]), card=(query.get("format") or ["card"])[0] != "text" and os.environ.get("PING_FORMAT", "card") != "text")
             send_json(self, 200 if out.get("ok") else 502, out)
             return
 
