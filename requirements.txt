@@ -5,4 +5,3 @@ yfinance
 pandas
 numpy
 pypdf
-Pillow

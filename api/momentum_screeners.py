@@ -7170,6 +7170,25 @@ class handler(BaseHTTPRequestHandler):
             send_json(self, 401, {"error": "unauthorized"})
             return
 
+        # ?live_quotes=A,B,C — Yahoo live price + previous close for up to 200 NSE symbols (BSE as a fallback), for the Trade Desk page
+        if (query.get("live_quotes") or [None])[0]:
+            from concurrent.futures import ThreadPoolExecutor
+
+            syms = [x.strip().upper() for x in query["live_quotes"][0].split(",") if x.strip()][:200]
+
+            def one(sym):
+                q = urllib.parse.quote(sym, safe="")
+                for suffix in (".NS", ".BO"):
+                    r = _rfx_live_quote(q + suffix)
+                    if r:
+                        return sym, {"price": r[1], "prev": r[2], "date": r[0].isoformat(), "day": round((r[1] / r[2] - 1) * 100, 2)}
+                return sym, None
+
+            with ThreadPoolExecutor(max_workers=16) as pool:
+                out = dict(pool.map(one, syms))
+            send_json(self, 200, {"quotes": {k: v for k, v in out.items() if v}})
+            return
+
         # ?hourly_ping=1 — the hourly Telegram post (see _run_hourly_ping); called by an external hourly scheduler
         if (query.get("hourly_ping") or [None])[0]:
             out = _run_hourly_ping(dry=bool((query.get("dry") or [""])[0]), force=bool((query.get("force") or [""])[0]), card=(query.get("format") or ["card"])[0] != "text" and os.environ.get("PING_FORMAT", "card") != "text")

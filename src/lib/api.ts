@@ -432,7 +432,8 @@ export const api = {
   updateWatchlist: (action: "add" | "remove", tickers: string[]): Promise<Watchlist> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action, tickers }) }),
 
-  getJournal: (): Promise<{ checklist: any[] | null; entries: any[]; sells?: any[]; inbox?: any[]; portfolio?: { value: number; as_of: string; weights: Record<string, number> } }> => req("/api/watchlist?journal=1"),
+  getJournal: (): Promise<{ checklist: any[] | null; entries: any[]; sells?: any[]; inbox?: any[]; portfolio?: { value: number; as_of: string; weights: Record<string, number>; holdings?: Record<string, { qty: number; avg: number | null; ltp: number | null }> } }> => req("/api/watchlist?journal=1"),
+  getLiveQuotes: (symbols: string[]): Promise<{ quotes: Record<string, { price: number; prev: number; date: string; day: number }> }> => req(`/api/momentum_screeners?live_quotes=${symbols.map(encodeURIComponent).join(",")}`),
   ackJournal: (ids: string[]): Promise<{ ok: boolean }> => req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "journal_ack", tickers: [], ids }) }),
   setJournal: (journal: { checklist: any[] | null; entries: any[]; sells?: any[] }): Promise<{ ok: boolean }> =>
     req("/api/watchlist", { method: "POST", body: JSON.stringify({ action: "journal", tickers: [], journal }) }),

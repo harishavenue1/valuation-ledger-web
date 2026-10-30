@@ -148,6 +148,8 @@ class handler(BaseHTTPRequestHandler):
                     doc["portfolio"] = {
                         "value": pvv, "as_of": snap.get("as_of"),
                         "weights": {k: round(h["qty"] * (h.get("ltp") or 0) / pvv * 100, 2) for k, h in (snap.get("holdings") or {}).items() if h.get("ltp")},
+                        # quantity / average / last price per holding as of the last PF update — the Trade Desk page sizes its tickets off these
+                        "holdings": {k: {"qty": h.get("qty"), "avg": h.get("avg"), "ltp": h.get("ltp")} for k, h in (snap.get("holdings") or {}).items()},
                     }
                 send_json(self, 200, doc)
                 return

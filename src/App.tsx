@@ -32,6 +32,7 @@ const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
 const BlockbusterResults = lazy(() => import("./pages/BlockbusterResults"));
 const BlockbusterGuidance = lazy(() => import("./pages/BlockbusterGuidance"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
+const TradeDesk = lazy(() => import("./pages/TradeDesk"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 const Guide = lazy(() => import("./pages/Guide"));
@@ -218,6 +219,7 @@ export default function App() {
                   { to: "/portfolio-performance", label: "📊 Performance" },
                   { to: "/mtf-calculator", label: "📐 MTF" },
                   { to: "/mtf-playbook", label: "📘 MTF Playbook" },
+                  { to: "/trade-desk", label: "🛒 Trade Desk" },
                 ]}
               />
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
@@ -315,6 +317,7 @@ export default function App() {
             <Route path="/blockbuster-results" element={<BlockbusterResults />} />
             <Route path="/blockbuster-guidance" element={<BlockbusterGuidance />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
+            <Route path="/trade-desk" element={<TradeDesk />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
