@@ -863,14 +863,14 @@ export default function PortfolioAllocation() {
         // have % vs 33W EMA") — the sign of this column already says the
         // same thing, its width folded in here.
         key: "pct_200d_ema",
-        label: "% vs 200D EMA",
+        label: "200DEMA",
         width: 4.7,
         groupStart: true,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
         key: "pct_33w_ema",
-        label: "% vs 33W EMA",
+        label: "33WEMA",
         width: 4.7,
         render: (r) => (r.pct_33w_ema === null || r.pct_33w_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_33w_ema} digits={1} />),
       },
