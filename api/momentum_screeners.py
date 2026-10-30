@@ -3515,13 +3515,13 @@ def _run_uprun_hold(symbols, name_map, sector_map):
 # Vercel (cron-job.org or a GitHub Action) hits this URL with `Authorization: Bearer $CRON_SECRET`. The bot token and chat id are env vars
 # (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) — never in code. Weekends are skipped (markets shut) unless ?force=1; ?dry=1 returns the text
 # without sending or saving the snapshot. Edit HP_ITEMS to change what is posted.
-HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close)
+HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close); labels kept <= 12 chars so a phone screen holds a line
     ("Nifty 50", "^NSEI", True),
     ("Microcap 250", "NIFTY_MICROCAP250.NS", True),
     ("Smallcap 250", "NIFTYSMLCAP250.NS", True),
-    ("MidSmallcap 400", "NIFTYMIDSML400.NS", True),
+    ("MidSmall 400", "NIFTYMIDSML400.NS", True),
     ("India VIX", "^INDIAVIX", True),
-    ("Crude (Brent)", "BZ=F", False),
+    ("Brent crude", "BZ=F", False),
     ("Gold", "GC=F", False),
     ("Silver", "SI=F", False),
     ("Dollar Index", "DX-Y.NYB", False),
@@ -3531,7 +3531,11 @@ HP_KEY = "hourly_ping"
 
 
 def _hp_text(quotes, snap, now_ist):
-    """The message: one line per item — level, change vs the previous close, change vs the last ping (when that was under ~2.5h ago)."""
+    """The top of the message: Indices, then Commodities & FX — one monospace line per item with an arrow, the level, the change vs the previous
+    close and (once there is an earlier ping under ~2.5h old) the change since that ping. Emojis stay in the headings: inside a <pre> block they
+    are wider than a character and pull the columns out of line."""
+    import html as _html
+
     last_ts = None
     try:
         last_ts = datetime.fromisoformat(snap["ts"]) if snap and snap.get("ts") else None
@@ -3539,23 +3543,27 @@ def _hp_text(quotes, snap, now_ist):
         last_ts = None
     fresh = last_ts is not None and 0 < (now_ist - last_ts).total_seconds() <= 150 * 60
     market_open = now_ist.weekday() < 5 and (9, 15) <= (now_ist.hour, now_ist.minute) <= (15, 45)
-    lines = []
-    for label, _t, is_nse in HP_ITEMS:
+
+    def line(label, is_nse):
         q = quotes.get(label)
         if not q:
-            lines.append(f"{label:<16} n/a")
-            continue
+            return f"  {label:<12}{'n/a':>8}"
         price, prev = q
         day = (price / prev - 1) * 100 if prev else 0.0
-        hour = None
-        if fresh and snap.get("vals", {}).get(label):
-            hour = (price / snap["vals"][label] - 1) * 100
         lvl = f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}"
-        dot = "🟢" if day > 0 else "🔴" if day < 0 else "⚪"
-        h = f" (1h {hour:+.2f}%)" if hour is not None else ""
-        closed = " · closed" if is_nse and not market_open else ""
-        lines.append(f"{dot} {label:<16} {lvl:>10}  {day:+.2f}%{h}{closed}")
-    return f"⏱ {now_ist:%a %d %b, %H:%M} IST\n<pre>" + "\n".join(lines) + "</pre>"
+        arrow = "▲" if day > 0 else "▼" if day < 0 else "•"
+        out = f"{arrow} {label:<12}{lvl:>8} {day:>+7.2f}%"
+        if fresh and snap.get("vals", {}).get(label):
+            out += f" {(price / snap['vals'][label] - 1) * 100:>+6.2f}%"
+        return out
+
+    idx = [it for it in HP_ITEMS if it[2]]
+    oth = [it for it in HP_ITEMS if not it[2]]
+    head = f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>\n"
+    legend = "change vs previous close" + (" · last column = since the last ping" if fresh else "")
+    s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in idx) + "</pre>"
+    s2 = "\n<b>🛢 Commodities &amp; FX</b>\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in oth) + "</pre>"
+    return head + s1 + s2 + f"\n<i>{legend}</i>"
 
 
 def _hp_day_moves(items, workers=24):
@@ -3585,29 +3593,35 @@ def _hp_top(moves, n=5):
     return [m for m in moves if m[1] > 0][:n], [m for m in reversed(moves) if m[1] < 0][:n]
 
 
-def _hp_block(title, items, weights=None):
-    lines = []
-    for sym, chg, price in items:
-        tail = f"  {weights.get(sym, 0):4.1f}%" if weights is not None else f"  {price:>9,.2f}"
-        lines.append(f"{sym:<12} {chg:+6.2f}%{tail}")
-    return f"{title}\n<pre>" + "\n".join(lines or ["none"]) + "</pre>"
+def _hp_block(title, ups, downs, weights=None):
+    """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼). `weights` = the portfolio weights (holdings section);
+    without it the price is shown instead (Nifty 750 section)."""
+    import html as _html
+
+    def row(arrow, it):
+        sym, chg, price = it
+        tail = f"{weights.get(sym, 0):>5.1f}%" if weights is not None else f"{price:>10,.2f}"
+        return f"{arrow} {_html.escape(sym):<12}{chg:>+7.2f}% {tail}"
+
+    lines = [row("▲", u) for u in ups] + ([" " + "─" * 30] if ups and downs else []) + [row("▼", d) for d in downs]
+    return f"\n<b>{title}</b>\n<pre>" + "\n".join(lines or ["none"]) + "</pre>"
 
 
 def _hp_movers_text(holding_rows, universe):
-    """Two sections: the held STOCKS' top 5 gainers/losers (with their portfolio weight), then the same across the NSE 750 (with the price).
-    2026-10-30 ("top 5 Highs & top 5 Lows of my holdings ... and also from Nifty750")."""
+    """Two sections after the market block: your held STOCKS' top 5 gainers and losers today (with portfolio weight), then the same across the NSE 750
+    (with the price). 2026-10-30 ("top 5 Highs & top 5 Lows of my holdings ... and also from Nifty750")."""
     out = ""
     held = [r for r in holding_rows if r.get("symbol") and not r.get("is_fund")]
     if held:
         moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
         ups, downs = _hp_top(moves)
         w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in held}
-        out += "\n" + _hp_block("📈 Your holdings — top 5 gainers (day %, weight)", ups, w) + "\n" + _hp_block("📉 Your holdings — top 5 losers", downs, w)
+        out += _hp_block("💼 Your holdings · top 5 up / down <i>(day %, weight)</i>", ups, downs, w)
     if universe:
         moves, found = _hp_day_moves([(sym, None) for sym in universe])
         ups, downs = _hp_top(moves)
         note = "" if found >= len(universe) * 0.9 else f"\n<i>({found} of {len(universe)} stocks had a live price)</i>"
-        out += "\n" + _hp_block("🌐 Nifty 750 — top 5 gainers (day %, price)", ups) + "\n" + _hp_block("🌐 Nifty 750 — top 5 losers", downs) + note
+        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(day %, price)</i>", ups, downs) + note
     return out
 
 
