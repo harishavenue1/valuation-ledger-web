@@ -29,6 +29,13 @@ const rank = (v: G) => (v === "T" ? 1e6 : typeof v === "number" ? v : -1e6);
 const up = (a: G, b: G) => rank(a) > rank(b) || (rank(a) >= 1e6 && rank(b) >= 1e6);
 const levOf = (r: Record<string, any>) => up(r.eps, r.np) && up(r.np, r.op) && up(r.op, r.sales);
 
+// latest quarter's operating margin minus the one `back` quarters earlier (1 = QoQ, 4 = YoY), in percentage points; null if either is missing
+const opmDelta = (a: (number | null)[] | undefined, back: number): number | null => {
+  if (!a || a.length <= back) return null;
+  const now = a[a.length - 1], then = a[a.length - 1 - back];
+  return now == null || then == null ? null : Math.round((now - then) * 10) / 10;
+};
+
 function Gr({ v }: { v: G }) {
   if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
   return <Signed v={v} digits={1} />;
@@ -83,6 +90,11 @@ export default function BlockbusterResults() {
           np: last<G>(f.q_np_growth),
           eps: last<G>(f.q_eps_growth),
           // 2026-10-28 ("add a column marketCap/(latestOperatingProfit*4) name as Mcap/OpProfit & PEG Ratio")
+          // 2026-10-30 ("QOQ & YOY Margins Delta") — change in operating margin (Operating Profit / Sales), in percentage points: latest quarter
+          // against the one before (QoQ) and against the same quarter a year earlier (YoY). q_opm holds the last 6 quarters, oldest first.
+          opmNow: last<number | null>(f.q_opm) ?? null,
+          opmQoq: opmDelta(f.q_opm, 1),
+          opmYoy: opmDelta(f.q_opm, 4),
           opProfit: last<number | null>(f.q_op) ?? null, // latest quarter's Operating Profit, Rs Cr
           pe: f.marketcap && f.net_profit_hist?.length && f.net_profit_hist[f.net_profit_hist.length - 1] > 0 ? f.marketcap / f.net_profit_hist[f.net_profit_hist.length - 1] : null, // market cap / trailing-twelve-month net profit (Screener's last annual column is TTM)
         };
@@ -138,6 +150,28 @@ export default function BlockbusterResults() {
     { key: "op", label: "Operating Profit YoY %", width: 9, render: (r) => <Gr v={r.op} /> },
     { key: "np", label: "Net Profit YoY %", width: 9, render: (r) => <Gr v={r.np} /> },
     { key: "eps", label: "EPS YoY %", width: 9, render: (r) => <Gr v={r.eps} /> },
+    {
+      key: "opmQoq",
+      label: "OPM QoQ Δ",
+      width: 7,
+      render: (r) =>
+        r.opmQoq == null ? (
+          <span className="text-slate-300" title="needs operating margin for this and the previous quarter — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
+        ) : (
+          <span title={`Operating margin ${fmtNum(r.opmNow, 1)}% now, ${fmtNum(r.opmNow - r.opmQoq, 1)}% last quarter`}><Signed v={r.opmQoq} digits={1} /> pp</span>
+        ),
+    },
+    {
+      key: "opmYoy",
+      label: "OPM YoY Δ",
+      width: 7,
+      render: (r) =>
+        r.opmYoy == null ? (
+          <span className="text-slate-300" title="needs operating margin for this and the same quarter a year ago — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
+        ) : (
+          <span title={`Operating margin ${fmtNum(r.opmNow, 1)}% now, ${fmtNum(r.opmNow - r.opmYoy, 1)}% a year ago`}><Signed v={r.opmYoy} digits={1} /> pp</span>
+        ),
+    },
     {
       key: "opLev",
       label: "OpLev",

@@ -5139,7 +5139,7 @@ def _rdcf_parse_quarterly(soup):
         return None
 
     n = len(q_labels_all)
-    labels, sales_growth, op_growth, eps_growth, np_growth, op_abs = [], [], [], [], [], []
+    labels, sales_growth, op_growth, eps_growth, np_growth, op_abs, opm_abs = [], [], [], [], [], [], []
     for ci in range(max(0, n - 6), n):
         labels.append(q_labels_all[ci])
         pi = ci - 4
@@ -5149,6 +5149,9 @@ def _rdcf_parse_quarterly(soup):
         o_curr = op_row[ci] if op_row and ci < len(op_row) else None
         o_prev = op_row[pi] if op_row and 0 <= pi < len(op_row) else None
         op_growth.append(_yoy_with_turned(o_curr, o_prev))
+        # 2026-10-30 ("QOQ & YOY Margins Delta" on Blockbuster Results) — the quarter's operating margin, Operating Profit / Sales in %, to one decimal
+        # (Screener's own OPM % row is a whole number, too coarse for a delta); None when either figure is missing or Sales is not positive
+        opm_abs.append(round(o_curr / s_curr * 100, 1) if o_curr is not None and s_curr is not None and s_curr > 0 else None)
         op_abs.append(o_curr)  # 2026-10-28 — the quarter's Operating Profit itself (Rs Cr), for Blockbuster Results' Mcap / (OpProfit x 4)
         e_curr = eps_row[ci] if eps_row and ci < len(eps_row) else None
         e_prev = eps_row[pi] if eps_row and 0 <= pi < len(eps_row) else None
@@ -5156,7 +5159,7 @@ def _rdcf_parse_quarterly(soup):
         n_curr = np_row[ci] if np_row and ci < len(np_row) else None
         n_prev = np_row[pi] if np_row and 0 <= pi < len(np_row) else None
         np_growth.append(_yoy_with_turned(n_curr, n_prev))
-    return {"labels": labels, "sales_growth": sales_growth, "op_growth": op_growth, "eps_growth": eps_growth, "np_growth": np_growth, "op": op_abs}
+    return {"labels": labels, "sales_growth": sales_growth, "op_growth": op_growth, "eps_growth": eps_growth, "np_growth": np_growth, "op": op_abs, "opm": opm_abs}
 
 
 def _rdcf_fetch_fundamentals(ticker):
@@ -5421,6 +5424,7 @@ def _rdcf_fetch_fundamentals(ticker):
             "q_op_growth": quarterly["op_growth"] if quarterly else [],
             "q_eps_growth": quarterly["eps_growth"] if quarterly else [],
             "q_np_growth": quarterly["np_growth"] if quarterly else [],  # Net Profit YoY, same 'T' convention — 2026-10-25
+            "q_opm": quarterly["opm"] if quarterly else [],  # operating margin % per quarter (same 6 quarters as q_labels) — 2026-10-30, for Blockbuster Results' QoQ / YoY margin delta
             "q_op": quarterly["op"] if quarterly else [],  # Operating Profit per quarter in Rs Cr (same 6 quarters as q_labels; None where Screener has no figure) — 2026-10-28
         }
     return None
