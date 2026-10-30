@@ -3530,12 +3530,30 @@ HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale aft
 HP_KEY = "hourly_ping"
 
 
+def _hp_pre(rows, aligns):
+    """A <pre> block whose every column is exactly as wide as its longest cell (2026-10-30: "column width set to max as per the content in the column
+    with the largest char count"). `rows` are lists of cell strings (a row may be shorter — a missing 1h column), `aligns` is "l"/"r" per column.
+    None in a row = a divider line spanning the table."""
+    import html as _html
+
+    real = [r for r in rows if r is not None]
+    ncol = max((len(r) for r in real), default=0)
+    widths = [max((len(r[c]) for r in real if c < len(r)), default=0) for c in range(ncol)]
+    total = sum(widths) + max(0, ncol - 1)
+    out = []
+    for r in rows:
+        if r is None:
+            out.append("─" * total)
+            continue
+        cells = [(r[c].ljust(widths[c]) if aligns[c] == "l" else r[c].rjust(widths[c])) for c in range(len(r))]
+        out.append(_html.escape(" ".join(cells).rstrip()))
+    return "<pre>" + "\n".join(out or ["none"]) + "</pre>"
+
+
 def _hp_text(quotes, snap, now_ist):
     """The top of the message: Indices, then Commodities & FX — one monospace line per item with an arrow, the level, the change vs the previous
     close and (once there is an earlier ping under ~2.5h old) the change since that ping. Emojis stay in the headings: inside a <pre> block they
     are wider than a character and pull the columns out of line."""
-    import html as _html
-
     last_ts = None
     try:
         last_ts = datetime.fromisoformat(snap["ts"]) if snap and snap.get("ts") else None
@@ -3544,25 +3562,22 @@ def _hp_text(quotes, snap, now_ist):
     fresh = last_ts is not None and 0 < (now_ist - last_ts).total_seconds() <= 150 * 60
     market_open = now_ist.weekday() < 5 and (9, 15) <= (now_ist.hour, now_ist.minute) <= (15, 45)
 
-    def line(label, is_nse):
+    def row(label):
         q = quotes.get(label)
         if not q:
-            return f"  {label:<8}{'n/a':>7}"
+            return ["•", label, "n/a"]
         price, prev = q
         day = (price / prev - 1) * 100 if prev else 0.0
-        lvl = f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}"
-        arrow = "▲" if day > 0 else "▼" if day < 0 else "•"
-        out = f"{arrow} {label:<8}{lvl:>7} {day:>+6.2f}%"  # 25 characters; a phone shows about 30 before a <pre> line wraps and the columns tear
+        r = ["▲" if day > 0 else "▼" if day < 0 else "•", label, f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}", f"{day:+.2f}%"]
         if fresh and snap.get("vals", {}).get(label):
-            out += f" {(price / snap['vals'][label] - 1) * 100:>+5.2f}"
-        return out
+            r.append(f"{(price / snap['vals'][label] - 1) * 100:+.2f}")
+        return r
 
-    idx = [it for it in HP_ITEMS if it[2]]
-    oth = [it for it in HP_ITEMS if not it[2]]
+    al = ["l", "l", "r", "r", "r"]
     head = f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>\n"
     legend = "% vs previous close" + (" · last column: change since the last ping" if fresh else "")
-    s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in idx) + "</pre>"
-    s2 = "\n<b>🛢 Commodities &amp; FX</b>\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in oth) + "</pre>"
+    s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if n], al)
+    s2 = "\n<b>🛢 Commodities &amp; FX</b>\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if not n], al)
     return head + s1 + s2 + f"\n<i>{legend}</i>"
 
 
@@ -3595,16 +3610,13 @@ def _hp_top(moves, n=5):
 
 def _hp_block(title, ups, downs, weights=None):
     """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼). `weights` = the portfolio weights (holdings section);
-    without it the price is shown instead (Nifty 750 section)."""
-    import html as _html
-
+    without it the price is shown instead (Nifty 750 section). Symbols are cut at 10 characters so a long one cannot widen the whole table."""
     def row(arrow, it):
         sym, chg, price = it
-        tail = f"{weights.get(sym, 0):>4.1f}%" if weights is not None else f"{price:>8,.2f}"
-        return f"{arrow} {_html.escape(sym[:10]):<10}{chg:>+7.2f}% {tail}"  # 28 characters at most
+        return [arrow, sym[:10], f"{chg:+.2f}%", f"{weights.get(sym, 0):.1f}%" if weights is not None else f"{price:,.2f}"]
 
-    lines = [row("▲", u) for u in ups] + ([" " + "─" * 26] if ups and downs else []) + [row("▼", d) for d in downs]
-    return f"\n<b>{title}</b>\n<pre>" + "\n".join(lines or ["none"]) + "</pre>"
+    rows = [row("▲", u) for u in ups] + ([None] if ups and downs else []) + [row("▼", d) for d in downs]
+    return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "l", "r", "r"])
 
 
 def _hp_movers_text(holding_rows, universe):
