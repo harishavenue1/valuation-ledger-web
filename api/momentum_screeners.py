@@ -3557,6 +3557,38 @@ def _hp_text(quotes, snap, now_ist):
     return f"⏱ {now_ist:%a %d %b, %H:%M} IST\n<pre>" + "\n".join(lines) + "</pre>"
 
 
+def _hp_movers(rows, n=5):
+    """Top-n gainers and top-n losers among the held STOCKS (funds/ETFs left out) by today's change vs the previous close, from Yahoo live quotes
+    (NSE first, BSE if that fails) — (ups, downs), each a list of (symbol, day %, % of portfolio). 2026-10-30 ("top 5 Highs & top 5 Lows of my holdings")."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    held = [r for r in rows if r.get("symbol") and not r.get("is_fund")]
+
+    def one(r):
+        sym = urllib.parse.quote(r["symbol"], safe="")
+        for suffix in ((".BO", ".NS") if r.get("exchange") == "BSE" else (".NS", ".BO")):
+            q = _rfx_live_quote(sym + suffix)
+            if q:
+                return r["symbol"], (q[1] / q[2] - 1) * 100, r.get("pct_of_portfolio") or 0.0
+        return None
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        got = [g for g in pool.map(one, held) if g]
+    got.sort(key=lambda g: g[1], reverse=True)
+    ups = [g for g in got if g[1] > 0][:n]
+    downs = [g for g in reversed(got) if g[1] < 0][:n]
+    return ups, downs, len(got), len(held)
+
+
+def _hp_movers_text(ups, downs, found, total):
+    def block(title, items):
+        lines = [f"{sym:<12} {chg:+6.2f}%  {w:4.1f}%" for sym, chg, w in items] or ["none"]
+        return f"{title}\n<pre>" + "\n".join(lines) + "</pre>"
+
+    note = "" if found == total else f"\n<i>({found} of {total} stocks had a live price)</i>"
+    return "\n" + block("📈 Your top 5 gainers today (day %, weight)", ups) + "\n" + block("📉 Your top 5 losers today", downs) + note
+
+
 def _run_hourly_ping(dry=False, force=False):
     from concurrent.futures import ThreadPoolExecutor
 
@@ -3574,6 +3606,16 @@ def _run_hourly_ping(dry=False, force=False):
     finally:
         conn.close()
     text = _hp_text(quotes, snap, now_ist)
+    try:  # the holdings movers — never let a failure here stop the index message
+        conn = get_conn()
+        try:
+            pa_rows = (((get_meta(conn, "momentum_screeners", {}) or {}).get("portfolioAllocation") or {}).get("rows")) or []
+        finally:
+            conn.close()
+        if pa_rows:
+            text += _hp_movers_text(*_hp_movers(pa_rows))
+    except Exception:
+        pass
     if dry:
         return {"ok": True, "sent": False, "dry": True, "text": text}
     token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
