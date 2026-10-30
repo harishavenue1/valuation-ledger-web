@@ -3609,12 +3609,13 @@ def _hp_top(moves, n=5):
     return [m for m in moves if m[1] > 0][:n], [m for m in reversed(moves) if m[1] < 0][:n]
 
 
-def _hp_block(title, ups, downs, weights=None):
-    """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼). `weights` = the portfolio weights (holdings section);
-    without it the price is shown instead (Nifty 750 section). Symbols are cut at 10 characters so a long one cannot widen the whole table."""
+def _hp_block(title, ups, downs):
+    """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼) — name, PRICE, day % — the same three columns the index
+    block has (2026-10-30: the holdings rows had no price, so two bare percentages sat side by side and read as overlapping). Symbols are cut at
+    10 characters so a long one cannot widen the whole table."""
     def row(arrow, it):
         sym, chg, price = it
-        return [f"{arrow} {sym[:10]}", f"{chg:+.2f}", f"{weights.get(sym, 0):.1f}" if weights is not None else f"{price:,.2f}"]
+        return [f"{arrow} {sym[:10]}", f"{price:,.2f}", f"{chg:+.2f}"]
 
     rows = [row("▲", u) for u in ups] + ([None] if ups and downs else []) + [row("▼", d) for d in downs]
     return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "r", "r"])
@@ -3628,13 +3629,12 @@ def _hp_movers_text(holding_rows, universe):
     if held:
         moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
         ups, downs = _hp_top(moves)
-        w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in held}
-        out += _hp_block("💼 Your holdings · top 5 up / down <i>(day %, weight %)</i>", ups, downs, w)
+        out += _hp_block("💼 Your holdings · top 5 up / down <i>(price, day %)</i>", ups, downs)
     if universe:
         moves, found = _hp_day_moves([(sym, None) for sym in universe])
         ups, downs = _hp_top(moves)
         note = "" if found >= len(universe) * 0.9 else f"\n<i>({found} of {len(universe)} stocks had a live price)</i>"
-        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(day %, price)</i>", ups, downs) + note
+        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(price, day %)</i>", ups, downs) + note
     return out
 
 
