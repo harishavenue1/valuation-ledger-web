@@ -3530,6 +3530,14 @@ HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale aft
 HP_KEY = "hourly_ping"
 
 
+def _hp_px(price):
+    return f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}"
+
+
+def _hp_wt(w):
+    return f"{w:.1f}" if w and w >= 0.05 else "0"
+
+
 def _hp_pre(rows, aligns):
     """A <pre> block whose every column is exactly as wide as its longest cell (2026-10-30: "column width set to max as per the content in the column
     with the largest char count"). `rows` are lists of cell strings (a row may be shorter — a missing 1h column), `aligns` is "l"/"r" per column.
@@ -3537,8 +3545,13 @@ def _hp_pre(rows, aligns):
     import html as _html
 
     real = [r for r in rows if r is not None]
-    ncol = max((len(r) for r in real), default=0)
-    widths = [max((len(r[c]) for r in real if c < len(r)), default=0) for c in range(ncol)]
+    ncol0 = max((len(r) for r in real), default=0)
+    keep = [c for c in range(ncol0) if any(c < len(r) and r[c] for r in real)]  # a column empty in every row (no 1h figure yet) takes no room
+    real = [[r[c] if c < len(r) else "" for c in keep] for r in real]
+    rows = [None if r is None else [r[c] if c < len(r) else "" for c in keep] for r in rows]
+    aligns = [aligns[c] for c in keep]
+    ncol = len(keep)
+    widths = [max((len(r[c]) for r in real), default=0) for c in range(ncol)]
     gap = "  "  # two spaces between columns — one space made neighbouring numbers read as one blob
     total = sum(widths) + len(gap) * max(0, ncol - 1)
     out = []
@@ -3566,17 +3579,15 @@ def _hp_text(quotes, snap, now_ist):
     def row(label):
         q = quotes.get(label)
         if not q:
-            return [f"• {label}", "n/a"]
+            return [f"• {label}", "n/a", "", "", "0"]
         price, prev = q
         day = (price / prev - 1) * 100 if prev else 0.0
-        r = [("▲ " if day > 0 else "▼ " if day < 0 else "• ") + label, f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}", f"{day:+.2f}"]
-        if fresh and snap.get("vals", {}).get(label):
-            r.append(f"{(price / snap['vals'][label] - 1) * 100:+.2f}")
-        return r
+        h = f"{(price / snap['vals'][label] - 1) * 100:+.2f}" if fresh and snap.get("vals", {}).get(label) else ""
+        return [("▲ " if day > 0 else "▼ " if day < 0 else "• ") + label, _hp_px(price), f"{day:+.2f}", h, "0"]  # weight 0: an index or a commodity is never "held"
 
-    al = ["l", "r", "r", "r"]
+    al = ["l", "r", "r", "r", "r"]
     head = f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>\n"
-    legend = "change in % vs the previous close" + (" · last column: since the last ping" if fresh else "")
+    legend = "price · % vs previous close" + (" · % since last ping" if fresh else "") + " · portfolio weight %"
     s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if n], al)
     s2 = "\n<b>🛢 Commodities &amp; FX</b>\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if not n], al)
     return head + s1 + s2 + f"\n<i>{legend}</i>"
@@ -3609,16 +3620,15 @@ def _hp_top(moves, n=5):
     return [m for m in moves if m[1] > 0][:n], [m for m in reversed(moves) if m[1] < 0][:n]
 
 
-def _hp_block(title, ups, downs):
-    """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼) — name, PRICE, day % — the same three columns the index
-    block has (2026-10-30: the holdings rows had no price, so two bare percentages sat side by side and read as overlapping). Symbols are cut at
-    10 characters so a long one cannot widen the whole table."""
+def _hp_block(title, ups, downs, weights):
+    """One section: a bold heading and one <pre> with the gainers (▲) then the losers (▼) — name, price, day %, portfolio weight % (0 when the stock
+    is not held), the same columns the index block has (2026-10-30). Symbols are cut at 10 characters so a long one cannot widen the whole table."""
     def row(arrow, it):
         sym, chg, price = it
-        return [f"{arrow} {sym[:10]}", f"{price:,.2f}", f"{chg:+.2f}"]
+        return [f"{arrow} {sym[:10]}", _hp_px(price), f"{chg:+.2f}", _hp_wt(weights.get(sym, 0.0))]
 
     rows = [row("▲", u) for u in ups] + ([None] if ups and downs else []) + [row("▼", d) for d in downs]
-    return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "r", "r"])
+    return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "r", "r", "r"])
 
 
 def _hp_movers_text(holding_rows, universe):
@@ -3626,15 +3636,16 @@ def _hp_movers_text(holding_rows, universe):
     (with the price). 2026-10-30 ("top 5 Highs & top 5 Lows of my holdings ... and also from Nifty750")."""
     out = ""
     held = [r for r in holding_rows if r.get("symbol") and not r.get("is_fund")]
+    w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in holding_rows if r.get("symbol")}  # symbol -> % of the portfolio; anything not in it is 0
     if held:
         moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
         ups, downs = _hp_top(moves)
-        out += _hp_block("💼 Your holdings · top 5 up / down <i>(price, day %)</i>", ups, downs)
+        out += _hp_block("💼 Your holdings · top 5 up / down <i>(price, day %, weight %)</i>", ups, downs, w)
     if universe:
         moves, found = _hp_day_moves([(sym, None) for sym in universe])
         ups, downs = _hp_top(moves)
         note = "" if found >= len(universe) * 0.9 else f"\n<i>({found} of {len(universe)} stocks had a live price)</i>"
-        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(price, day %)</i>", ups, downs) + note
+        out += _hp_block("🌐 Nifty 750 · top 5 up / down <i>(price, day %, weight %)</i>", ups, downs, w) + note
     return out
 
 
