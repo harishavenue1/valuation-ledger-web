@@ -633,11 +633,11 @@ export default function PortfolioAllocation() {
   const stockRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, qtr_profit_sort: r.qtr_profit_growth_pct === "T" ? 1e9 : typeof r.qtr_profit_growth_pct === "number" ? r.qtr_profit_growth_pct : null }));
   }, [rows, selectedRealSectors, sizeFilter]);
   const fundRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null }));
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, qtr_profit_sort: r.qtr_profit_growth_pct === "T" ? 1e9 : typeof r.qtr_profit_growth_pct === "number" ? r.qtr_profit_growth_pct : null }));
   }, [rows, selectedRealSectors, sizeFilter]);
 
   const COLS: Col[] = useMemo(
@@ -697,6 +697,21 @@ export default function PortfolioAllocation() {
           const v = r.qtr_eps_growth_pct as number | "T" | null | undefined;
           if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
           if (v == null) return <span className="text-slate-300" title="a fund/ETF, or no quarterly results on Screener.in yet">—</span>;
+          return <Signed v={v} digits={1} />;
+        },
+      },
+      {
+        // 2026-10-30 ("SUDEEPPHRM -3.2 still shows wrong", Screener's own screenshot showing profit +12%) — EPS also moves with the share count, so a quarter
+        // after an IPO / issue can show EPS down while net profit is up. This is the latest quarter's NET PROFIT YoY from the same Quarterly Results table
+        // (computed from the rounded ₹ Cr figures, so it can sit a point or so from Screener's own logged-in "YOY Profit Growth %" row).
+        key: "qtr_profit_sort", // numeric twin of qtr_profit_growth_pct ("T" sorts highest)
+        label: "Qtr Profit Growth %",
+        align: "center",
+        width: 5,
+        render: (r) => {
+          const v = r.qtr_profit_growth_pct as number | "T" | null | undefined;
+          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
+          if (v == null) return <span className="text-slate-300" title="a fund/ETF, a loss-making quarter, or no quarterly results on Screener.in yet">—</span>;
           return <Signed v={v} digits={1} />;
         },
       },
