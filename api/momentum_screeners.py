@@ -3506,6 +3506,89 @@ def _run_uprun_hold(symbols, name_map, sector_map):
     return {"label": "Uprun Hold", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
 
 
+# ── hourlyPing ───────────────────────────────────────────────────────────────
+#
+# 2026-10-30 ("a simple agent which keeps posting me every 1hr the index changes — MicroCap, SmallCap, MidSmallCap, CrudeOil, DXY ... on
+# Telegram"). Not a screener: GET /api/momentum_screeners?hourly_ping=1 fetches the live quotes, works out each one's change vs the previous
+# close and vs the last ping, and sends one Telegram message. Vercel's Hobby plan runs a cron at most once a day, so an hourly caller outside
+# Vercel (cron-job.org or a GitHub Action) hits this URL with `Authorization: Bearer $CRON_SECRET`. The bot token and chat id are env vars
+# (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) — never in code. Weekends are skipped (markets shut) unless ?force=1; ?dry=1 returns the text
+# without sending or saving the snapshot. Edit HP_ITEMS to change what is posted.
+HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close)
+    ("Microcap 250", "NIFTY_MICROCAP250.NS", True),
+    ("Smallcap 250", "NIFTYSMLCAP250.NS", True),
+    ("MidSmallcap 400", "NIFTYMIDSML400.NS", True),
+    ("Crude (Brent)", "BZ=F", False),
+    ("Dollar Index", "DX-Y.NYB", False),
+]
+HP_KEY = "hourly_ping"
+
+
+def _hp_text(quotes, snap, now_ist):
+    """The message: one line per item — level, change vs the previous close, change vs the last ping (when that was under ~2.5h ago)."""
+    last_ts = None
+    try:
+        last_ts = datetime.fromisoformat(snap["ts"]) if snap and snap.get("ts") else None
+    except Exception:
+        last_ts = None
+    fresh = last_ts is not None and 0 < (now_ist - last_ts).total_seconds() <= 150 * 60
+    market_open = now_ist.weekday() < 5 and (9, 15) <= (now_ist.hour, now_ist.minute) <= (15, 45)
+    lines = []
+    for label, _t, is_nse in HP_ITEMS:
+        q = quotes.get(label)
+        if not q:
+            lines.append(f"{label:<16} n/a")
+            continue
+        price, prev = q
+        day = (price / prev - 1) * 100 if prev else 0.0
+        hour = None
+        if fresh and snap.get("vals", {}).get(label):
+            hour = (price / snap["vals"][label] - 1) * 100
+        lvl = f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}"
+        dot = "🟢" if day > 0 else "🔴" if day < 0 else "⚪"
+        h = f" (1h {hour:+.2f}%)" if hour is not None else ""
+        closed = " · closed" if is_nse and not market_open else ""
+        lines.append(f"{dot} {label:<16} {lvl:>10}  {day:+.2f}%{h}{closed}")
+    return f"⏱ {now_ist:%a %d %b, %H:%M} IST\n<pre>" + "\n".join(lines) + "</pre>"
+
+
+def _run_hourly_ping(dry=False, force=False):
+    from concurrent.futures import ThreadPoolExecutor
+
+    now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    if not force and now_ist.weekday() >= 5:
+        return {"ok": True, "sent": False, "skipped": "weekend"}
+    with ThreadPoolExecutor(max_workers=len(HP_ITEMS)) as pool:
+        got = list(pool.map(lambda it: _rfx_live_quote(it[1]), HP_ITEMS))
+    quotes = {it[0]: (g[1], g[2]) for it, g in zip(HP_ITEMS, got) if g}
+    if not quotes:
+        return {"ok": False, "sent": False, "error": "no quotes came back from Yahoo"}
+    conn = get_conn()
+    try:
+        snap = get_meta(conn, HP_KEY, None) or {}
+    finally:
+        conn.close()
+    text = _hp_text(quotes, snap, now_ist)
+    if dry:
+        return {"ok": True, "sent": False, "dry": True, "text": text}
+    token, chat = os.environ.get("TELEGRAM_BOT_TOKEN", ""), os.environ.get("TELEGRAM_CHAT_ID", "")
+    if not token or not chat:
+        return {"ok": False, "sent": False, "error": "set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in the Vercel project's environment variables", "text": text}
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}, timeout=15)
+        ok = r.status_code == 200 and r.json().get("ok")
+        detail = None if ok else r.text.replace(token, "***")[:300]
+    except Exception as e:
+        ok, detail = False, str(e).replace(token, "***")[:300]
+    if ok:
+        conn = get_conn()
+        try:
+            set_meta(conn, HP_KEY, {"ts": now_ist.isoformat(), "vals": {k: v[0] for k, v in quotes.items()}})
+        finally:
+            conn.close()
+    return {"ok": bool(ok), "sent": bool(ok), "error": detail, "text": text}
+
+
 # ── marketPulse ──────────────────────────────────────────────────────────────
 #
 # 2026-10-25 ("a dashboard page which shows the day to day changes progress on Crude OIL, GOLD, SILVER,
@@ -6910,6 +6993,12 @@ class handler(BaseHTTPRequestHandler):
             return
 
         query = parse_qs(urlparse(self.path).query)
+
+        # ?hourly_ping=1 — the hourly Telegram post (see _run_hourly_ping); called by an external hourly scheduler
+        if (query.get("hourly_ping") or [None])[0]:
+            out = _run_hourly_ping(dry=bool((query.get("dry") or [""])[0]), force=bool((query.get("force") or [""])[0]))
+            send_json(self, 200 if out.get("ok") else 502, out)
+            return
 
         # ?chart_symbol=... short-circuits before the screener dispatch
         # below — see _run_chart_data's own module comment for why this
