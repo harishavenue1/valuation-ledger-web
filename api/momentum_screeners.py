@@ -3522,6 +3522,7 @@ HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale aft
     ("India VIX", "^INDIAVIX", True),
     ("Crude (Brent)", "BZ=F", False),
     ("Gold", "GC=F", False),
+    ("Silver", "SI=F", False),
     ("Dollar Index", "DX-Y.NYB", False),
     ("USD/INR", "USDINR=X", False),
 ]
