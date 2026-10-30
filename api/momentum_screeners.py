@@ -3539,14 +3539,15 @@ def _hp_pre(rows, aligns):
     real = [r for r in rows if r is not None]
     ncol = max((len(r) for r in real), default=0)
     widths = [max((len(r[c]) for r in real if c < len(r)), default=0) for c in range(ncol)]
-    total = sum(widths) + max(0, ncol - 1)
+    gap = "  "  # two spaces between columns — one space made neighbouring numbers read as one blob
+    total = sum(widths) + len(gap) * max(0, ncol - 1)
     out = []
     for r in rows:
         if r is None:
             out.append("─" * total)
             continue
         cells = [(r[c].ljust(widths[c]) if aligns[c] == "l" else r[c].rjust(widths[c])) for c in range(len(r))]
-        out.append(_html.escape(" ".join(cells).rstrip()))
+        out.append(_html.escape(gap.join(cells).rstrip()))
     return "<pre>" + "\n".join(out or ["none"]) + "</pre>"
 
 
@@ -3565,17 +3566,17 @@ def _hp_text(quotes, snap, now_ist):
     def row(label):
         q = quotes.get(label)
         if not q:
-            return ["•", label, "n/a"]
+            return [f"• {label}", "n/a"]
         price, prev = q
         day = (price / prev - 1) * 100 if prev else 0.0
-        r = ["▲" if day > 0 else "▼" if day < 0 else "•", label, f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}", f"{day:+.2f}%"]
+        r = [("▲ " if day > 0 else "▼ " if day < 0 else "• ") + label, f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}", f"{day:+.2f}"]
         if fresh and snap.get("vals", {}).get(label):
             r.append(f"{(price / snap['vals'][label] - 1) * 100:+.2f}")
         return r
 
-    al = ["l", "l", "r", "r", "r"]
+    al = ["l", "r", "r", "r"]
     head = f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>\n"
-    legend = "% vs previous close" + (" · last column: change since the last ping" if fresh else "")
+    legend = "change in % vs the previous close" + (" · last column: since the last ping" if fresh else "")
     s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if n], al)
     s2 = "\n<b>🛢 Commodities &amp; FX</b>\n" + _hp_pre([row(l) for l, _t, n in HP_ITEMS if not n], al)
     return head + s1 + s2 + f"\n<i>{legend}</i>"
@@ -3613,10 +3614,10 @@ def _hp_block(title, ups, downs, weights=None):
     without it the price is shown instead (Nifty 750 section). Symbols are cut at 10 characters so a long one cannot widen the whole table."""
     def row(arrow, it):
         sym, chg, price = it
-        return [arrow, sym[:10], f"{chg:+.2f}%", f"{weights.get(sym, 0):.1f}%" if weights is not None else f"{price:,.2f}"]
+        return [f"{arrow} {sym[:10]}", f"{chg:+.2f}", f"{weights.get(sym, 0):.1f}" if weights is not None else f"{price:,.2f}"]
 
     rows = [row("▲", u) for u in ups] + ([None] if ups and downs else []) + [row("▼", d) for d in downs]
-    return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "l", "r", "r"])
+    return f"\n<b>{title}</b>\n" + _hp_pre(rows, ["l", "r", "r"])
 
 
 def _hp_movers_text(holding_rows, universe):
@@ -3628,7 +3629,7 @@ def _hp_movers_text(holding_rows, universe):
         moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
         ups, downs = _hp_top(moves)
         w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in held}
-        out += _hp_block("💼 Your holdings · top 5 up / down <i>(day %, weight)</i>", ups, downs, w)
+        out += _hp_block("💼 Your holdings · top 5 up / down <i>(day %, weight %)</i>", ups, downs, w)
     if universe:
         moves, found = _hp_day_moves([(sym, None) for sym in universe])
         ups, downs = _hp_top(moves)
