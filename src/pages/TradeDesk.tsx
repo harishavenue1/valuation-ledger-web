@@ -16,7 +16,7 @@ import { MethodologyNote, ScreenerLoading, Signed, fmtNum } from "../components/
 
 type Side = "BUY" | "SELL";
 type OType = "MARKET" | "LIMIT";
-type Product = "CNC" | "MTF";
+type Product = "CNC"; // delivery only — MTF is never used (2026-10-31)
 interface Held {
   symbol: string;
   qty: number;
@@ -72,7 +72,7 @@ export default function TradeDesk() {
   const [qty, setQty] = useState(0);
   const [otype, setOtype] = useState<OType>("MARKET");
   const [limit, setLimit] = useState("");
-  const [product, setProduct] = useState<Product>("CNC");
+  const product: Product = "CNC";
   const [basket, setBasket] = useState<Ticket[]>([]);
   const [apiKey, setApiKey] = useState(() => lsGet("kite-api-key", ""));
   const [capPct, setCapPct] = useState(() => parseFloat(lsGet("td-cap-pct", "3")) || 3);
@@ -305,10 +305,7 @@ export default function TradeDesk() {
                 <option>NSE</option>
                 <option>BSE</option>
               </select>
-              <select value={product} onChange={(e) => setProduct(e.target.value as Product)} className={input} title="CNC = delivery with your own money, MTF = margin trading facility">
-                <option value="CNC">CNC</option>
-                <option value="MTF">MTF</option>
-              </select>
+              <span className="px-2.5 py-1.5 text-xs rounded border border-slate-300 text-slate-500" title="Delivery orders only — MTF is never used">CNC only</span>
             </div>
 
             <div className="flex items-center gap-2 mb-2">
@@ -433,7 +430,7 @@ export default function TradeDesk() {
       <MethodologyNote>
         <p>
           <b>What it does:</b> lists your holdings from the last PF update (quantity, average cost, price, weight) and lets you build buy / sell tickets with a side toggle, quantity buttons, quick sizes (a share of the holding when selling, a share of
-          the portfolio when buying), market or limit price and CNC / MTF. The preview shows the order value, what you will hold afterwards and your approximate P&amp;L on a sale. Warnings flag selling more than you own, a limit price far from the last price,
+          the portfolio when buying), market or limit price (delivery, CNC, only). The preview shows the order value, what you will hold afterwards and your approximate P&amp;L on a sale. Warnings flag selling more than you own, a limit price far from the last price,
           and orders above your size cap.
         </p>
         <p>
