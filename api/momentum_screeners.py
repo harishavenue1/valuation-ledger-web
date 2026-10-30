@@ -3557,36 +3557,57 @@ def _hp_text(quotes, snap, now_ist):
     return f"⏱ {now_ist:%a %d %b, %H:%M} IST\n<pre>" + "\n".join(lines) + "</pre>"
 
 
-def _hp_movers(rows, n=5):
-    """Top-n gainers and top-n losers among the held STOCKS (funds/ETFs left out) by today's change vs the previous close, from Yahoo live quotes
-    (NSE first, BSE if that fails) — (ups, downs), each a list of (symbol, day %, % of portfolio). 2026-10-30 ("top 5 Highs & top 5 Lows of my holdings")."""
+def _hp_day_moves(items, workers=24):
+    """[(symbol, day % vs the previous close, price)] from Yahoo live quotes for (symbol, exchange) pairs — NSE first, BSE if that fails. A quote
+    that is not from the latest trading date seen (a stock that did not trade today) is dropped, so a stale price never passes for a move."""
     from concurrent.futures import ThreadPoolExecutor
 
-    held = [r for r in rows if r.get("symbol") and not r.get("is_fund")]
-
-    def one(r):
-        sym = urllib.parse.quote(r["symbol"], safe="")
-        for suffix in ((".BO", ".NS") if r.get("exchange") == "BSE" else (".NS", ".BO")):
-            q = _rfx_live_quote(sym + suffix)
-            if q:
-                return r["symbol"], (q[1] / q[2] - 1) * 100, r.get("pct_of_portfolio") or 0.0
+    def one(it):
+        sym, exch = it
+        q = urllib.parse.quote(sym, safe="")
+        for suffix in ((".BO", ".NS") if exch == "BSE" else (".NS", ".BO")):
+            r = _rfx_live_quote(q + suffix)
+            if r:
+                return sym, (r[1] / r[2] - 1) * 100, r[1], r[0]
         return None
 
-    with ThreadPoolExecutor(max_workers=16) as pool:
-        got = [g for g in pool.map(one, held) if g]
-    got.sort(key=lambda g: g[1], reverse=True)
-    ups = [g for g in got if g[1] > 0][:n]
-    downs = [g for g in reversed(got) if g[1] < 0][:n]
-    return ups, downs, len(got), len(held)
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        got = [g for g in pool.map(one, items) if g]
+    if not got:
+        return [], 0
+    latest = max(g[3] for g in got)
+    return [(g[0], g[1], g[2]) for g in got if g[3] == latest], len(got)
 
 
-def _hp_movers_text(ups, downs, found, total):
-    def block(title, items):
-        lines = [f"{sym:<12} {chg:+6.2f}%  {w:4.1f}%" for sym, chg, w in items] or ["none"]
-        return f"{title}\n<pre>" + "\n".join(lines) + "</pre>"
+def _hp_top(moves, n=5):
+    moves = sorted(moves, key=lambda m: m[1], reverse=True)
+    return [m for m in moves if m[1] > 0][:n], [m for m in reversed(moves) if m[1] < 0][:n]
 
-    note = "" if found == total else f"\n<i>({found} of {total} stocks had a live price)</i>"
-    return "\n" + block("📈 Your top 5 gainers today (day %, weight)", ups) + "\n" + block("📉 Your top 5 losers today", downs) + note
+
+def _hp_block(title, items, weights=None):
+    lines = []
+    for sym, chg, price in items:
+        tail = f"  {weights.get(sym, 0):4.1f}%" if weights is not None else f"  {price:>9,.2f}"
+        lines.append(f"{sym:<12} {chg:+6.2f}%{tail}")
+    return f"{title}\n<pre>" + "\n".join(lines or ["none"]) + "</pre>"
+
+
+def _hp_movers_text(holding_rows, universe):
+    """Two sections: the held STOCKS' top 5 gainers/losers (with their portfolio weight), then the same across the NSE 750 (with the price).
+    2026-10-30 ("top 5 Highs & top 5 Lows of my holdings ... and also from Nifty750")."""
+    out = ""
+    held = [r for r in holding_rows if r.get("symbol") and not r.get("is_fund")]
+    if held:
+        moves, found = _hp_day_moves([(r["symbol"], r.get("exchange")) for r in held], workers=16)
+        ups, downs = _hp_top(moves)
+        w = {r["symbol"]: r.get("pct_of_portfolio") or 0.0 for r in held}
+        out += "\n" + _hp_block("📈 Your holdings — top 5 gainers (day %, weight)", ups, w) + "\n" + _hp_block("📉 Your holdings — top 5 losers", downs, w)
+    if universe:
+        moves, found = _hp_day_moves([(sym, None) for sym in universe])
+        ups, downs = _hp_top(moves)
+        note = "" if found >= len(universe) * 0.9 else f"\n<i>({found} of {len(universe)} stocks had a live price)</i>"
+        out += "\n" + _hp_block("🌐 Nifty 750 — top 5 gainers (day %, price)", ups) + "\n" + _hp_block("🌐 Nifty 750 — top 5 losers", downs) + note
+    return out
 
 
 def _run_hourly_ping(dry=False, force=False):
@@ -3606,14 +3627,17 @@ def _run_hourly_ping(dry=False, force=False):
     finally:
         conn.close()
     text = _hp_text(quotes, snap, now_ist)
-    try:  # the holdings movers — never let a failure here stop the index message
+    try:  # the holdings / Nifty 750 movers — never let a failure here stop the index message
         conn = get_conn()
         try:
             pa_rows = (((get_meta(conn, "momentum_screeners", {}) or {}).get("portfolioAllocation") or {}).get("rows")) or []
         finally:
             conn.close()
-        if pa_rows:
-            text += _hp_movers_text(*_hp_movers(pa_rows))
+        try:
+            universe = [sym for sym, _n, _i in _ms_get_universe_symbols()]
+        except Exception:
+            universe = []
+        text += _hp_movers_text(pa_rows, universe)
     except Exception:
         pass
     if dry:
