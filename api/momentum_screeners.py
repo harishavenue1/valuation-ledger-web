@@ -3515,11 +3515,15 @@ def _run_uprun_hold(symbols, name_map, sector_map):
 # (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) — never in code. Weekends are skipped (markets shut) unless ?force=1; ?dry=1 returns the text
 # without sending or saving the snapshot. Edit HP_ITEMS to change what is posted.
 HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close)
+    ("Nifty 50", "^NSEI", True),
     ("Microcap 250", "NIFTY_MICROCAP250.NS", True),
     ("Smallcap 250", "NIFTYSMLCAP250.NS", True),
     ("MidSmallcap 400", "NIFTYMIDSML400.NS", True),
+    ("India VIX", "^INDIAVIX", True),
     ("Crude (Brent)", "BZ=F", False),
+    ("Gold", "GC=F", False),
     ("Dollar Index", "DX-Y.NYB", False),
+    ("USD/INR", "USDINR=X", False),
 ]
 HP_KEY = "hourly_ping"
 
