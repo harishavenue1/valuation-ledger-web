@@ -46,6 +46,7 @@ of each script's own self-POST.
 An optional `?limit=N` query param caps the universe to the first N
 symbols — manual testing only, never set by the real cron trigger."""
 import csv
+import hmac
 import io
 import os
 import re
@@ -7059,11 +7060,14 @@ class handler(BaseHTTPRequestHandler):
             conn.close()
 
     def do_GET(self):
-        if not is_authed_cron_or_cookie(self):
+        query = parse_qs(urlparse(self.path).query)
+        # The hourly Telegram ping also accepts its OWN key (env HOURLY_PING_KEY, sent as `Authorization: Bearer <key>`), good for that one URL only:
+        # an outside scheduler can hold it without ever holding CRON_SECRET (a sensitive variable Vercel will not show again) or a login cookie.
+        ping_key = os.environ.get("HOURLY_PING_KEY", "")
+        ping_ok = bool(ping_key) and bool((query.get("hourly_ping") or [None])[0]) and hmac.compare_digest(self.headers.get("Authorization", ""), f"Bearer {ping_key}")
+        if not ping_ok and not is_authed_cron_or_cookie(self):
             send_json(self, 401, {"error": "unauthorized"})
             return
-
-        query = parse_qs(urlparse(self.path).query)
 
         # ?hourly_ping=1 — the hourly Telegram post (see _run_hourly_ping); called by an external hourly scheduler
         if (query.get("hourly_ping") or [None])[0]:
