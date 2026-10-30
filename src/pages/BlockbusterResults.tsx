@@ -65,6 +65,7 @@ export default function BlockbusterResults() {
   const [minNp, setMinNp] = useState(25);
   const [minEps, setMinEps] = useState(25);
   const [tOk, setTOk] = useState(true);
+  const [marginHold, setMarginHold] = useState(false); // 2026-10-30: operating margin flat or higher than last quarter AND than a year ago — pricing power while costs / rates rise
   const [levOnly, setLevOnly] = useState(false); // only stocks where growth steps up down the P&L: EPS > Net Profit > Operating Profit > Sales
   const [qtr, setQtr] = useState<string | null>(null); // null = newest quarter once the data is in
   // % from the all-time high, from the daily NSE store (the same all-stocks feed All Technicals reads) — 2026-10-29
@@ -114,7 +115,7 @@ export default function BlockbusterResults() {
   const rows = useMemo(
     () =>
       base
-        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk) && (!levOnly || levOf(r)))
+        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk) && (!levOnly || levOf(r)) && (!marginHold || (r.opmQoq != null && r.opmYoy != null && r.opmQoq >= 0 && r.opmYoy >= 0)))
         .map((r): Record<string, any> => ({
           ...r,
           // 2026-10-29 ("add opLev col if EPS > Net Profit > Op Profit > Sales Growth") — each line grows faster than the one above it;
@@ -126,7 +127,7 @@ export default function BlockbusterResults() {
           peg: r.pe != null && typeof r.eps === "number" && r.eps > 0 ? r.pe / r.eps : null,
         }))
         .sort((a, b) => Math.min(rank(b.sales), rank(b.op), rank(b.np), rank(b.eps)) - Math.min(rank(a.sales), rank(a.op), rank(a.np), rank(a.eps))),
-    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk, levOnly],
+    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk, levOnly, marginHold],
   );
 
   const cols: Col[] = [
@@ -242,6 +243,9 @@ export default function BlockbusterResults() {
         </label>
         <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="EPS growth > Net Profit growth > Operating Profit growth > Sales growth">
           <input type="checkbox" checked={levOnly} onChange={(e) => setLevOnly(e.target.checked)} /> operating leverage only
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="Operating margin (Operating Profit ÷ Sales) is flat or higher than last quarter AND than the same quarter a year ago — the business is holding its margin while costs and rates rise">
+          <input type="checkbox" checked={marginHold} onChange={(e) => setMarginHold(e.target.checked)} /> margin held or rising (QoQ and YoY)
         </label>
       </div>
 
