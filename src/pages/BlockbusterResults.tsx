@@ -36,6 +36,11 @@ const opmDelta = (a: (number | null)[] | undefined, back: number): number | null
   return now == null || then == null ? null : Math.round((now - then) * 10) / 10;
 };
 
+// operating margin flat or higher than last quarter AND a year ago; gross margin too wherever the company reports a material cost (a delta that is missing
+// is not held against it, a delta that fell is)
+const marginHeld = (r: Record<string, any>) =>
+  r.opmQoq != null && r.opmYoy != null && r.opmQoq >= 0 && r.opmYoy >= 0 && (r.gpmQoq == null || r.gpmQoq >= 0) && (r.gpmYoy == null || r.gpmYoy >= 0);
+
 function Gr({ v }: { v: G }) {
   if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
   return <Signed v={v} digits={1} />;
@@ -56,7 +61,7 @@ function Num({ label, value, onChange, suffix }: { label: string; value: number;
 export default function BlockbusterResults() {
   const { bundle } = useData();
   const navigate = useNavigate();
-  const { ready } = useScreeners(["nse750Fundamentals", "nseScreener"]);
+  const { ready } = useScreeners(["nse750Fundamentals", "nseScreener", "blockbusterGpm"]);
   const ms = bundle.momentum_screeners;
 
   const [minCap, setMinCap] = useState(500);
@@ -103,6 +108,11 @@ export default function BlockbusterResults() {
       .filter(Boolean) as Record<string, any>[];
   }, [ms]);
 
+  // 2026-10-30 ("look for both GPM & OPM") — gross margin = 100 - Material Cost % of sales. Screener only gives that breakdown to a logged-in session, so
+  // the BlockbusterGPM skill fetches it locally for the stocks passing the default filters and pushes it as the blockbusterGpm key; a stock without a row
+  // (not fetched yet, or a company that reports no material cost — services, IT, banks) just shows a dash.
+  const gpmBy = useMemo(() => new Map<string, any>((ms?.blockbusterGpm?.rows ?? []).map((x: any) => [x.symbol, x])), [ms]);
+
   const quarters = useMemo(() => {
     const c = new Map<string, number>();
     for (const r of base) c.set(r.quarter, (c.get(r.quarter) ?? 0) + 1);
@@ -115,19 +125,22 @@ export default function BlockbusterResults() {
   const rows = useMemo(
     () =>
       base
-        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk) && (!levOnly || levOf(r)) && (!marginHold || (r.opmQoq != null && r.opmYoy != null && r.opmQoq >= 0 && r.opmYoy >= 0)))
+        .filter((r) => (activeQ === "All" || r.quarter === activeQ) && (r.mcap ?? 0) > minCap && pass(r.sales, minSales, false) && pass(r.op, minOp, tOk) && pass(r.np, minNp, tOk) && pass(r.eps, minEps, tOk) && (!levOnly || levOf(r)) && (!marginHold || marginHeld(r)))
         .map((r): Record<string, any> => ({
           ...r,
           // 2026-10-29 ("add opLev col if EPS > Net Profit > Op Profit > Sales Growth") — each line grows faster than the one above it;
           // a loss-to-profit "T" outranks any %, and two Ts in a row still count as a step up
           opLev: levOf(r) ? 1 : 0,
+          gpm: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm ?? null : null,
+          gpmQoq: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm_qoq ?? null : null,
+          gpmYoy: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm_yoy ?? null : null,
           ath: tech.get(r.symbol)?.pct_from_ath ?? null,
           wh52: tech.get(r.symbol)?.pct_from_52w_high ?? null,
           mcapOp: r.opProfit != null && r.opProfit > 0 && r.mcap ? r.mcap / (r.opProfit * 4) : null,
           peg: r.pe != null && typeof r.eps === "number" && r.eps > 0 ? r.pe / r.eps : null,
         }))
         .sort((a, b) => Math.min(rank(b.sales), rank(b.op), rank(b.np), rank(b.eps)) - Math.min(rank(a.sales), rank(a.op), rank(a.np), rank(a.eps))),
-    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk, levOnly, marginHold],
+    [base, tech, activeQ, minCap, minSales, minOp, minNp, minEps, tOk, levOnly, marginHold, gpmBy],
   );
 
   const cols: Col[] = [
@@ -171,6 +184,28 @@ export default function BlockbusterResults() {
           <span className="text-slate-300" title="needs operating margin for this and the same quarter a year ago — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
         ) : (
           <span title={`Operating margin ${fmtNum(r.opmNow, 1)}% now, ${fmtNum(r.opmNow - r.opmYoy, 1)}% a year ago`}><Signed v={r.opmYoy} digits={1} /> pp</span>
+        ),
+    },
+    {
+      key: "gpmQoq",
+      label: "GPM QoQ Δ",
+      width: 7,
+      render: (r) =>
+        r.gpmQoq == null ? (
+          <span className="text-slate-300" title="Gross margin = 100 − Material Cost % of sales. Shown only for companies that report a material cost, once the BlockbusterGPM fetch has run">—</span>
+        ) : (
+          <span title={`Gross margin ${fmtNum(r.gpm, 1)}% now, ${fmtNum(r.gpm - r.gpmQoq, 1)}% last quarter`}><Signed v={r.gpmQoq} digits={1} /> pp</span>
+        ),
+    },
+    {
+      key: "gpmYoy",
+      label: "GPM YoY Δ",
+      width: 7,
+      render: (r) =>
+        r.gpmYoy == null ? (
+          <span className="text-slate-300" title="Gross margin = 100 − Material Cost % of sales. Shown only for companies that report a material cost, once the BlockbusterGPM fetch has run">—</span>
+        ) : (
+          <span title={`Gross margin ${fmtNum(r.gpm, 1)}% now, ${fmtNum(r.gpm - r.gpmYoy, 1)}% a year ago`}><Signed v={r.gpmYoy} digits={1} /> pp</span>
         ),
     },
     {
@@ -244,8 +279,8 @@ export default function BlockbusterResults() {
         <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="EPS growth > Net Profit growth > Operating Profit growth > Sales growth">
           <input type="checkbox" checked={levOnly} onChange={(e) => setLevOnly(e.target.checked)} /> operating leverage only
         </label>
-        <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="Operating margin (Operating Profit ÷ Sales) is flat or higher than last quarter AND than the same quarter a year ago — the business is holding its margin while costs and rates rise">
-          <input type="checkbox" checked={marginHold} onChange={(e) => setMarginHold(e.target.checked)} /> margin held or rising (QoQ and YoY)
+        <label className="flex items-center gap-1.5 text-xs text-slate-600 pb-2" title="Operating margin (Operating Profit ÷ Sales) is flat or higher than last quarter AND than the same quarter a year ago — and so is gross margin (100 − Material Cost %) wherever the company reports a material cost. The business is holding its margins while costs and rates rise">
+          <input type="checkbox" checked={marginHold} onChange={(e) => setMarginHold(e.target.checked)} /> margin held or rising (OPM &amp; GPM)
         </label>
       </div>
 
