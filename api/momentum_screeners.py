@@ -3515,16 +3515,16 @@ def _run_uprun_hold(symbols, name_map, sector_map):
 # Vercel (cron-job.org or a GitHub Action) hits this URL with `Authorization: Bearer $CRON_SECRET`. The bot token and chat id are env vars
 # (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) — never in code. Weekends are skipped (markets shut) unless ?force=1; ?dry=1 returns the text
 # without sending or saving the snapshot. Edit HP_ITEMS to change what is posted.
-HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close); labels kept <= 12 chars so a phone screen holds a line
+HP_ITEMS = [  # (label, Yahoo ticker, NSE index? — an NSE quote goes stale after the 15:30 IST close); labels <= 8 chars: a phone fits ~30 characters of a <pre> line
     ("Nifty 50", "^NSEI", True),
-    ("Microcap 250", "NIFTY_MICROCAP250.NS", True),
-    ("Smallcap 250", "NIFTYSMLCAP250.NS", True),
-    ("MidSmall 400", "NIFTYMIDSML400.NS", True),
-    ("India VIX", "^INDIAVIX", True),
-    ("Brent crude", "BZ=F", False),
+    ("Microcap", "NIFTY_MICROCAP250.NS", True),
+    ("Smallcap", "NIFTYSMLCAP250.NS", True),
+    ("MidSmall", "NIFTYMIDSML400.NS", True),
+    ("IndiaVIX", "^INDIAVIX", True),
+    ("Brent", "BZ=F", False),
     ("Gold", "GC=F", False),
     ("Silver", "SI=F", False),
-    ("Dollar Index", "DX-Y.NYB", False),
+    ("DXY", "DX-Y.NYB", False),
     ("USD/INR", "USDINR=X", False),
 ]
 HP_KEY = "hourly_ping"
@@ -3547,20 +3547,20 @@ def _hp_text(quotes, snap, now_ist):
     def line(label, is_nse):
         q = quotes.get(label)
         if not q:
-            return f"  {label:<12}{'n/a':>8}"
+            return f"  {label:<8}{'n/a':>7}"
         price, prev = q
         day = (price / prev - 1) * 100 if prev else 0.0
         lvl = f"{price:,.0f}" if price >= 1000 else f"{price:,.2f}"
         arrow = "▲" if day > 0 else "▼" if day < 0 else "•"
-        out = f"{arrow} {label:<12}{lvl:>8} {day:>+7.2f}%"
+        out = f"{arrow} {label:<8}{lvl:>7} {day:>+6.2f}%"  # 25 characters; a phone shows about 30 before a <pre> line wraps and the columns tear
         if fresh and snap.get("vals", {}).get(label):
-            out += f" {(price / snap['vals'][label] - 1) * 100:>+6.2f}%"
+            out += f" {(price / snap['vals'][label] - 1) * 100:>+5.2f}"
         return out
 
     idx = [it for it in HP_ITEMS if it[2]]
     oth = [it for it in HP_ITEMS if not it[2]]
     head = f"⏱ <b>{now_ist:%a %d %b · %H:%M} IST</b>\n"
-    legend = "change vs previous close" + (" · last column = since the last ping" if fresh else "")
+    legend = "% vs previous close" + (" · last column: change since the last ping" if fresh else "")
     s1 = f"\n<b>📊 Indices</b>{'' if market_open else ' <i>(market closed)</i>'}\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in idx) + "</pre>"
     s2 = "\n<b>🛢 Commodities &amp; FX</b>\n<pre>" + "\n".join(_html.escape(line(l, n)) for l, _t, n in oth) + "</pre>"
     return head + s1 + s2 + f"\n<i>{legend}</i>"
@@ -3600,10 +3600,10 @@ def _hp_block(title, ups, downs, weights=None):
 
     def row(arrow, it):
         sym, chg, price = it
-        tail = f"{weights.get(sym, 0):>5.1f}%" if weights is not None else f"{price:>10,.2f}"
-        return f"{arrow} {_html.escape(sym):<12}{chg:>+7.2f}% {tail}"
+        tail = f"{weights.get(sym, 0):>4.1f}%" if weights is not None else f"{price:>8,.2f}"
+        return f"{arrow} {_html.escape(sym[:10]):<10}{chg:>+7.2f}% {tail}"  # 28 characters at most
 
-    lines = [row("▲", u) for u in ups] + ([" " + "─" * 30] if ups and downs else []) + [row("▼", d) for d in downs]
+    lines = [row("▲", u) for u in ups] + ([" " + "─" * 26] if ups and downs else []) + [row("▼", d) for d in downs]
     return f"\n<b>{title}</b>\n<pre>" + "\n".join(lines or ["none"]) + "</pre>"
 
 
