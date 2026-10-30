@@ -690,9 +690,9 @@ export default function PortfolioAllocation() {
         // the year-ago quarter was a loss, so no honest %; "—" for a fund/ETF or a company with no quarterly figures yet. The sector is still on
         // each row (the donut, the sector filter and the Portfolio Breakdown use it), just not shown as a column.
         key: "qtr_eps_sort", // numeric twin of qtr_eps_growth_pct (a turnaround "T" sorts as the highest), so the header sort works
-        label: "Qtr EPS Growth %",
+        label: "EPS %", // short on purpose (2026-10-30, "EPS & MCAP header overlap"): the long labels collided in the header row
         align: "center",
-        width: 5,
+        width: 3.5,
         render: (r) => {
           const v = r.qtr_eps_growth_pct as number | "T" | null | undefined;
           if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
@@ -705,9 +705,9 @@ export default function PortfolioAllocation() {
         // after an IPO / issue can show EPS down while net profit is up. This is the latest quarter's NET PROFIT YoY from the same Quarterly Results table
         // (computed from the rounded ₹ Cr figures, so it can sit a point or so from Screener's own logged-in "YOY Profit Growth %" row).
         key: "qtr_profit_sort", // numeric twin of qtr_profit_growth_pct ("T" sorts highest)
-        label: "Qtr Profit Growth %",
+        label: "Profit %",
         align: "center",
-        width: 5,
+        width: 3.5,
         render: (r) => {
           const v = r.qtr_profit_growth_pct as number | "T" | null | undefined;
           if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
@@ -720,8 +720,8 @@ export default function PortfolioAllocation() {
         // top-ratios list every other field on this row's fetch already
         // reads from (see fetch_sector_and_fundamentals's own comment).
         key: "market_cap_cr",
-        label: "Market Cap (Cr)",
-        width: 4.7,
+        label: "MCAP",
+        width: 4.2,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
       },
       {
@@ -932,7 +932,7 @@ export default function PortfolioAllocation() {
       <MethodologyNote>
         <b>% of Portfolio</b> = each holding's current value (quantity × last price) ÷ total portfolio value — the whole point of this page
         is the allocation weight, not the underlying rupee amounts. <b>P&amp;L %</b> = unrealized gain/loss vs. Kite's own average buy price.{" "}
-        <b>Qtr Sales Growth %</b>/<b>Qtr EPS Growth %</b> are the latest reported quarter's YoY growth, read straight off Screener.in's
+        <b>Qtr Sales Growth %</b>/<b>EPS %</b> are the latest reported quarter's YoY growth, read straight off Screener.in's
         Quarterly Results table (same technique momentumPersonal already uses) — pushed by the PortfolioAllocation skill itself, not a live
         join against another tab. "Turned profitable" means the year-ago quarter was a loss, so no percentage would be honest against a
         negative base. Shows "—" for a fund/ETF/commodity (no quarterly results to speak of) or a stock Screener.in has no numbers for yet
@@ -951,7 +951,7 @@ export default function PortfolioAllocation() {
         <b>PortfolioAllocation</b> skill — see its own methodology for exactly what's fetched and how.
         <br />
         <br />
-        <b>Market Cap (Cr)</b> — added 2026-09-22 — Screener.in's own published market cap, in ₹ Cr, read off the same top-ratios list
+        <b>MCAP</b> (₹ Cr) — added 2026-09-22 — Screener.in's own published market cap, in ₹ Cr, read off the same top-ratios list
         Current Price comes from (no extra request). "—" for a fund/ETF (no peer-comparison Market Cap row) or an unresolvable symbol.
       </MethodologyNote>
 
