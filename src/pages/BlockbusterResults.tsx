@@ -111,6 +111,7 @@ export default function BlockbusterResults() {
   // 2026-10-30 ("look for both GPM & OPM") — gross margin = 100 - Material Cost % of sales. Screener only gives that breakdown to a logged-in session, so
   // the BlockbusterGPM skill fetches it locally for the stocks passing the default filters and pushes it as the blockbusterGpm key; a stock without a row
   // (not fetched yet, or a company that reports no material cost — services, IT, banks) just shows a dash.
+  const mg = (r: Record<string, any>) => (gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol) : undefined);
   const gpmBy = useMemo(() => new Map<string, any>((ms?.blockbusterGpm?.rows ?? []).map((x: any) => [x.symbol, x])), [ms]);
 
   const quarters = useMemo(() => {
@@ -131,9 +132,14 @@ export default function BlockbusterResults() {
           // 2026-10-29 ("add opLev col if EPS > Net Profit > Op Profit > Sales Growth") — each line grows faster than the one above it;
           // a loss-to-profit "T" outranks any %, and two Ts in a row still count as a step up
           opLev: levOf(r) ? 1 : 0,
-          gpm: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm ?? null : null,
-          gpmQoq: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm_qoq ?? null : null,
-          gpmYoy: gpmBy.get(r.symbol)?.quarter === r.quarter ? gpmBy.get(r.symbol)?.gpm_yoy ?? null : null,
+          gpm: mg(r)?.gpm ?? null,
+          gpmQoq: mg(r)?.gpm_qoq ?? null,
+          gpmYoy: mg(r)?.gpm_yoy ?? null,
+          // the same fetch also carries operating margin (stockscans / Screener), so these stocks don't wait on the weekly 750-stock refresh for it
+          opmNow: mg(r)?.opm ?? r.opmNow,
+          opmQoq: mg(r)?.opm_qoq ?? r.opmQoq,
+          opmYoy: mg(r)?.opm_yoy ?? r.opmYoy,
+          marginSrc: mg(r)?.source ?? null,
           ath: tech.get(r.symbol)?.pct_from_ath ?? null,
           wh52: tech.get(r.symbol)?.pct_from_52w_high ?? null,
           mcapOp: r.opProfit != null && r.opProfit > 0 && r.mcap ? r.mcap / (r.opProfit * 4) : null,
