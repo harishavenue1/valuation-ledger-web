@@ -185,7 +185,7 @@ export default function TradeDesk() {
       product: t.product,
       ...(t.otype === "LIMIT" ? { price: t.price } : {}),
       readonly: false,
-      tag: "tradedesk",
+      tag: "tdesk", // Kite rejects a tag over 8 characters (its offsite-orders page says 20, the order form enforces 8)
     }));
     const f = document.createElement("form");
     f.method = "POST";
