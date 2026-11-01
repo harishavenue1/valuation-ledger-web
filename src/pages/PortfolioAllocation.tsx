@@ -673,21 +673,25 @@ export default function PortfolioAllocation() {
   // Weekly RSI and the 1W / 1M / 1Q weekly-bar returns per symbol from the shared technicals store (the same one the All Technicals page reads), joined here so the PF update does not have to push
   // them. The returns feed the RS percentile columns: a holding is ranked against every NSE 750 stock's return from THIS store, on the same bars, so the holding and its universe are always on one basis
   // (the PF row's own pct_1w is stamped at the moment of the PF update and can differ by a few days).
-  const [techBy, setTechBy] = useState<Map<string, { rsi_w: number | null; w1: number | null; w1m: number | null; w3m: number | null }>>(new Map());
+  const [techBy, setTechBy] = useState<Map<string, { rsi_w: number | null; w1: number | null; w1m: number | null; w3m: number | null; w6m: number | null; y1: number | null }>>(new Map());
   useEffect(() => {
     let off = false;
     const n = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     api.getBhavTechnicals().then((j) => {
       if (off || !j?.rows) return;
-      setTechBy(new Map(j.rows.map((t: any) => [t.symbol, { rsi_w: n(t.rsi_w), w1: n(t.w_pct_1w), w1m: n(t.w_pct_1m), w3m: n(t.w_pct_3m) }])));
+      setTechBy(new Map(j.rows.map((t: any) => [t.symbol, { rsi_w: n(t.rsi_w), w1: n(t.w_pct_1w), w1m: n(t.w_pct_1m), w3m: n(t.w_pct_3m), w6m: n(t.w_pct_6m), y1: n(t.yearly_pct) }])));
     }).catch(() => {});
     return () => { off = true; };
   }, []);
-  // sorted returns of the NSE 750 universe, one array per window
+  // RS Rating (the overall 1-99 number, like the IBD / screener "RS Rating"): a weighted score of the holding's 3-month, 6-month and 1-year returns, 40% / 30% / 30%, ranked against the NSE 750.
+  // IBD weights 3, 6, 9 and 12 months 40/20/20/20; the store has no 9-month return, so 6 months and 1 year carry the rest. Needs a year of history: a recent listing shows "—".
+  const rsScore = (t?: { w3m: number | null; w6m: number | null; y1: number | null }) => (t && t.w3m != null && t.w6m != null && t.y1 != null ? 0.4 * t.w3m + 0.3 * t.w6m + 0.3 * t.y1 : null);
+  // sorted returns of the NSE 750 universe, one array per window (and the composite score)
   const universe = useMemo(() => {
     const syms = new Set<string>((bundle.momentum_screeners.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol));
     const col = (k: "w1" | "w1m" | "w3m") => [...techBy.entries()].filter(([sym, t]) => syms.has(sym) && t[k] != null).map(([, t]) => t[k] as number).sort((a, b) => a - b);
-    return { w1: col("w1"), w1m: col("w1m"), w3m: col("w3m") };
+    const score = [...techBy.entries()].filter(([sym]) => syms.has(sym)).map(([, t]) => rsScore(t)).filter((v): v is number => v != null).sort((a, b) => a - b);
+    return { w1: col("w1"), w1m: col("w1m"), w3m: col("w3m"), score };
   }, [techBy, bundle.momentum_screeners.nse750Fundamentals]);
   // percentile rank 1-99: the share of the universe this return beats, counting a tie as half (so the median stock reads 50)
   const pctile = (arr: number[], x: number | null | undefined) => {
@@ -700,7 +704,7 @@ export default function PortfolioAllocation() {
   };
   const withRsi = (r: any) => {
     const t = techBy.get(r.symbol);
-    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
+    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rs_rating: pctile(universe.score, rsScore(t)), rs_score: rsScore(t), rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
   };
 
   // Column picker (2026-11-01, "allow column selector above table"): the picks are remembered on this device, like the picker on All Technicals. Rank and Symbol are always shown.
@@ -986,11 +990,23 @@ export default function PortfolioAllocation() {
       // 2026-11-01 ("add RS 1W, 1M, 1Q columns as well", then "need the RS column as percentile"): RS is shown as a PERCENTILE, 1-99: the share of NSE 750 stocks whose return over the same window
       // (1 / 4 / 13 weekly bars, from the technicals store) this holding beats, a tie counting half. 50 is the middle of the market, 80 and above is leadership territory. The same window's
       // distance from the NIFTY 500 in percentage points (the RSBenchmarkCheck convention, pushed by the PF update as rs_1w / rs_1m / rs_3m) is in the picker as "RS 1W Δ" etc., off by default.
+      {
+        // 2026-11-01 ("was expecting RS this way", the screener's RS Rating column): ONE overall 1-99 number, the percentile of the 40/30/30 score of the 3-month, 6-month and 1-year returns among NSE 750 stocks.
+        key: "rs_rating",
+        label: "RS Rating",
+        width: 4.2,
+        groupStart: true,
+        render: (r) => {
+          const v = r.rs_rating as number | null | undefined;
+          if (typeof v !== "number") return <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history in the technicals store">—</span>;
+          const tone = v >= 90 ? "text-emerald-700 font-bold" : v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
+          return <span className={tone} title={`RS Rating ${v}: this holding's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${v}% of NSE 750 stocks. 80+ is leadership territory.`}>{v}</span>;
+        },
+      },
       ...(["1w", "1m", "3m"] as const).map((k, idx): Col => ({
         key: `rsp_${k}`,
         label: `RS ${k === "3m" ? "1Q" : k.toUpperCase()}`,
         width: 3.6,
-        groupStart: idx === 0,
         render: (r) => {
           const v = r[`rsp_${k}`] as number | null | undefined;
           if (typeof v !== "number") return <span className="text-slate-300" title="no return in the technicals store for this holding">—</span>;
