@@ -651,21 +651,33 @@ export default function PortfolioAllocation() {
     }
   }
   const [sizeFilter, setSizeFilter] = useState<SizeKey | "all">("all");
+  // 2026-11-01 ("so filter tab on table should be easy to filter"): Zone (A / B / C by % from the all-time high) gets the same chips as Size. Both are computed here from two numbers
+  // the PF update already stores per holding (pct_of_portfolio, pct_from_ath), so there is nothing extra in the backend to keep in step. Each set of counts respects the OTHER filter,
+  // so a chip always shows how many rows it would leave.
+  const [zoneFilter, setZoneFilter] = useState<"all" | "A" | "B" | "C" | "none">("all");
+  const zoneOf = (pctFromAth: number | null | undefined): "A" | "B" | "C" | "none" => (ZONES.find((x) => x.label === proximityBucketFor(pctFromAth))?.letter || "none") as "A" | "B" | "C" | "none";
+  const bySize = (r: any) => sizeFilter === "all" || sizeOf(r.pct_of_portfolio) === sizeFilter;
+  const byZone = (r: any) => zoneFilter === "all" || zoneOf(r.pct_from_ath) === zoneFilter;
   const sizeCounts = useMemo(() => {
     const c: Record<SizeKey, number> = { major: 0, medium: 0, minor: 0 };
-    for (const r of rows) c[sizeOf(r.pct_of_portfolio)]++;
+    for (const r of rows) if (zoneFilter === "all" || zoneOf(r.pct_from_ath) === zoneFilter) c[sizeOf(r.pct_of_portfolio)]++;
     return c;
-  }, [rows]);
-  const bySize = (r: any) => sizeFilter === "all" || sizeOf(r.pct_of_portfolio) === sizeFilter;
+  }, [rows, zoneFilter]);
+  const zoneCounts = useMemo(() => {
+    const c: Record<"A" | "B" | "C" | "none", number> = { A: 0, B: 0, C: 0, none: 0 };
+    for (const r of rows) if (sizeFilter === "all" || sizeOf(r.pct_of_portfolio) === sizeFilter) c[zoneOf(r.pct_from_ath)]++;
+    return c;
+  }, [rows, sizeFilter]);
+  const shownCount = useMemo(() => rows.filter((r) => bySize(r) && byZone(r)).length, [rows, sizeFilter, zoneFilter]);
   const stockRows = useMemo(() => {
-    const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize);
+    const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize).filter(byZone);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
     return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, opmBy]);
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy]);
   const fundRows = useMemo(() => {
-    const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize);
+    const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize).filter(byZone);
     return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, opmBy]);
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -1056,6 +1068,26 @@ export default function PortfolioAllocation() {
             </button>
           ))}
           <span className="text-slate-400">H = 1% or more · M = 0.5% up to 1% · L = under 0.5% of the portfolio</span>
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
+          <span className="text-slate-500">Zone (from the all-time high):</span>
+          {([["all", "All", zoneCounts.A + zoneCounts.B + zoneCounts.C + zoneCounts.none, ""], ...ZONES.map((z) => [z.letter || "none", z.letter || "–", zoneCounts[(z.letter || "none") as "A" | "B" | "C" | "none"], z.title])] as [string, string, number, string][]).map(([k, label, n, title]) => {
+            const z = ZONES.find((x) => (x.letter || "none") === k);
+            const on = zoneFilter === k;
+            return (
+              <button key={k} onClick={() => setZoneFilter(k as typeof zoneFilter)} title={title || "every holding"} aria-pressed={on}
+                className={`px-2.5 py-1 rounded-full border inline-flex items-center gap-1.5 ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                {z && z.letter ? <span className="inline-block w-4 h-4 leading-4 rounded-sm text-[10px] font-bold text-center" style={{ background: z.badge.bg, color: z.badge.fg }}>{z.letter}</span> : null}
+                {k === "all" ? "All" : k === "none" ? "No ATH data" : label === "A" ? "Near the high" : label === "B" ? "Mid" : "Below"} <span className={on ? "opacity-80" : "text-slate-400"}>{n}</span>
+              </button>
+            );
+          })}
+          <span className="text-slate-400">A = within 10% of the high · B = 10–25% below · C = more than 25% below</span>
+          {(sizeFilter !== "all" || zoneFilter !== "all") && (
+            <button onClick={() => { setSizeFilter("all"); setZoneFilter("all"); }} className="text-indigo-600 hover:underline ml-1">Clear filters · showing {shownCount} of {rows.length}</button>
+          )}
         </div>
       )}
 
