@@ -17,11 +17,14 @@ interface Perf { since?: number | null; since_rel?: number | null; days?: number
 interface Raise {
   symbol: string; name?: string; type: string; kind?: "new" | "followup"; stage: string; first_date: string; last_date: string;
   amount_cr?: number | null; purposes?: string[]; reason?: string; url?: string; docs?: Doc[]; perf?: Perf | null; filings_page?: string;
+  issue_price?: number | null; issue_basis?: string | null; ann_price?: number | null; price_date?: string | null; disc?: number | null;
 }
 interface Horizon { n: number; mean: number; median: number; share_below: number }
 interface Study {
   as_of: string; events_found: number; events_priced: number; window?: string; entry?: string; benchmark?: string;
   rel?: Record<string, Horizon | null>; pre3m_rel?: Horizon | null; events?: { symbol: string; date: string; "3m_rel"?: number | null }[];
+  compare?: Record<string, { events_found: number; events_priced: number; price_found?: number; rel?: Record<string, Horizon | null>; pre3m_rel?: Horizon | null }>;
+  discount_buckets?: Record<string, { n: number; "3m_rel"?: Horizon | null; "6m_rel"?: Horizon | null }>;
 }
 
 const TYPE_BADGE: Record<string, string> = {
@@ -79,6 +82,54 @@ function StudyCard({ study }: { study: Study }) {
   );
 }
 
+/** QIP vs preferential vs rights, and whether the issue price relative to the market mattered — every number from the stored two-year study */
+function CompareCard({ study }: { study: Study }) {
+  const cmp = study.compare;
+  if (!cmp) return null;
+  const order = ["QIP", "Preferential", "Rights"].filter((k) => cmp[k]);
+  const med = (k: string, h: string) => (isNum(cmp[k]?.rel?.[h]?.median) ? (cmp[k]!.rel![h]!.median * 100) : null);
+  const n = (k: string, h: string) => cmp[k]?.rel?.[h]?.n ?? 0;
+  const q3 = med("QIP", "3m"), p3 = med("Preferential", "3m"), r3 = med("Rights", "3m");
+  const lead = isNum(p3) && isNum(q3)
+    ? `Three months after the filing, the median preferential-issue stock was ${fmtSigned(p3)}% against the Nifty Midcap 150, the median QIP stock ${fmtSigned(q3)}%${isNum(r3) ? " and the median rights-issue stock " + fmtSigned(r3) + "%" : ""}. ${p3 > q3 + 2 ? "So on this sample preferential issues did do better than QIPs." : p3 < q3 - 2 ? "So on this sample preferential issues did NOT do better than QIPs." : "The difference is small."}`
+    : "Not enough events to compare the routes yet.";
+  const bk = study.discount_buckets ?? {};
+  const short: Record<string, string> = { "issued at a premium or within 2% below market": "premium or ≤2% below", "2-10% below market": "2–10% below", "more than 10% below market": ">10% below" };
+  const bRows = (h: "3m_rel" | "6m_rel") => Object.keys(bk).map((name) => ({ label: short[name] ?? name, value: isNum(bk[name]?.[h]?.median) ? bk[name][h]!.median * 100 : null, note: `${bk[name]?.[h]?.n ?? 0} events` }));
+  return (
+    <div className="rounded-xl p-4 mb-4" style={{ border: "1px solid var(--ring)", background: "var(--surface)" }}>
+      <div className="flex flex-wrap items-baseline gap-2">
+        <b style={{ color: "var(--ink)" }}>Which route did better afterwards: QIP, preferential or rights?</b>
+        <span className="text-xs" style={{ color: "var(--muted)" }}>{order.map((k) => `${k} ${cmp[k].events_priced}`).join(" · ")} events, last two years</span>
+      </div>
+      <p className="text-sm mt-1" style={{ color: "var(--ink)" }}>{lead}</p>
+      <div className="grid gap-6 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
+        {(["1m", "3m", "6m"] as const).map((h) => (
+          <div key={h}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink2)", marginBottom: 4 }}>Median vs the index, {h === "1m" ? "1 month" : h === "3m" ? "3 months" : "6 months"} after</div>
+            <DeltaBars rows={order.map((k) => ({ label: k, value: med(k, h), note: `${n(k, h)} events · ${isNum(cmp[k]?.rel?.[h]?.share_below) ? (cmp[k]!.rel![h]!.share_below * 100).toFixed(0) : "—"}% trailed` }))} />
+          </div>
+        ))}
+      </div>
+      {Object.keys(bk).length > 0 && (
+        <div className="mt-4">
+          <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink2)", marginBottom: 4 }}>Did the issue price matter? Median vs the index, by how the price compared with the market on the announcement date (all three routes together)</div>
+          <div className="grid gap-6" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))" }}>
+            <div><div style={{ fontSize: 10.5, color: "var(--muted)" }}>3 months after</div><DeltaBars rows={bRows("3m_rel")} /></div>
+            <div><div style={{ fontSize: 10.5, color: "var(--muted)" }}>6 months after</div><DeltaBars rows={bRows("6m_rel")} /></div>
+          </div>
+        </div>
+      )}
+      <p className="text-[11px] mt-3" style={{ color: "var(--muted)" }}>
+        Small samples, one market period and very different companies in each group: a preferential issue can be a promoter putting money in or a fund taking a stake, a QIP a company
+        selling to institutions, and a price found in the filing is a program's reading of it. Entered at the first close after the first filing in each category, measured against the Nifty Midcap 150.
+        This shows what happened, not what will; it is not advice.
+      </p>
+    </div>
+  );
+}
+
+
 function Row({ r, mcap, watchlist }: { r: Raise; mcap?: number | null; watchlist: ReturnType<typeof useWatchlist> }) {
   const [open, setOpen] = useState(false);
   const docs = r.docs ?? [];
@@ -98,6 +149,14 @@ function Row({ r, mcap, watchlist }: { r: Raise; mcap?: number | null; watchlist
         <td style={{ padding: "8px 10px", whiteSpace: "nowrap", textAlign: "right" }}>
           {isNum(r.amount_cr) ? <span title="read from the filing — check the document"><b style={{ color: "var(--ink)" }}>{crFmt(r.amount_cr)}</b>{share !== null && <div className="text-[11px]" style={{ color: share >= 10 ? "var(--crit)" : "var(--muted)" }} title="amount as a share of the current market cap (a dilution gauge)">{share.toFixed(share < 10 ? 1 : 0)}% of mcap</div>}</span> : <span style={{ color: "var(--muted)" }} title="not stated in the filing text, see the document">—</span>}
         </td>
+        <td style={{ padding: "8px 10px", whiteSpace: "nowrap", fontSize: 12 }}>
+          {isNum(r.issue_price) ? (
+            <span title={`${r.issue_basis === "floor" ? "Floor" : "Issue"} price ₹${r.issue_price} per share${isNum(r.ann_price) ? `, against the market close of ₹${r.ann_price}${r.price_date ? ` on ${r.price_date}` : " on the filing date"}` : ""}. Read from the filing by a program: check the document.`}>
+              <b style={{ color: "var(--ink)" }}>₹{r.issue_price.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</b>{r.issue_basis === "floor" ? <span className="text-[10.5px]" style={{ color: "var(--muted)" }}> floor</span> : null}
+              {isNum(r.disc) && <div className="text-[11px]" style={{ color: "var(--muted)" }}>{fmtSigned(r.disc * 100)}% vs market</div>}
+            </span>
+          ) : <span style={{ color: "var(--muted)" }} title="no per-share price stated in the filing text, or it could not be read reliably">—</span>}
+        </td>
         <td style={{ padding: "8px 10px", maxWidth: 230 }}>
           <div className="flex flex-wrap gap-1">
             {(r.purposes ?? []).slice(0, 3).map((t) => <span key={t} className="text-[11px] rounded px-1.5 py-0.5" style={{ border: "1px solid var(--ring)", color: "var(--ink)" }}>{t}</span>)}
@@ -114,7 +173,7 @@ function Row({ r, mcap, watchlist }: { r: Raise; mcap?: number | null; watchlist
       </tr>
       {open && (
         <tr style={{ background: "var(--wash)" }}>
-          <td colSpan={8} style={{ padding: "8px 14px" }}>
+          <td colSpan={9} style={{ padding: "8px 14px" }}>
             {r.reason ? <p className="text-[12.5px] mb-2" style={{ color: "var(--ink)" }}><b style={{ color: "var(--ink2)" }}>What the filing says about its purpose: </b>{r.reason}</p> : null}
             <ul className="text-[12px] space-y-1" style={{ color: "var(--ink)" }}>
               {docs.map((d, i) => (
@@ -176,6 +235,7 @@ export default function FundRaising() {
         "Since" is the stock's return from the first close after the announcement. Not advice.
       </div>
       {study && <Guard label="the QIP study"><StudyCard study={study} /></Guard>}
+      {study && <Guard label="the route comparison"><CompareCard study={study} /></Guard>}
 
       <div className="flex flex-wrap items-center gap-1.5 mb-2">
         {[...EQUITY_TYPES, "Debt (NCD / bonds)", "Borrowing (ECB / loan)"].map((t) => (
@@ -203,7 +263,7 @@ export default function FundRaising() {
           <div className="overflow-x-auto rounded-xl" style={{ border: "1px solid var(--ring)", background: "var(--surface)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead><tr style={{ borderBottom: "1px solid var(--grid)" }}>
-                <th style={th}>Company</th><th style={th}>Type</th><th style={th}>Stage</th><th style={th}>Dates</th><th style={{ ...th, textAlign: "right" }}>Size</th><th style={th}>Purpose (from the filing)</th><th style={th}>Since announcement</th><th style={th}>Document</th>
+                <th style={th}>Company</th><th style={th}>Type</th><th style={th}>Stage</th><th style={th}>Dates</th><th style={{ ...th, textAlign: "right" }}>Size</th><th style={th} title="per-share issue or floor price, against the market close on the announcement date">Issue price</th><th style={th}>Purpose (from the filing)</th><th style={th}>Since announcement</th><th style={th}>Document</th>
               </tr></thead>
               <tbody>{shown.map((r) => <Guard key={`${r.symbol}-${r.type}-${r.first_date}`} label={`the ${r.symbol} row`}><Row r={r} mcap={mcapBy.get(r.symbol)} watchlist={watchlist} /></Guard>)}</tbody>
             </table>
