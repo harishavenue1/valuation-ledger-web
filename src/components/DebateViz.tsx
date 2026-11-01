@@ -11,10 +11,10 @@ import { Component, useRef, useState, type ReactNode } from "react";
 
 export const VIZ_CSS = `
 .dbv{color-scheme:light;--surface:#fcfcfb;--ink:#0b0b0b;--ink2:#52514e;--muted:#898781;--grid:#e1e0d9;--axis:#c3c2b7;--ring:rgba(11,11,11,.10);--wash:#f0efec;
-  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--pos:#2a78d6;--neg:#e34948;--track:#cde2fb;--fill:#2a78d6;--good:#0ca30c;--good-text:#006300;--crit:#d03b3b;--warn:#fab219}
+  --s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#8a5cd6;--pos:#2a78d6;--neg:#e34948;--track:#cde2fb;--fill:#2a78d6;--good:#0ca30c;--good-text:#006300;--crit:#d03b3b;--warn:#fab219}
 /* the app's own theme switch is the class "tv-dark" on <html> (dark is its default) — NOT the OS setting; surface = the app's card colour, series steps = the skill's validated dark steps */
 html.tv-dark .dbv{color-scheme:dark;--surface:#1a1d26;--ink:#e6e6e6;--ink2:#b0b3ba;--muted:#7f828a;--grid:#2a2e39;--axis:#3c3d44;--ring:rgba(255,255,255,.10);--wash:#2a2e39;
-  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--pos:#3987e5;--neg:#e66767;--track:#184f95;--fill:#3987e5;--good-text:#0ca30c}
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#a07be6;--pos:#3987e5;--neg:#e66767;--track:#184f95;--fill:#3987e5;--good-text:#0ca30c}
 .dbv svg text{font-family:inherit}
 .dbv .tt{position:absolute;pointer-events:none;z-index:20;background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:6px;padding:6px 8px;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:11px;line-height:1.35;white-space:nowrap}
 .dbv .tt b{font-weight:600}.dbv .tt .sub{color:var(--ink2)}
@@ -74,7 +74,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v
 
 // ---- tooltip: one at a time, built from React nodes (never innerHTML) -----------------------------------------------------------------------------
 interface Tip { x: number; y: number; body: ReactNode }
-function useTip() {
+export function useTip() {
   const box = useRef<HTMLDivElement>(null);
   const [tip, setTip] = useState<Tip | null>(null);
   const show = (e: { clientX: number; clientY: number }, body: ReactNode) => {
@@ -90,12 +90,12 @@ function useTip() {
   return { box, show, hide, node };
 }
 
-const Key = ({ color, line }: { color: string; line?: boolean }) => (
+export const Key = ({ color, line }: { color: string; line?: boolean }) => (
   <span style={{ display: "inline-block", width: line ? 12 : 8, height: line ? 2 : 8, background: color, borderRadius: line ? 1 : 2, marginRight: 5, verticalAlign: "middle" }} />
 );
 
 /** a bar with a 4px rounded data end and a square baseline; vertical (column) */
-function colPath(x: number, w: number, y0: number, y1: number): string {
+export function colPath(x: number, w: number, y0: number, y1: number): string {
   const up = y1 < y0;
   const h = Math.abs(y1 - y0);
   const r = Math.min(4, w / 2, h);
