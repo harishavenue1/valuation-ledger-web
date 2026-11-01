@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
 import { useData, useScreeners } from "../App";
 import { ScreenerLoading } from "../components/ScreenerTable";
 import { ConvictionBar, GrowthBars, MarginLine, MiniFromHigh, MiniRsi, MiniSpark, Num, RsiMeter, RuleDots, RuleTiles, StatTile, TrendBars, VIZ_CSS, fmtSigned } from "../components/DebateViz";
@@ -17,6 +17,7 @@ interface Metrics {
   partial?: boolean;
   quarters?: { labels: string[]; sales: Num[]; op: Num[]; np: Num[]; opm: Num[] } | null;
   latest?: { sales: Num; np: Num; eps: Num } | null;
+  margin_latest?: { quarter?: string; opm?: number | null; opm_qoq?: number | null; opm_yoy?: number | null; gpm?: number | null; gpm_qoq?: number | null; gpm_yoy?: number | null; source?: string } | null;
   tech?: Record<string, number | null> | null;
   val?: { mcap_cr: number | null; pe: number | null; roce: number | null; roce_chg_1y: number | null; roe: number | null; borrowings_cr: number | null; wc_days: number | null };
   pos?: { weight: number | null; pnl_pct: number | null; hold_days: number | null };
@@ -47,6 +48,25 @@ const firstSentence = (s: string) => (s.match(/^.*?[.!?](\s|$)/)?.[0] ?? s).trim
 const short = (s: string, n = 54) => (s.length <= n ? s : s.slice(0, s.lastIndexOf(" ", n) > 20 ? s.lastIndexOf(" ", n) : n) + "…");
 const cr = (v: number | null | undefined) => (!isNum(v) ? "—" : v >= 1000 ? `₹${(v / 1000).toFixed(1)}k Cr` : `₹${Math.round(v)} Cr`);
 const pct = (v: Num, d = 1) => (v === "T" ? "T" : isNum(v) ? `${fmtSigned(v, d)}%` : "—");
+/** a series may be missing (financial companies publish no operating margin) — always hand the charts real arrays of the right length */
+const arr = (x: unknown, n: number): Num[] => (Array.isArray(x) ? (x as Num[]) : Array(n).fill(null));
+type Quarters = { labels: string[]; sales: Num[]; op: Num[]; np: Num[]; opm: Num[] };
+const normQuarters = (q: Metrics["quarters"]): Quarters | null => {
+  const n = Array.isArray(q?.labels) ? q!.labels.length : 0;
+  return q && n ? { labels: q.labels, sales: arr(q.sales, n), op: arr(q.op, n), np: arr(q.np, n), opm: arr(q.opm, n) } : null;
+};
+
+/** one bad verdict must never blank the whole page: each card (and the table) draws inside its own guard */
+class Guard extends Component<{ label: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed ? (
+      <div className="rounded-xl p-3 text-sm" style={{ border: "1px solid var(--ring)", color: "var(--ink2)" }}>Could not draw {this.props.label} (unexpected data). The verdict is still stored.</div>
+    ) : this.props.children;
+  }
+}
+
 const headlineOf = (v: Verdict) => v.headline || short(firstSentence(v.summary), 120);
 
 function Chip({ kind, text, title }: { kind: "bull" | "bear"; text: string; title: string }) {
@@ -84,8 +104,7 @@ function Points({ title, items, kind }: { title: string; items: Point[]; kind: "
 }
 
 /** every number behind the charts, as a table (the text alternative to the pictures) */
-function NumbersTable({ m }: { m: Metrics }) {
-  const q = m.quarters;
+function NumbersTable({ m, q }: { m: Metrics; q: Quarters | null }) {
   const cell = { padding: "2px 8px", textAlign: "right" as const, fontSize: 11 };
   return (
     <div className="space-y-3 overflow-x-auto">
@@ -122,7 +141,7 @@ function NumbersTable({ m }: { m: Metrics }) {
 function Card({ v, id }: { v: Verdict; id: string }) {
   const [open, setOpen] = useState(false);
   const m = v.metrics ?? {};
-  const q = m.quarters;
+  const q = normQuarters(m.quarters);
   const val = m.val;
   const pos = m.pos;
   return (
@@ -150,7 +169,15 @@ function Card({ v, id }: { v: Verdict; id: string }) {
           ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No growth data.</div>}
         </Panel>
         <Panel title="Operating margin">
-          {q && q.opm.some(isNum) ? <MarginLine labels={q.labels} opm={q.opm} /> : <div style={{ fontSize: 11, color: "var(--muted)" }}>No quarterly margin series for this stock.</div>}
+          {q && q.opm.some(isNum) ? <MarginLine labels={q.labels} opm={q.opm} /> : m.margin_latest && isNum(m.margin_latest.opm) ? (
+            <div>
+              <div className="flex flex-wrap gap-2">
+                <StatTile label="Operating margin" value={`${m.margin_latest.opm.toFixed(1)}%`} sub={isNum(m.margin_latest.opm_qoq) || isNum(m.margin_latest.opm_yoy) ? `${isNum(m.margin_latest.opm_qoq) ? `${fmtSigned(m.margin_latest.opm_qoq)} pts vs last quarter` : ""}${isNum(m.margin_latest.opm_qoq) && isNum(m.margin_latest.opm_yoy) ? " · " : ""}${isNum(m.margin_latest.opm_yoy) ? `${fmtSigned(m.margin_latest.opm_yoy)} vs a year ago` : ""}` : undefined} subGood={isNum(m.margin_latest.opm_yoy) ? m.margin_latest.opm_yoy >= 0 : null} />
+                {isNum(m.margin_latest.gpm) && <StatTile label="Gross margin" value={`${m.margin_latest.gpm.toFixed(1)}%`} sub={isNum(m.margin_latest.gpm_yoy) ? `${fmtSigned(m.margin_latest.gpm_yoy)} vs a year ago` : undefined} subGood={isNum(m.margin_latest.gpm_yoy) ? m.margin_latest.gpm_yoy >= 0 : null} />}
+              </div>
+              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4 }}>Latest quarter only{m.margin_latest.quarter ? ` (${m.margin_latest.quarter})` : ""}: this company has no six-quarter margin series in the data.</div>
+            </div>
+          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No operating-margin series for this stock (financial companies, such as banks and exchanges, do not report one).</div>}
         </Panel>
         <Panel title="Where the price sits">
           {m.tech ? (
@@ -185,7 +212,7 @@ function Card({ v, id }: { v: Verdict; id: string }) {
           </div>
           {v.risks?.length > 0 && <div><div className="text-xs font-semibold mb-1" style={{ color: "var(--ink2)" }}>Biggest risks</div><ul className="list-disc ml-5 text-sm" style={{ color: "var(--ink)" }}>{v.risks.map((r, i) => <li key={i}>{r}</li>)}</ul></div>}
           {v.change_my_mind && <div className="text-sm" style={{ color: "var(--ink)" }}><b className="text-xs" style={{ color: "var(--ink2)" }}>What would change this: </b>{v.change_my_mind}</div>}
-          {m.quarters || m.tech ? <div><div className="text-xs font-semibold mb-1" style={{ color: "var(--ink2)" }}>The numbers behind the charts</div><NumbersTable m={m} /></div> : null}
+          {q || m.tech ? <div><div className="text-xs font-semibold mb-1" style={{ color: "var(--ink2)" }}>The numbers behind the charts</div><NumbersTable m={m} q={q} /></div> : null}
           {v.data_gaps && v.data_gaps.length > 0 && <div className="text-xs" style={{ color: "var(--muted)" }}><b>Not covered by the data: </b>{v.data_gaps.join("; ")}</div>}
           {v.fact_check_dropped && v.fact_check_dropped.length > 0 && <div className="text-xs" style={{ color: "var(--muted)" }}><b>Removed or softened by the fact-check: </b>{v.fact_check_dropped.join("; ")}</div>}
         </div>
@@ -252,7 +279,7 @@ export default function ResearchDebate() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-xl mb-5" style={{ border: "1px solid var(--ring)", background: "var(--surface)" }}>
+          <Guard label="the comparison table"><div className="overflow-x-auto rounded-xl mb-5" style={{ border: "1px solid var(--ring)", background: "var(--surface)" }}>
             <table style={{ borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid var(--grid)" }}>
@@ -276,8 +303,8 @@ export default function ResearchDebate() {
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="space-y-4">{shown.map((v) => <Card key={v.symbol} v={v} id={`dbv-${v.symbol}`} />)}</div>
+          </div></Guard>
+          <div className="space-y-4">{shown.map((v) => <Guard key={v.symbol} label={`the ${v.symbol} card`}><Card v={v} id={`dbv-${v.symbol}`} /></Guard>)}</div>
         </>
       )}
     </div>
