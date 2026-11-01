@@ -268,7 +268,7 @@ export class Guard extends Component<{ label: string; children: ReactNode }, { f
 }
 
 // ---- generic: diverging horizontal bars for a few labelled values (percent), e.g. "median return vs the index" -----------------------------------
-export function DeltaBars({ rows }: { rows: { label: string; value: number | null | undefined; note?: string }[] }) {
+export function DeltaBars({ rows, unit = "%" }: { rows: { label: string; value: number | null | undefined; note?: string }[]; unit?: string }) {
   const { box, show, hide, node } = useTip();
   const real = rows.filter((r) => isNum(r.value as Num));
   if (!real.length) return <div style={{ fontSize: 11, color: "var(--muted)" }}>Not enough data.</div>;
@@ -278,7 +278,7 @@ export function DeltaBars({ rows }: { rows: { label: string; value: number | nul
   const sx = (v: number) => cx + (clamp(v, -D, D) / D) * (pw / 2);
   return (
     <div ref={box} style={{ position: "relative" }}>
-      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={rows.map((r) => `${r.label} ${isNum(r.value as Num) ? (r.value as number).toFixed(1) + "%" : "n/a"}`).join(", ")}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={rows.map((r) => `${r.label} ${isNum(r.value as Num) ? (r.value as number).toFixed(1) + unit : "n/a"}`).join(", ")}>
         <line x1={cx} x2={cx} y1={0} y2={H} stroke="var(--axis)" strokeWidth={1} />
         {rows.map((r, i) => {
           const y = i * rowH + 7;
@@ -288,8 +288,8 @@ export function DeltaBars({ rows }: { rows: { label: string; value: number | nul
             <g key={r.label}>
               <text x={0} y={y + 10} fontSize={10} fill="var(--ink2)">{r.label}</text>
               <path d={rowPath(y, 12, cx, tip)} fill={right ? "var(--pos)" : "var(--neg)"} />
-              <text x={right ? tip + 5 : tip - 5} y={y + 10} textAnchor={right ? "start" : "end"} fontSize={10} fontWeight={600} fill="var(--ink)">{fmtSigned(v)}%</text>
-              <rect x={0} y={i * rowH} width={W} height={rowH} fill="transparent" onMouseMove={(e) => show(e, <><b>{fmtSigned(v)}%</b> <span className="sub">{r.label}{r.note ? ` · ${r.note}` : ""}</span></>)} onMouseLeave={hide} />
+              <text x={right ? tip + 5 : tip - 5} y={y + 10} textAnchor={right ? "start" : "end"} fontSize={10} fontWeight={600} fill="var(--ink)">{fmtSigned(v)}{unit}</text>
+              <rect x={0} y={i * rowH} width={W} height={rowH} fill="transparent" onMouseMove={(e) => show(e, <><b>{fmtSigned(v)}{unit}</b> <span className="sub">{r.label}{r.note ? ` · ${r.note}` : ""}</span></>)} onMouseLeave={hide} />
             </g>
           );
         })}
@@ -406,5 +406,41 @@ export function MiniSpark({ vals }: { vals: Num[] | null | undefined }) {
       <svg width={W} height={H} aria-hidden><path d={pts.map((p, i) => `${i ? "L" : "M"}${p[0]},${p[1]}`).join("")} fill="none" stroke="var(--s1)" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" /><circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r={2.5} fill="var(--s1)" /></svg>
       <span style={{ fontSize: 11 }}>{v[v.length - 1].toFixed(1)}%</span>
     </span>
+  );
+}
+
+// ---- management panel: shares outstanding over the years (zero-based columns: a flat row of equal bars IS "no dilution") -------------------------------
+export function ShareCountBars({ years, cr, bonus }: { years: string[]; cr: Num[]; bonus?: boolean[] }) {
+  const { box, show, hide, node } = useTip();
+  const n = Math.min(years.length, cr.length);
+  const vals = cr.slice(0, n);
+  if (n < 2 || !vals.some((v) => isNum(v))) return <div style={{ fontSize: 11, color: "var(--muted)" }}>No share-count history.</div>;
+  const mx = Math.max(...vals.filter(isNum));
+  const W = 320, H = 118, L = 6, R = 6, T = 16, B = 20, pw = W - L - R, ph = H - T - B, slot = pw / n, bw = Math.min(22, slot - 5);
+  const lab = (l: string) => { const m = l.match(/^(\w{3}) 20(\d\d)$/); return m ? (m[1] === "Mar" ? `’${m[2]}` : `${m[1][0]}’${m[2]}`) : l; };
+  let first = -1, last = -1;
+  vals.forEach((v, i) => { if (isNum(v)) { if (first < 0) first = i; last = i; } });
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Shares outstanding, crore: ${years.slice(0, n).map((y, i) => `${y} ${isNum(vals[i]) ? vals[i] : "n/a"}`).join(", ")}`}>
+        <line x1={L} x2={W - R} y1={T + ph} y2={T + ph} stroke="var(--axis)" strokeWidth={1} />
+        {vals.map((v, i) => {
+          if (!isNum(v)) return null;
+          const prev = i > 0 ? vals[i - 1] : null;
+          const jump = isNum(prev) && prev > 0 ? (v / prev - 1) * 100 : 0;
+          const x = L + i * slot + (slot - bw) / 2, h = (v / mx) * ph;
+          return (
+            <g key={i}>
+              <path d={colPath(x, bw, T + ph, T + ph - h)} fill={bonus?.[i] ? "var(--muted)" : jump > 5 ? "var(--s2)" : "var(--s1)"} />
+              {(i === first || i === last) && <text x={x + bw / 2} y={T + ph - h - 4} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--ink)">{v}</text>}
+              <text x={x + bw / 2} y={H - 6} textAnchor="middle" fontSize={8.5} fill="var(--muted)">{lab(years[i])}</text>
+              <rect x={L + i * slot} y={0} width={slot} height={H} fill="transparent" onMouseMove={(e) => show(e, <><b>{v} crore shares</b> <span className="sub">{years[i]}{jump > 0.05 ? ` · ${fmtSigned(jump)}% on the year before` : ""}{bonus?.[i] ? " · a clean ratio: likely a bonus issue or split" : ""}</span></>)} onMouseLeave={hide} />
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ fontSize: 10.5, color: "var(--ink2)", marginTop: 2 }}><Key color="var(--s1)" />shares (crore) <span style={{ marginLeft: 10 }}><Key color="var(--s2)" />up over 5% in a year</span>{bonus?.some(Boolean) && <span style={{ marginLeft: 10 }}><Key color="var(--muted)" />likely bonus / split</span>}</div>
+      {node}
+    </div>
   );
 }
