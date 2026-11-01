@@ -35,6 +35,7 @@ const ResearchDebate = lazy(() => import("./pages/ResearchDebate"));
 const FundRaising = lazy(() => import("./pages/FundRaising"));
 const CapacityNews = lazy(() => import("./pages/CapacityNews"));
 const CompanyEdge = lazy(() => import("./pages/CompanyEdge"));
+const Shareholding = lazy(() => import("./pages/Shareholding"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const TradeDesk = lazy(() => import("./pages/TradeDesk"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
@@ -247,6 +248,7 @@ export default function App() {
                   { to: "/fund-raising", label: "💰 Fund Raising" },
                   { to: "/capacity-news", label: "🏭 Capacity & Technology" },
                   { to: "/company-edge", label: "🧬 Company Edge" },
+                  { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
                   { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
@@ -328,6 +330,7 @@ export default function App() {
             <Route path="/fund-raising" element={<FundRaising />} />
             <Route path="/capacity-news" element={<CapacityNews />} />
             <Route path="/company-edge" element={<CompanyEdge />} />
+            <Route path="/shareholding" element={<Shareholding />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/trade-desk" element={<TradeDesk />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
