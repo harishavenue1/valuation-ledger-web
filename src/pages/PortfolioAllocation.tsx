@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { buildRsUniverse, percentileRank, rsRatingOf, rsScore as rsScoreOf, rsTone } from "../lib/rsRating";
 import { ZONES, proximityBucketFor } from "../lib/athZones";
 import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
@@ -683,28 +684,17 @@ export default function PortfolioAllocation() {
     }).catch(() => {});
     return () => { off = true; };
   }, []);
-  // RS Rating (the overall 1-99 number, like the IBD / screener "RS Rating"): a weighted score of the holding's 3-month, 6-month and 1-year returns, 40% / 30% / 30%, ranked against the NSE 750.
-  // IBD weights 3, 6, 9 and 12 months 40/20/20/20; the store has no 9-month return, so 6 months and 1 year carry the rest. Needs a year of history: a recent listing shows "—".
-  const rsScore = (t?: { w3m: number | null; w6m: number | null; y1: number | null }) => (t && t.w3m != null && t.w6m != null && t.y1 != null ? 0.4 * t.w3m + 0.3 * t.w6m + 0.3 * t.y1 : null);
-  // sorted returns of the NSE 750 universe, one array per window (and the composite score)
+  // RS Rating and the period percentiles: one shared definition (lib/rsRating.ts) so this page and All Technicals always agree. The period percentiles rank a single window's return among NSE 750 stocks.
   const universe = useMemo(() => {
     const syms = new Set<string>((bundle.momentum_screeners.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol));
     const col = (k: "w1" | "w1m" | "w3m") => [...techBy.entries()].filter(([sym, t]) => syms.has(sym) && t[k] != null).map(([, t]) => t[k] as number).sort((a, b) => a - b);
-    const score = [...techBy.entries()].filter(([sym]) => syms.has(sym)).map(([, t]) => rsScore(t)).filter((v): v is number => v != null).sort((a, b) => a - b);
-    return { w1: col("w1"), w1m: col("w1m"), w3m: col("w3m"), score };
+    const rating = buildRsUniverse([...techBy.entries()].map(([symbol, t]) => ({ symbol, w_pct_3m: t.w3m, w_pct_6m: t.w6m, yearly_pct: t.y1 })), syms);
+    return { w1: col("w1"), w1m: col("w1m"), w3m: col("w3m"), rating };
   }, [techBy, bundle.momentum_screeners.nse750Fundamentals]);
-  // percentile rank 1-99: the share of the universe this return beats, counting a tie as half (so the median stock reads 50)
-  const pctile = (arr: number[], x: number | null | undefined) => {
-    if (x == null || arr.length < 50) return null;
-    let lo = 0, hi = arr.length;
-    while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m; }
-    let top = lo;
-    while (top < arr.length && arr[top] === x) top++;
-    return Math.min(99, Math.max(1, Math.round(((lo + 0.5 * (top - lo)) / arr.length) * 100)));
-  };
+  const pctile = percentileRank;
   const withRsi = (r: any) => {
     const t = techBy.get(r.symbol);
-    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rs_rating: pctile(universe.score, rsScore(t)), rs_score: rsScore(t), rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
+    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rs_rating: rsRatingOf(universe.rating, r.symbol), rs_score: rsScoreOf(t?.w3m, t?.w6m, t?.y1), rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
   };
 
   // Column picker (2026-11-01, "allow column selector above table"): the picks are remembered on this device, like the picker on All Technicals. Rank and Symbol are always shown.
@@ -999,7 +989,7 @@ export default function PortfolioAllocation() {
         render: (r) => {
           const v = r.rs_rating as number | null | undefined;
           if (typeof v !== "number") return <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history in the technicals store">—</span>;
-          const tone = v >= 90 ? "text-emerald-700 font-bold" : v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
+          const tone = rsTone(v);
           return <span className={tone} title={`RS Rating ${v}: this holding's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${v}% of NSE 750 stocks. 80+ is leadership territory.`}>{v}</span>;
         },
       },

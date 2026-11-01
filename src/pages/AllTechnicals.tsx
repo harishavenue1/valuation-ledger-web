@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 import { saveChartList } from "../lib/chartList";
+import { buildRsUniverse, rsRatingOf, rsTone } from "../lib/rsRating";
 
 // 2026-09-18 — "design for technical and fundamental in intention to
 // speed up the app and reduce redundant info across pages" -> "let's
@@ -65,6 +66,19 @@ const ALL_COLUMNS: ColumnDef[] = [
   { key: "rsi_m", label: "RSI(M)", group: "Core", source: "core", render: (r) => fmtNum(r.rsi_m, 1) },
   { key: "three_week_green", label: "3W Green", group: "Core", source: "core", render: (r) => boolCell(r.three_week_green) },
 
+  // 2026-11-01 ("add RS Rating to the All Technical Page"): the overall 1-99 RS Rating, the same number as on Portfolio Allocation (lib/rsRating.ts): the percentile of 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y return among NSE 750 stocks.
+  {
+    key: "rs_rating",
+    label: "RS Rating",
+    group: "Relative Strength",
+    source: "core",
+    render: (r) =>
+      typeof r.rs_rating === "number" ? (
+        <span className={rsTone(r.rs_rating)} title={`RS Rating ${r.rs_rating}: this stock's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${r.rs_rating}% of NSE 750 stocks. 80+ is leadership territory.`}>{r.rs_rating}</span>
+      ) : (
+        <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history in the technicals store">—</span>
+      ),
+  },
   { key: "rs_1w", label: "RS 1W", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
   { key: "rs_1m", label: "RS 1M", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_1m} digits={1} /> },
   { key: "rs_3m", label: "RS 3M", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_3m} digits={1} /> },
@@ -252,6 +266,7 @@ const DEFAULT_ENABLED = [
   "weekly_pct",
   "monthly_pct",
   "rsi_w",
+  "rs_rating",
   "rs_score",
   "alpha_score",
   "roce_1y_chg",
@@ -261,7 +276,14 @@ const DEFAULT_ENABLED = [
 function loadEnabledColumns(): Set<string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return new Set(JSON.parse(raw));
+    if (raw) {
+      const saved = new Set<string>(JSON.parse(raw));
+      if (!localStorage.getItem("allTechnicalsRsRating_v1")) { // 2026-11-01: surface the new RS Rating column once for a saved pick that predates it
+        saved.add("rs_rating");
+        localStorage.setItem("allTechnicalsRsRating_v1", "1");
+      }
+      return saved;
+    }
   } catch {
     // localStorage unavailable/corrupt — fall through to default
   }
@@ -385,7 +407,7 @@ export default function AllTechnicals() {
     });
   }
 
-  const rows = useMemo(() => {
+  const rowsBase = useMemo(() => {
     const baseNse: any[] = ms?.nseScreener?.rows ?? [];
     const bhavMap = bhavOk ? keyBy(bhav!.rows) : new Map<string, any>();
     // Every other NSE-listed stock the bhavcopy store has (the NSE-750 keep
@@ -634,6 +656,9 @@ export default function AllTechnicals() {
       };
     });
   }, [ms, bhavOk, bhav]);
+  // RS Rating: ranked against the NSE 750 (nse750Fundamentals' symbols) on the technicals store's own returns, so the number is the same one Portfolio Allocation shows
+  const rsUni = useMemo(() => buildRsUniverse(bhav?.rows ?? [], new Set<string>((ms?.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol))), [bhav, ms?.nse750Fundamentals]);
+  const rows = useMemo(() => rowsBase.map((r: any) => ({ ...r, rs_rating: rsRatingOf(rsUni, r.symbol) })), [rowsBase, rsUni]);
 
   const cols: Col[] = useMemo(() => {
     const optional = optionalCols.filter((c) => enabledCols.has(c.key));
