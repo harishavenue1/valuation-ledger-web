@@ -961,6 +961,36 @@ export default function PortfolioAllocation() {
         width: 4.7,
         render: (r) => <Signed v={r.pct_6m} digits={1} />,
       },
+      // 2026-11-01 ("add RS 1W, 1M, 1Q columns as well"): relative strength = the holding's own return minus the NIFTY 500's over the same window, in percentage points
+      // (the RSBenchmarkCheck convention). The windows are this table's own 1W / 1M / 1Q (1, 4 and 13 weekly bars) and the index is measured on the same bars, so a plus sign
+      // means the holding beat the market over that window. Pushed with the rows by the PF update (rs_1w / rs_1m / rs_3m).
+      {
+        key: "rs_1w",
+        label: "RS 1W",
+        width: 3.9,
+        groupStart: true,
+        render: (r) => (typeof r.rs_1w === "number" ? <span title={`1W return ${r.pct_1w?.toFixed?.(1)}% minus NIFTY 500`}><Signed v={r.rs_1w} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+      },
+      {
+        key: "rs_1m",
+        label: "RS 1M",
+        width: 3.9,
+        render: (r) => (typeof r.rs_1m === "number" ? <span title={`1M return ${r.pct_1m?.toFixed?.(1)}% minus NIFTY 500 (4 weekly bars)`}><Signed v={r.rs_1m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+      },
+      {
+        key: "rs_3m",
+        label: "RS 1Q",
+        width: 3.9,
+        render: (r) => (typeof r.rs_3m === "number" ? <span title={`1Q return ${r.pct_3m?.toFixed?.(1)}% minus NIFTY 500 (13 weekly bars)`}><Signed v={r.rs_3m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+      },
+      {
+        // 2026-11-01 ("50DEMA distance on left of 200DEMA"): the 50-day EMA distance returns (the PF update has kept pushing pct_50d_ema all along), same OHLC4 convention as 200DEMA.
+        key: "pct_50d_ema",
+        label: "50DEMA",
+        width: 4.7,
+        groupStart: true,
+        render: (r) => (r.pct_50d_ema === null || r.pct_50d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_50d_ema} digits={1} />),
+      },
       {
         // 2026-09-21 ("add a column for distance from 200DEMA, 50DEMA,
         // 33WEMA") — % distance, same OHLC4 EMA convention
@@ -973,7 +1003,6 @@ export default function PortfolioAllocation() {
         key: "pct_200d_ema",
         label: "200DEMA",
         width: 4.7,
-        groupStart: true,
         render: (r) => (r.pct_200d_ema === null || r.pct_200d_ema === undefined ? <span className="text-slate-300">—</span> : <Signed v={r.pct_200d_ema} digits={1} />),
       },
       {
