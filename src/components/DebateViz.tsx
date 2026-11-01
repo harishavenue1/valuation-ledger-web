@@ -273,7 +273,7 @@ export function DeltaBars({ rows, unit = "%" }: { rows: { label: string; value: 
   const real = rows.filter((r) => isNum(r.value as Num));
   if (!real.length) return <div style={{ fontSize: 11, color: "var(--muted)" }}>Not enough data.</div>;
   const maxAbs = Math.max(...real.map((r) => Math.abs(r.value as number)));
-  const D = clamp(Math.ceil((maxAbs * 1.7) / 5) * 5, 10, 150);
+  const D = clamp(Math.ceil((maxAbs * 2.3) / 5) * 5, 10, 150);
   const W = 320, rowH = 26, H = rows.length * rowH + 4, L = 118, R = 6, pw = W - L - R, cx = L + pw / 2;
   const sx = (v: number) => cx + (clamp(v, -D, D) / D) * (pw / 2);
   return (

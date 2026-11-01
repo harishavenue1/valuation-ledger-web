@@ -86,7 +86,7 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink2)", marginBottom: 4 }}>{title}</div>
-      {children}
+      <div style={{ maxWidth: 380 }}>{children}</div>
     </div>
   );
 }
@@ -157,18 +157,25 @@ function MgmtPanel({ mgmt }: { mgmt: Mgmt }) {
   const pts = (m: Record<string, number | null> | undefined, who: string) => [["y1", "1 yr"], ["y3", "3 yrs"], ["y5", "5 yrs"]].map(([key, l]) => ({ label: `${who} · ${l}`, value: m?.[key] }));
   const big = (v: number) => (Math.abs(v) >= 1000 ? `${v > 0 ? ">+" : "<−"}999%` : `${fmtSigned(v)}%`);
   const dil = (label: string, v: number | null | undefined, adj?: number | null) => <span style={{ marginRight: 12 }}>{label} <b style={{ color: isNum(v) ? ((isNum(adj) ? adj : v) < 5 ? "var(--good-text)" : "var(--crit)") : "var(--muted)" }}>{isNum(v) ? big(v) : "—"}</b>{isNum(adj) && isNum(v) && <span style={{ color: "var(--muted)" }}> ({big(adj)} ex bonus/split)</span>}</span>;
+  const [open, setOpen] = useState(false);
+  const failed = checks.filter((c) => c.pass === false);
+  const sh3 = isNum(sh.ex_bonus?.["3Y"]) ? sh.ex_bonus!["3Y"] : sh["3Y"];
   return (
     <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--grid)" }}>
-      <div className="flex flex-wrap items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>Management and capital allocation</span>
-        {k && <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ border: `1px solid ${k.passed / k.scored >= 0.7 ? "var(--good-text)" : k.passed / k.scored >= 0.4 ? "var(--warn)" : "var(--crit)"}`, color: "var(--ink)" }} title="how many of the checks below passed (those the data could score)">{k.passed} of {k.scored} kept</span>}
-        <span className="text-[11px]" style={{ color: "var(--muted)" }}>How they treated shareholders' money, from filings and reported numbers. A mechanical count, not a verdict on character.</span>
+        {k ? <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ border: `1px solid ${k.passed / k.scored >= 0.7 ? "var(--good-text)" : k.passed / k.scored >= 0.4 ? "var(--warn)" : "var(--crit)"}`, color: "var(--ink)" }} title="how many of the checks passed (those the data could score)">{k.passed} of {k.scored} kept</span> : <span className="text-[11px]" style={{ color: "var(--muted)" }}>too little history to score</span>}
+        {isNum(sh3) && <span className="text-[11px]" style={{ color: "var(--ink2)" }}>shares {big(sh3)} in 3 yrs{isNum(sh.ex_bonus?.["3Y"]) ? " (ex bonus/split)" : ""}</span>}
+        <span className="text-[11px]" style={{ color: "var(--ink2)" }}>{raises.length ? `${raises.length} raise${raises.length > 1 ? "s" : ""} in 2 yrs` : "no raise in 2 yrs"}</span>
+        <button onClick={() => setOpen(!open)} className="text-xs ml-auto hover:underline" style={{ color: "var(--pos)" }}>{open ? "Hide" : "Show the charts"}</button>
       </div>
+      {failed.length > 0 && <div className="flex flex-wrap gap-1.5 mt-1.5">{failed.map((c) => <span key={c.n} title={c.detail} className="text-[11px] px-2 py-0.5 rounded-full" style={{ border: "1px solid var(--crit)", color: "var(--ink)" }}><b style={{ color: "var(--crit)" }}>✗</b> {c.label}</span>)}</div>}
+      {open && <div className="mt-3">
       <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))" }}>
         <Panel title="New shares issued (share count by year)">
           <ShareCountBars years={years} cr={shareCr} bonus={Array.isArray(sh.bonus_flags) ? sh.bonus_flags : undefined} />
           <div style={{ fontSize: 11, color: "var(--ink2)", marginTop: 3 }}>Change in share count: {dil("1 yr", sh["1Y"], sh.ex_bonus?.["1Y"])}{dil("3 yrs", sh["3Y"], sh.ex_bonus?.["3Y"])}{dil("5 yrs", sh["5Y"], sh.ex_bonus?.["5Y"])}</div>
-          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>Grey bars: a clean ratio, which is usually a bonus issue or split. Those take nothing from existing holders, so the check ignores them (a guess from the numbers; the filing says for sure).</div>
+          {sh.bonus_flags?.some(Boolean) && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>Grey = likely bonus or split (a clean ratio): ignored by the check.</div>}
         </Panel>
         <Panel title="Did new capital earn more? (change in points)">
           <DeltaBars rows={[...pts(mgmt.roce_pts, "ROCE"), ...pts(mgmt.roe_pts, "ROE")]} unit=" pts" />
@@ -208,6 +215,8 @@ function MgmtPanel({ mgmt }: { mgmt: Mgmt }) {
           ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No QIP, preferential or rights issue found in NSE filings over the last two years.</div>}
         </Panel>
       </div>
+      <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 8 }}>From filings and reported numbers: a mechanical count, not a verdict on character.</div>
+      </div>}
     </div>
   );
 }
