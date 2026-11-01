@@ -1,4 +1,5 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { api } from "../lib/api";
 import { ZONES, proximityBucketFor } from "../lib/athZones";
 import { Link, useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
@@ -669,15 +670,51 @@ export default function PortfolioAllocation() {
     return c;
   }, [rows, sizeFilter]);
   const shownCount = useMemo(() => rows.filter((r) => bySize(r) && byZone(r)).length, [rows, sizeFilter, zoneFilter]);
+  // Weekly RSI per symbol from the shared technicals store (the same one the All Technicals page reads), joined here so the PF update does not have to push it. 2026-11-01 ("we need to add now WeeklyRSI value")
+  const [rsiBy, setRsiBy] = useState<Map<string, { rsi_w: number | null; rsi_d: number | null }>>(new Map());
+  useEffect(() => {
+    let off = false;
+    api.getBhavTechnicals().then((j) => {
+      if (off || !j?.rows) return;
+      setRsiBy(new Map(j.rows.map((t: any) => [t.symbol, { rsi_w: typeof t.rsi_w === "number" ? t.rsi_w : null, rsi_d: typeof t.rsi_d === "number" ? t.rsi_d : null }])));
+    }).catch(() => {});
+    return () => { off = true; };
+  }, []);
+  const withRsi = (r: any) => ({ rsi_w: r.rsi_w ?? rsiBy.get(r.symbol)?.rsi_w ?? null });
+
+  // Column picker (2026-11-01, "allow column selector above table"): the picks are remembered on this device, like the picker on All Technicals. Rank and Symbol are always shown.
+  const PICK_KEY = "portfolioAllocationHiddenCols_v1";
+  const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(PICK_KEY);
+      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+    } catch {
+      return new Set<string>();
+    }
+  });
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const toggleCol = (k: string) =>
+    setHiddenCols((prev) => {
+      const n = new Set(prev);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      try { localStorage.setItem(PICK_KEY, JSON.stringify([...n])); } catch { /* best-effort persistence only */ }
+      return n;
+    });
+  const setAllCols = (hide: string[]) => {
+    const n = new Set(hide);
+    setHiddenCols(n);
+    try { localStorage.setItem(PICK_KEY, JSON.stringify([...n])); } catch { /* best-effort persistence only */ }
+  };
+
   const stockRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize).filter(byZone);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy]);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r), ...withRsi(r) }));
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, rsiBy]);
   const fundRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize).filter(byZone);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy]);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r), ...withRsi(r) }));
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, rsiBy]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -719,6 +756,22 @@ export default function PortfolioAllocation() {
               title={`${z.title} (${typeof r.pct_from_ath === "number" ? r.pct_from_ath.toFixed(1) + "%" : "n/a"} from ATH)`}
             >
               {z.letter}
+            </span>
+          );
+        },
+      },
+      {
+        // 2026-11-01 ("add WeeklyRSI value"): weekly RSI(14) from the technicals store; green when it is above the 66 bar of the weekly-RSI rule. "—" for a fund without a series.
+        key: "rsi_w",
+        label: "RSI (W)",
+        align: "center",
+        width: 3.2,
+        render: (r) => {
+          const v = r.rsi_w as number | null | undefined;
+          if (typeof v !== "number") return <span className="text-slate-300" title="no weekly RSI for this holding">—</span>;
+          return (
+            <span className={v > 66 ? "text-emerald-600 font-semibold" : "text-slate-700"} title={`Weekly RSI(14) ${v.toFixed(1)}${v > 66 ? " — above your 66 bar" : " — at or below your 66 bar"}`}>
+              {v.toFixed(1)}
             </span>
           );
         },
@@ -968,6 +1021,14 @@ export default function PortfolioAllocation() {
     []
   );
 
+  // hidden columns removed, and the remaining widths scaled back up to 100% so the table still fills its width
+  const VISIBLE_COLS: Col[] = useMemo(() => {
+    const keep = COLS.filter((c) => c.key === "rank" || c.key === "symbol" || !hiddenCols.has(c.key));
+    const total = keep.reduce((a, c) => a + (c.width ?? 0), 0);
+    return total > 0 ? keep.map((c) => (c.width ? { ...c, width: (c.width * 100) / total } : c)) : keep;
+  }, [COLS, hiddenCols]);
+  const pickable = COLS.filter((c) => c.key !== "rank" && c.key !== "symbol");
+
   if (!ready) return <ScreenerLoading label="Portfolio Allocation" />;
 
   return (
@@ -1055,6 +1116,30 @@ export default function PortfolioAllocation() {
           from the push, which would otherwise show gaps like 1, 3, 7
           in a filtered table. */}
       {rows.length > 0 && (
+        <div className="mb-3">
+          <button onClick={() => setPickerOpen((v) => !v)} aria-expanded={pickerOpen} className="text-xs px-3 py-1.5 rounded border border-slate-300 hover:border-slate-400 font-medium">
+            🎛️ Columns ({pickable.filter((c) => !hiddenCols.has(c.key)).length} of {pickable.length} shown) {pickerOpen ? "▲" : "▼"}
+          </button>
+          {pickerOpen && (
+            <div className="mt-2 p-3 border border-slate-200 rounded-lg bg-white">
+              <div className="flex flex-wrap items-center gap-3 mb-2 text-xs">
+                <button onClick={() => setAllCols([])} className="text-indigo-600 hover:underline">Show all</button>
+                <button onClick={() => setAllCols(pickable.map((c) => c.key))} className="text-indigo-600 hover:underline">Hide all</button>
+                <span className="text-slate-400">Rank and Symbol always stay. Your picks are remembered on this device.</span>
+              </div>
+              <div className="grid gap-x-4 gap-y-1.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))" }}>
+                {pickable.map((c) => (
+                  <label key={c.key} className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input type="checkbox" checked={!hiddenCols.has(c.key)} onChange={() => toggleCol(c.key)} />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {rows.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
           <span className="text-slate-500">Position size:</span>
           {([["all", "All", rows.length, ""], ...SIZE_BUCKETS.map((b) => [b.key, b.label, sizeCounts[b.key], b.rule])] as [SizeKey | "all", string, number, string][]).map(([k, label, n, rule]) => (
@@ -1138,7 +1223,7 @@ export default function PortfolioAllocation() {
                 <div className="text-xs font-medium text-slate-600 mb-1">
                   {z.title} <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
                 </div>
-                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
+                <GenericTable rows={group} cols={VISIBLE_COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
               </div>
             );
           })}
@@ -1156,7 +1241,7 @@ export default function PortfolioAllocation() {
                   <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium mr-1.5 ${b.badge}`}>{b.label}</span>
                   {b.rule} of the portfolio each <span className="text-slate-400 font-normal">· {group.length} stocks · {weight.toFixed(1)}% of portfolio</span>
                 </div>
-                <GenericTable rows={group} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
+                <GenericTable rows={group} cols={VISIBLE_COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} emptyMessage="" fullHeight />
               </div>
             );
           })}
@@ -1166,7 +1251,7 @@ export default function PortfolioAllocation() {
         <div className="mb-6">
           <GenericTable
             rows={stockRows}
-            cols={COLS}
+            cols={VISIBLE_COLS}
             navigate={(t) => navigate(`/company/${t}`)}
             watchlist={watchlist}
             emptyMessage="No individual stock holdings."
@@ -1179,7 +1264,7 @@ export default function PortfolioAllocation() {
       <h2 className="text-sm font-medium text-slate-700 mb-2">🧺 Funds &amp; ETFs ({fundRows.length})</h2>
       <GenericTable
         rows={fundRows}
-        cols={COLS}
+        cols={VISIBLE_COLS}
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
         emptyMessage="No fund/ETF holdings."
