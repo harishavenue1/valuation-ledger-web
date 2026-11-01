@@ -481,6 +481,12 @@ function SegmentSummary({ rows, capBucketFor }: { rows: any[]; capBucketFor: (ma
   );
 }
 
+/** change in operating margin in percentage points, coloured by sign; the tooltip carries the margin it is measured against */
+function OpmDelta({ v, what, now }: { v: number | null | undefined; what: string; now: number | null | undefined }) {
+  if (v == null) return <span className="text-slate-300" title="no operating-margin series: a fund/ETF, a financial company, or a stock outside the NSE 750 data">—</span>;
+  return <span title={now != null ? `operating margin ${fmtNum(now, 1)}% now, ${fmtNum(now - v, 1)}% ${what}` : undefined}><Signed v={v} digits={1} /></span>;
+}
+
 export default function PortfolioAllocation() {
   const { bundle } = useData();
   const navigate = useNavigate();
@@ -590,6 +596,25 @@ export default function PortfolioAllocation() {
     return "Micro Cap";
   }
 
+  // OPM deltas per symbol from the shared cache (q_opm = last six quarters, oldest first): latest vs the quarter before and vs the same quarter a year earlier
+  const opmBy = useMemo(() => {
+    const m = new Map<string, { now: number; qoq: number | null; yoy: number | null }>();
+    for (const f of bundle.momentum_screeners.nse750Fundamentals?.rows ?? []) {
+      const a: (number | null)[] = f.q_opm ?? [];
+      const now = a[a.length - 1];
+      if (typeof now !== "number") continue;
+      const d = (back: number) => (a.length > back && typeof a[a.length - 1 - back] === "number" ? Math.round((now - (a[a.length - 1 - back] as number)) * 10) / 10 : null);
+      m.set(f.symbol, { now, qoq: d(1), yoy: d(4) });
+    }
+    return m;
+  }, [bundle.momentum_screeners.nse750Fundamentals]);
+  // prefer the fields the PF update itself pushes (every holding, same Screener table) and fall back to the cache for rows pushed before that existed
+  const opmFields = (r: any) => {
+    const o = opmBy.get(r.symbol);
+    const now = r.opm_now ?? o?.now ?? null, qoq = r.opm_qoq ?? o?.qoq ?? null, yoy = r.opm_yoy ?? o?.yoy ?? null;
+    return { opmNow: now, opmQoq: qoq, opmYoy: yoy, opmAvg: qoq != null && yoy != null ? Math.round(((qoq + yoy) / 2) * 10) / 10 : null };
+  };
+
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
 
   // Selecting a donut slice/legend row filters both tables below to
@@ -633,12 +658,12 @@ export default function PortfolioAllocation() {
   const stockRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, qtr_profit_sort: r.qtr_profit_growth_pct === "T" ? 1e9 : typeof r.qtr_profit_growth_pct === "number" ? r.qtr_profit_growth_pct : null }));
-  }, [rows, selectedRealSectors, sizeFilter]);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
+  }, [rows, selectedRealSectors, sizeFilter, opmBy]);
   const fundRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize);
-    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, qtr_profit_sort: r.qtr_profit_growth_pct === "T" ? 1e9 : typeof r.qtr_profit_growth_pct === "number" ? r.qtr_profit_growth_pct : null }));
-  }, [rows, selectedRealSectors, sizeFilter]);
+    return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r) }));
+  }, [rows, selectedRealSectors, sizeFilter, opmBy]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -701,19 +726,29 @@ export default function PortfolioAllocation() {
         },
       },
       {
-        // 2026-10-30 ("SUDEEPPHRM -3.2 still shows wrong", Screener's own screenshot showing profit +12%) — EPS also moves with the share count, so a quarter
-        // after an IPO / issue can show EPS down while net profit is up. This is the latest quarter's NET PROFIT YoY from the same Quarterly Results table
-        // (computed from the rounded ₹ Cr figures, so it can sit a point or so from Screener's own logged-in "YOY Profit Growth %" row).
-        key: "qtr_profit_sort", // numeric twin of qtr_profit_growth_pct ("T" sorts highest)
-        label: "Profit %",
+        // 2026-11-01 ("we dont need Profit % ... instead put OPM% Delta YoY & QoQ Delta (Avg)") — replaces the Profit % column. Change in OPERATING MARGIN
+        // (Operating Profit / Sales), in percentage points, from the shared nse750Fundamentals cache's last six quarters: latest quarter vs a year earlier
+        // (YoY), vs the quarter before (QoQ), and the plain average of the two. "—" for a fund/ETF, a financial company (no operating profit row) or a stock
+        // outside the NSE 750 cache until the PF update itself carries the series.
+        key: "opmYoy",
+        label: "OPM YoY Δ",
         align: "center",
-        width: 3.5,
-        render: (r) => {
-          const v = r.qtr_profit_growth_pct as number | "T" | null | undefined;
-          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
-          if (v == null) return <span className="text-slate-300" title="a fund/ETF, a loss-making quarter, or no quarterly results on Screener.in yet">—</span>;
-          return <Signed v={v} digits={1} />;
-        },
+        width: 3.8,
+        render: (r) => <OpmDelta v={r.opmYoy} what="a year ago" now={r.opmNow} />,
+      },
+      {
+        key: "opmQoq",
+        label: "OPM QoQ Δ",
+        align: "center",
+        width: 3.8,
+        render: (r) => <OpmDelta v={r.opmQoq} what="last quarter" now={r.opmNow} />,
+      },
+      {
+        key: "opmAvg",
+        label: "OPM Δ Avg",
+        align: "center",
+        width: 3.8,
+        render: (r) => (r.opmAvg == null ? <span className="text-slate-300">—</span> : <span title="average of the YoY and QoQ change in operating margin (percentage points)"><Signed v={r.opmAvg} digits={1} /></span>),
       },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
