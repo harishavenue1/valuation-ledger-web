@@ -598,13 +598,14 @@ export default function PortfolioAllocation() {
 
   // OPM deltas per symbol from the shared cache (q_opm = last six quarters, oldest first): latest vs the quarter before and vs the same quarter a year earlier
   const opmBy = useMemo(() => {
-    const m = new Map<string, { now: number; qoq: number | null; yoy: number | null }>();
+    const m = new Map<string, { now: number; qoq: number | null; yoy: number | null; og: number | "T" | null }>();
     for (const f of bundle.momentum_screeners.nse750Fundamentals?.rows ?? []) {
       const a: (number | null)[] = f.q_opm ?? [];
       const now = a[a.length - 1];
       if (typeof now !== "number") continue;
       const d = (back: number) => (a.length > back && typeof a[a.length - 1 - back] === "number" ? Math.round((now - (a[a.length - 1 - back] as number)) * 10) / 10 : null);
-      m.set(f.symbol, { now, qoq: d(1), yoy: d(4) });
+      const ogA: (number | "T" | null)[] = f.q_op_growth ?? [];
+      m.set(f.symbol, { now, qoq: d(1), yoy: d(4), og: ogA.length ? ogA[ogA.length - 1] ?? null : null });
     }
     return m;
   }, [bundle.momentum_screeners.nse750Fundamentals]);
@@ -612,7 +613,8 @@ export default function PortfolioAllocation() {
   const opmFields = (r: any) => {
     const o = opmBy.get(r.symbol);
     const now = r.opm_now ?? o?.now ?? null, qoq = r.opm_qoq ?? o?.qoq ?? null, yoy = r.opm_yoy ?? o?.yoy ?? null;
-    return { opmNow: now, opmQoq: qoq, opmYoy: yoy, opmAvg: qoq != null && yoy != null ? Math.round(((qoq + yoy) / 2) * 10) / 10 : null };
+    const og = r.ebitda_yoy ?? o?.og ?? null; // EBITDA = Operating Profit; "T" = turned from a loss to a profit
+    return { opmNow: now, opmQoq: qoq, opmYoy: yoy, ebitdaYoy: og, ebitdaSort: og === "T" ? 1e9 : typeof og === "number" ? og : null };
   };
 
   const sectorSlices = useMemo(() => buildSectorSlices(rows), [rows]);
@@ -744,11 +746,17 @@ export default function PortfolioAllocation() {
         render: (r) => <OpmDelta v={r.opmQoq} what="last quarter" now={r.opmNow} />,
       },
       {
-        key: "opmAvg",
-        label: "OPM Δ Avg",
+        // 2026-11-01 ("remove OPM Δ Avg and include EBITDA growth YoY") — EBITDA = Operating Profit, latest quarter against the same quarter a year ago; "T" = turned profitable
+        key: "ebitdaSort", // numeric twin so the header sort works ("T" sorts highest)
+        label: "EBITDA YoY %",
         align: "center",
         width: 3.8,
-        render: (r) => (r.opmAvg == null ? <span className="text-slate-300">—</span> : <span title="average of the YoY and QoQ change in operating margin (percentage points)"><Signed v={r.opmAvg} digits={1} /></span>),
+        render: (r) => {
+          const v = r.ebitdaYoy as number | "T" | null | undefined;
+          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Operating profit turned from a loss to a profit, so no % is meaningful">T</span>;
+          if (v == null) return <span className="text-slate-300" title="no operating profit: a fund/ETF or a financial company, or a loss in the year-ago quarter">—</span>;
+          return <span title="latest quarter's operating profit (EBITDA) against the same quarter a year ago"><Signed v={v} digits={1} /></span>;
+        },
       },
       {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
