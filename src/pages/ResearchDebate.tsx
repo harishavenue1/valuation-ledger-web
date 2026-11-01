@@ -1,7 +1,7 @@
-import { Component, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import { useData, useScreeners } from "../App";
 import { ScreenerLoading } from "../components/ScreenerTable";
-import { ConvictionBar, GrowthBars, MarginLine, MiniFromHigh, MiniRsi, MiniSpark, Num, RsiMeter, RuleDots, RuleTiles, StatTile, TrendBars, VIZ_CSS, fmtSigned } from "../components/DebateViz";
+import { ConvictionBar, Guard, GrowthBars, MarginLine, MiniFromHigh, MiniRsi, MiniSpark, Num, RsiMeter, RuleDots, RuleTiles, StatTile, TrendBars, VIZ_CSS, fmtSigned } from "../components/DebateViz";
 
 // Research Debate — added 2026-11-01 ("lets build ai agents or agent workflows for our app"); redesigned the same day as a visual page
 // ("too many words can be translated better by figures / bar charts / graphs").
@@ -55,17 +55,6 @@ const normQuarters = (q: Metrics["quarters"]): Quarters | null => {
   const n = Array.isArray(q?.labels) ? q!.labels.length : 0;
   return q && n ? { labels: q.labels, sales: arr(q.sales, n), op: arr(q.op, n), np: arr(q.np, n), opm: arr(q.opm, n) } : null;
 };
-
-/** one bad verdict must never blank the whole page: each card (and the table) draws inside its own guard */
-class Guard extends Component<{ label: string; children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  render() {
-    return this.state.failed ? (
-      <div className="rounded-xl p-3 text-sm" style={{ border: "1px solid var(--ring)", color: "var(--ink2)" }}>Could not draw {this.props.label} (unexpected data). The verdict is still stored.</div>
-    ) : this.props.children;
-  }
-}
 
 const headlineOf = (v: Verdict) => v.headline || short(firstSentence(v.summary), 120);
 

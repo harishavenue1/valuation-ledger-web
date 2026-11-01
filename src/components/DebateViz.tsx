@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { Component, useRef, useState, type ReactNode } from "react";
 
 // Charts for the Research Debate page (2026-11-01, "too many words can be translated better by figures / bar charts / graphs").
 // Pure SVG, no chart library. Built to the dataviz skill's rules:
@@ -251,6 +251,82 @@ export function RsiMeter({ rsi, bar = 66 }: { rsi: number | null | undefined; ba
         <text x={pad} y={30} fontSize={9} fill="var(--muted)">0</text>
         <text x={W - pad} y={30} textAnchor="end" fontSize={9} fill="var(--muted)">100</text>
       </svg>
+    </div>
+  );
+}
+
+
+/** one bad record must never blank a whole page: wrap each card / row / table in a Guard */
+export class Guard extends Component<{ label: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    return this.state.failed ? (
+      <div className="rounded-xl p-3 text-sm" style={{ border: "1px solid var(--ring)", color: "var(--ink2)" }}>Could not draw {this.props.label} (unexpected data). The record is still stored.</div>
+    ) : this.props.children;
+  }
+}
+
+// ---- generic: diverging horizontal bars for a few labelled values (percent), e.g. "median return vs the index" -----------------------------------
+export function DeltaBars({ rows }: { rows: { label: string; value: number | null | undefined; note?: string }[] }) {
+  const { box, show, hide, node } = useTip();
+  const real = rows.filter((r) => isNum(r.value as Num));
+  if (!real.length) return <div style={{ fontSize: 11, color: "var(--muted)" }}>Not enough data.</div>;
+  const maxAbs = Math.max(...real.map((r) => Math.abs(r.value as number)));
+  const D = clamp(Math.ceil((maxAbs * 1.7) / 5) * 5, 10, 150);
+  const W = 320, rowH = 26, H = rows.length * rowH + 4, L = 118, R = 6, pw = W - L - R, cx = L + pw / 2;
+  const sx = (v: number) => cx + (clamp(v, -D, D) / D) * (pw / 2);
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={rows.map((r) => `${r.label} ${isNum(r.value as Num) ? (r.value as number).toFixed(1) + "%" : "n/a"}`).join(", ")}>
+        <line x1={cx} x2={cx} y1={0} y2={H} stroke="var(--axis)" strokeWidth={1} />
+        {rows.map((r, i) => {
+          const y = i * rowH + 7;
+          if (!isNum(r.value as Num)) return <g key={r.label}><text x={0} y={y + 10} fontSize={10} fill="var(--ink2)">{r.label}</text><text x={cx + 6} y={y + 10} fontSize={10} fill="var(--muted)">n/a</text></g>;
+          const v = r.value as number, right = v >= 0, tip = sx(v);
+          return (
+            <g key={r.label}>
+              <text x={0} y={y + 10} fontSize={10} fill="var(--ink2)">{r.label}</text>
+              <path d={rowPath(y, 12, cx, tip)} fill={right ? "var(--pos)" : "var(--neg)"} />
+              <text x={right ? tip + 5 : tip - 5} y={y + 10} textAnchor={right ? "start" : "end"} fontSize={10} fontWeight={600} fill="var(--ink)">{fmtSigned(v)}%</text>
+              <rect x={0} y={i * rowH} width={W} height={rowH} fill="transparent" onMouseMove={(e) => show(e, <><b>{fmtSigned(v)}%</b> <span className="sub">{r.label}{r.note ? ` · ${r.note}` : ""}</span></>)} onMouseLeave={hide} />
+            </g>
+          );
+        })}
+      </svg>
+      {node}
+    </div>
+  );
+}
+
+// ---- generic: one dot per event along a percent axis, with the median marked (shows the SPREAD an average hides) ------------------------------------
+export function StripPlot({ points, median }: { points: { x: number; tip: string }[]; median: number | null | undefined }) {
+  const { box, show, hide, node } = useTip();
+  if (!points.length) return <div style={{ fontSize: 11, color: "var(--muted)" }}>No events.</div>;
+  const sorted = points.map((p) => Math.abs(p.x)).sort((a, b) => a - b);
+  const D = clamp(Math.ceil((sorted[Math.floor(sorted.length * 0.9)] * 1.15) / 10) * 10, 20, 120);
+  const W = 320, H = 70, L = 8, R = 8, pw = W - L - R, cx = L + pw / 2;
+  const sx = (v: number) => cx + (clamp(v, -D, D) / D) * (pw / 2);
+  // simple beeswarm: dots in the same horizontal bucket stack into lanes so none sits on another
+  const lanes: Record<number, number> = {};
+  const placed = [...points].sort((a, b) => a.x - b.x).map((p) => { const b = Math.round(sx(p.x) / 9); const lane = lanes[b] ?? 0; lanes[b] = lane + 1; return { ...p, cy: 30 - (lane % 5) * 8 * (lane % 2 ? 1 : -1) }; });
+  return (
+    <div ref={box} style={{ position: "relative" }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`${points.length} events; median ${isNum(median as Num) ? (median as number).toFixed(1) + "%" : "n/a"}`}>
+        <line x1={L} x2={W - R} y1={30} y2={30} stroke="var(--grid)" strokeWidth={1} />
+        <line x1={cx} x2={cx} y1={8} y2={52} stroke="var(--axis)" strokeWidth={1} />
+        {placed.map((p, i) => (
+          <g key={i}>
+            <circle cx={sx(p.x)} cy={p.cy} r={5} fill="var(--surface)" />
+            <circle cx={sx(p.x)} cy={p.cy} r={3.5} fill={p.x >= 0 ? "var(--pos)" : "var(--neg)"} />
+            <circle cx={sx(p.x)} cy={p.cy} r={11} fill="transparent" onMouseMove={(e) => show(e, <>{p.tip}</>)} onMouseLeave={hide} />
+          </g>
+        ))}
+        {isNum(median as Num) && <g><line x1={sx(median as number)} x2={sx(median as number)} y1={6} y2={54} stroke="var(--ink)" strokeWidth={2} /><text x={sx(median as number)} y={H - 4} textAnchor="middle" fontSize={9} fontWeight={600} fill="var(--ink)">median {fmtSigned(median as number)}%</text></g>}
+        <text x={L} y={H - 4} fontSize={9} fill="var(--muted)">{-D}%</text>
+        <text x={W - R} y={H - 4} textAnchor="end" fontSize={9} fill="var(--muted)">+{D}%</text>
+      </svg>
+      {node}
     </div>
   );
 }
