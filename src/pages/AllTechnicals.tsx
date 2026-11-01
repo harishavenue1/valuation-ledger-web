@@ -672,6 +672,8 @@ export default function AllTechnicals() {
   const [fAth, setFAth] = useState(false);
   const [f52w, setF52w] = useState(false);
   const [fMcap, setFMcap] = useState(false);
+  const [fRs, setFRs] = useState(false); // 2026-11-01 ("add a filter for RS Rating > 85")
+  const [vRs, setVRs] = useState(85);
   const [f3m, setF3m] = useState(false);
   const [vAth, setVAth] = useState(10);
   const [v52w, setV52w] = useState(10);
@@ -709,6 +711,7 @@ export default function AllTechnicals() {
     if (fAth) parts.push(`ATH within ${vAth}%`);
     if (f52w) parts.push(`52WH within ${v52w}%`);
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
+    if (fRs) parts.push(`RS Rating > ${vRs}`);
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
     if (fDcRecent) parts.push(`DC27W trigger ≤ ${vDcRecent}w`);
@@ -737,6 +740,7 @@ export default function AllTechnicals() {
     if (fAth) base = base.filter((r: any) => within(r.nt_pct_from_ath, vAth));
     if (f52w) base = base.filter((r: any) => within(r.nt_pct_from_52w_high, v52w));
     if (fMcap) base = base.filter((r: any) => typeof r.nt_market_cap === "number" && r.nt_market_cap > vMcap);
+    if (fRs) base = base.filter((r: any) => typeof r.rs_rating === "number" && r.rs_rating > vRs);
     if (f3m) base = base.filter((r: any) => {
       const v = r.three_month_pct ?? r.nt_3m_pct;
       return typeof v === "number" && v > v3m;
@@ -753,7 +757,7 @@ export default function AllTechnicals() {
     // earlier — filtering down to e.g. 25 Quant Bollinger matches out of
     // 750 should read as "1..25", not gappy original-universe positions.
     return base.map((r: any, i: number) => ({ ...r, rank: i + 1 }));
-  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcRecent, vDcRecent, fDcLong, vDcLong, fRsiRecent, vRsiRecent, fRsiLong, vRsiLong]);
+  }, [rows, activeSources, onlyMatches, fAth, f52w, fMcap, fRs, vRs, f3m, vAth, v52w, vMcap, v3m, fEma, emaLo, emaHi, fDcRecent, vDcRecent, fDcLong, vDcLong, fRsiRecent, vRsiRecent, fRsiLong, vRsiLong]);
 
   const asOf = ms?.nseScreener?.as_of;
   const fundAsOf = ms?.nse750Fundamentals?.as_of;
@@ -851,6 +855,7 @@ export default function AllTechnicals() {
         {([
           [fAth, setFAth, "ATH within", vAth, setVAth, "%", "Within this % of the all-time high (% from ATH between −N and 0)"],
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
+          [fRs, setFRs, "RS Rating >", vRs, setVRs, "", "RS Rating above this (1-99: the percentile of the weighted 3M / 6M / 1Y return among NSE 750 stocks; 80+ is leadership). Rows with no rating (under a year of history) are hidden"],
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
           [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
