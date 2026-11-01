@@ -18,6 +18,52 @@ html.tv-dark .dbv{color-scheme:dark;--surface:#1a1d26;--ink:#e6e6e6;--ink2:#b0b3
 .dbv svg text{font-family:inherit}
 .dbv .tt{position:absolute;pointer-events:none;z-index:20;background:var(--surface);color:var(--ink);border:1px solid var(--ring);border-radius:6px;padding:6px 8px;box-shadow:0 4px 14px rgba(0,0,0,.14);font-size:11px;line-height:1.35;white-space:nowrap}
 .dbv .tt b{font-weight:600}.dbv .tt .sub{color:var(--ink2)}
+/* ---- page layout: a list on the left, the selected stock on the right (stacked on a phone) ---- */
+.dbv{--r:12px}
+.dbv-layout{display:grid;gap:16px;grid-template-columns:minmax(0,1fr)}
+.dbv-list{border:1px solid var(--ring);border-radius:var(--r);background:var(--surface);overflow:auto;max-height:280px}
+@media(min-width:1024px){.dbv-layout{grid-template-columns:372px minmax(0,1fr);align-items:start}.dbv-list{position:sticky;top:72px;max-height:calc(100vh - 92px)}}
+.dbv-row{all:unset;box-sizing:border-box;display:block;width:100%;cursor:pointer;position:relative;padding:10px 14px 10px 18px;border-top:1px solid var(--grid)}
+li:first-child>.dbv-row{border-top:0}
+.dbv-row:hover{background:var(--wash)}
+.dbv-row:focus-visible{outline:2px solid var(--pos);outline-offset:-2px}
+.dbv-row[aria-current="true"]{background:var(--wash);box-shadow:inset 0 0 0 1px var(--ring)}
+.dbv-vbar{position:absolute;left:0;top:0;bottom:0;width:4px}
+.dbv-r1{display:flex;align-items:baseline;gap:8px;color:var(--ink);font-size:13px}
+.dbv-r1 .sp{flex:1}
+.dbv-r2{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:11px;color:var(--ink2)}
+.dbv-detail{border:1px solid var(--ring);border-radius:var(--r);background:var(--surface);min-width:0;scroll-margin-top:72px}
+.dbv-dhead{padding:20px 20px 16px}
+.dbv-kpis{display:grid;gap:8px;grid-template-columns:repeat(2,minmax(0,1fr));padding:0 20px 16px}
+@media(min-width:560px){.dbv-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:880px) and (max-width:1023px),(min-width:1360px){.dbv-kpis{grid-template-columns:repeat(6,minmax(0,1fr))}}
+.dbv-kpi{all:unset;box-sizing:border-box;display:block;border:1px solid var(--ring);border-radius:8px;padding:8px 12px;background:var(--surface)}
+button.dbv-kpi{cursor:pointer}button.dbv-kpi:hover{background:var(--wash)}button.dbv-kpi:focus-visible{outline:2px solid var(--pos)}
+.dbv-tabs{display:flex;gap:4px;padding:0 12px;border-bottom:1px solid var(--grid);overflow-x:auto}
+.dbv-tab{all:unset;box-sizing:border-box;cursor:pointer;padding:10px 12px;font-size:13px;color:var(--ink2);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+.dbv-tab:hover{color:var(--ink)}.dbv-tab:focus-visible{outline:2px solid var(--pos);outline-offset:-2px;border-radius:4px}
+.dbv-tab[aria-selected="true"]{color:var(--ink);font-weight:600;border-bottom-color:var(--pos)}
+.dbv-tab .n{margin-left:6px;font-size:11px;font-weight:500;color:var(--muted)}
+.dbv-body{padding:20px}
+.dbv-grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.dbv-panel{border:1px solid var(--ring);border-radius:var(--r);padding:16px;background:var(--surface);min-width:0}
+.dbv-panel svg{max-width:460px}
+.dbv-panel-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-bottom:12px}
+.dbv-panel-h h3{margin:0;font-size:13px;font-weight:600;color:var(--ink)}
+.dbv-panel-h span{font-size:11.5px;color:var(--muted)}
+.dbv-note{font-size:11.5px;line-height:1.5;color:var(--muted);margin:10px 0 0;max-width:62ch}
+.dbv-check{display:grid;grid-template-columns:84px minmax(150px,230px) minmax(0,1fr);gap:4px 14px;align-items:baseline;padding:9px 0;font-size:12.5px}
+@media(max-width:640px){.dbv-check{grid-template-columns:84px minmax(0,1fr)}.dbv-check>:nth-child(3){grid-column:2}}
+.dbv-status{display:inline-block;border-radius:999px;padding:1px 9px;font-size:11px;font-weight:600;text-align:center;white-space:nowrap}
+.dbv-raise{display:grid;gap:10px 24px;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));padding-top:12px;border-top:1px solid var(--grid)}
+.dbv-raise:first-child{padding-top:0;border-top:0}
+.dbv-case{border:1px solid var(--ring);border-radius:var(--r);padding:16px;min-width:0}
+.dbv-case h3{margin:0 0 12px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.dbv-case ul{list-style:none;margin:0;padding:0;display:grid;gap:14px}
+.dbv-tag{display:inline-block;font-size:11px;font-weight:600;border-radius:4px;padding:0 6px;margin-bottom:4px;background:var(--wash);color:var(--ink)}
+.dbv-pt{font-size:13.5px;line-height:1.5;color:var(--ink)}
+.dbv-ev{font-size:11.5px;line-height:1.45;color:var(--muted);margin-top:3px}
+.dbv details>summary{cursor:pointer;color:var(--pos);font-size:12px}
 `;
 
 export type Num = number | "T" | null | undefined;
@@ -94,8 +140,8 @@ export function GrowthBars({ labels, sales, op, np }: { labels: string[]; sales:
         ))}
       </div>
       <svg viewBox={`0 0 ${W} ${H}`} width="100%" role="img" aria-label={`Year-on-year growth of sales, operating profit and net profit over ${labels.join(", ")}`}>
-        {ticks.map((t) => (
-          <g key={t}>
+        {ticks.map((t, ti) => (
+          <g key={`tick${ti}`}>
             <line x1={L} x2={W - R} y1={y(t)} y2={y(t)} stroke={t === 0 ? "var(--axis)" : "var(--grid)"} strokeWidth={1} />
             <text x={L - 4} y={y(t) + 3} textAnchor="end" fontSize={9} fill="var(--muted)">{t}%</text>
           </g>

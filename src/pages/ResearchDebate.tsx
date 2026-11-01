@@ -1,16 +1,18 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useData, useScreeners } from "../App";
 import { ScreenerLoading } from "../components/ScreenerTable";
-import { ConvictionBar, DeltaBars, Guard, GrowthBars, MarginLine, MiniFromHigh, MiniRsi, MiniSpark, Num, RsiMeter, RuleDots, RuleTiles, ShareCountBars, StatTile, TrendBars, VIZ_CSS, fmtSigned } from "../components/DebateViz";
+import { ConvictionBar, DeltaBars, Guard, GrowthBars, MarginLine, MiniFromHigh, RsiMeter, RuleDots, RuleTiles, StatTile, TrendBars, VIZ_CSS, fmtSigned, type Num } from "../components/DebateViz";
+import { MgmtTab, kept, keptColor, type Mgmt } from "../components/DebateMgmt";
 
-// Research Debate — added 2026-11-01 ("lets build ai agents or agent workflows for our app"); redesigned the same day as a visual page
-// ("too many words can be translated better by figures / bar charts / graphs").
+// Research Debate — added 2026-11-01 ("lets build ai agents or agent workflows for our app"). Redesigned the same day twice: first as charts instead of words, then (after "totally cluttered")
+// from a stack of 29 tall cards into a list + detail layout: the list on the left to pick a stock, and on the right the answer first (verdict, headline, key numbers) with the evidence in four
+// tabs — Debate, Business, Price, Management — so only one kind of evidence is on screen at a time.
 //
 // The StockDebate skill (~/.claude/skills/StockDebate) builds an evidence pack for each stock from this app's own data, has a bull, a bear and a fact-checker argue
 // from it, and pushes the verdict here as the `stockDebate` key. Each verdict carries a `metrics` snapshot computed by CODE from that same pack (growth series,
 // margin series, distance from the moving averages, RSI, P/E, ROCE...), which is what the charts draw — so a picture can never disagree with what the agents read,
-// and the rule checks shown are the code's, not the model's. Nothing is generated in the browser and no model key lives in this app.
-// An AI reading of stored numbers, never advice or an order.
+// and the rule checks shown are the code's, not the model's. `mgmt` (management and capital allocation) is built by code too (scripts/mgmt_block.py). Nothing is generated
+// in the browser and no model key lives in this app. An AI reading of stored numbers, never advice or an order.
 
 type Point = { tag?: string; point: string; evidence: string };
 interface Metrics {
@@ -21,20 +23,6 @@ interface Metrics {
   tech?: Record<string, number | null> | null;
   val?: { mcap_cr: number | null; pe: number | null; roce: number | null; roce_chg_1y: number | null; roe: number | null; borrowings_cr: number | null; wc_days: number | null };
   pos?: { weight: number | null; pnl_pct: number | null; hold_days: number | null };
-}
-// Management & capital allocation (added 2026-11-01, "track management track record"): the Guide page's own checks on how management treats shareholders' money (share count, EPS vs profit,
-// debt vs sales, ROCE/ROE acceleration, working capital) plus this stock's QIP / preferential / rights events from the Fund Raising page. Built by CODE (StockDebate scripts/mgmt_block.py), never by the model.
-type MgmtCheck = { n: number; label: string; pass: boolean | null; detail?: string };
-type MgmtRaise = { type: string; date?: string | null; stage?: string | null; amount_cr?: number | null; issue_price?: number | null; market_price?: number | null; disc?: number | null; since_rel?: number | null; m6_rel?: number | null; url?: string | null; reason?: string | null };
-interface Mgmt {
-  as_of?: string;
-  shares?: { years?: string[] | null; cr?: Num[] | null; "1Y"?: number | null; "3Y"?: number | null; "5Y"?: number | null; ex_bonus?: Record<string, number> | null; bonus_flags?: boolean[] | null };
-  checks?: MgmtCheck[];
-  passed?: number;
-  scored?: number;
-  roce_pts?: Record<string, number | null>;
-  roe_pts?: Record<string, number | null>;
-  raises?: MgmtRaise[];
 }
 type Verdict = {
   symbol: string;
@@ -57,6 +45,7 @@ type Verdict = {
 };
 
 const BADGE: Record<string, string> = { "Strong candidate": "bg-emerald-100 text-emerald-700", Watch: "bg-amber-100 text-amber-700", Avoid: "bg-red-100 text-red-700" };
+const VCOLOR: Record<string, string> = { "Strong candidate": "var(--good)", Watch: "var(--warn)", Avoid: "var(--crit)" };
 const ORDER: Record<string, number> = { "Strong candidate": 0, Watch: 1, Avoid: 2 };
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const firstSentence = (s: string) => (s.match(/^.*?[.!?](\s|$)/)?.[0] ?? s).trim();
@@ -70,243 +59,226 @@ const normQuarters = (q: Metrics["quarters"]): Quarters | null => {
   const n = Array.isArray(q?.labels) ? q!.labels.length : 0;
   return q && n ? { labels: q.labels, sales: arr(q.sales, n), op: arr(q.op, n), np: arr(q.np, n), opm: arr(q.opm, n) } : null;
 };
-
 const headlineOf = (v: Verdict) => v.headline || short(firstSentence(v.summary), 120);
 
-function Chip({ kind, text, title }: { kind: "bull" | "bear"; text: string; title: string }) {
+const Muted = ({ children }: { children: ReactNode }) => <div style={{ fontSize: 12, color: "var(--muted)" }}>{children}</div>;
+function Panel({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
   return (
-    <span title={title} className="inline-flex items-center gap-1 text-[11.5px] rounded-md px-2 py-0.5" style={{ border: "1px solid var(--ring)", color: "var(--ink)" }}>
-      <b style={{ color: kind === "bull" ? "var(--pos)" : "var(--neg)" }}>{kind === "bull" ? "▲" : "▼"}</b>
-      {text}
-    </span>
-  );
-}
-
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "var(--ink2)", marginBottom: 4 }}>{title}</div>
-      <div style={{ maxWidth: 380 }}>{children}</div>
-    </div>
-  );
-}
-
-function Points({ title, items, kind }: { title: string; items: Point[]; kind: "bull" | "bear" }) {
-  return (
-    <div className="flex-1 min-w-[260px]">
-      <div className="text-xs font-semibold mb-1" style={{ color: kind === "bull" ? "var(--pos)" : "var(--neg)" }}>{title}</div>
-      <ul className="space-y-2">
-        {items.map((p, i) => (
-          <li key={i} className="text-sm" style={{ color: "var(--ink)" }}>
-            {p.point}
-            <div className="text-[11px]" style={{ color: "var(--muted)" }}>↳ {p.evidence}</div>
-          </li>
-        ))}
-      </ul>
-    </div>
+    <section className="dbv-panel">
+      <div className="dbv-panel-h"><h3>{title}</h3>{hint && <span>{hint}</span>}</div>
+      {children}
+    </section>
   );
 }
 
 /** every number behind the charts, as a table (the text alternative to the pictures) */
-function NumbersTable({ m, q }: { m: Metrics; q: Quarters | null }) {
-  const cell = { padding: "2px 8px", textAlign: "right" as const, fontSize: 11 };
+function NumbersTable({ q }: { q: Quarters }) {
+  const cell = { padding: "4px 10px", textAlign: "right" as const, fontSize: 11.5, whiteSpace: "nowrap" as const };
   return (
-    <div className="space-y-3 overflow-x-auto">
-      {q && (
-        <table style={{ borderCollapse: "collapse", color: "var(--ink)" }}>
-          <thead>
-            <tr style={{ color: "var(--ink2)" }}>
-              <th style={{ ...cell, textAlign: "left" }}>Quarter</th>
-              {q.labels.map((l) => <th key={l} style={cell}>{l}</th>)}
+    <div className="overflow-x-auto">
+      <table style={{ borderCollapse: "collapse", color: "var(--ink)" }}>
+        <thead>
+          <tr style={{ color: "var(--ink2)" }}>
+            <th style={{ ...cell, textAlign: "left" }}>Quarter</th>
+            {q.labels.map((l) => <th key={l} style={cell}>{l}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {([["Sales growth (YoY)", q.sales, true], ["Operating profit growth (YoY)", q.op, true], ["Net profit growth (YoY)", q.np, true], ["Operating margin", q.opm, false]] as [string, Num[], boolean][]).map(([name, row, signed]) => (
+            <tr key={name} style={{ borderTop: "1px solid var(--grid)" }}>
+              <td style={{ ...cell, textAlign: "left", color: "var(--ink2)" }}>{name}</td>
+              {row.map((v, i) => <td key={i} style={cell}>{signed ? pct(v) : isNum(v) ? `${v.toFixed(1)}%` : "—"}</td>)}
             </tr>
-          </thead>
-          <tbody>
-            {([["Sales growth (YoY)", q.sales, true], ["Operating profit growth (YoY)", q.op, true], ["Net profit growth (YoY)", q.np, true], ["Operating margin", q.opm, false]] as [string, Num[], boolean][]).map(([name, row, signed]) => (
-              <tr key={name} style={{ borderTop: "1px solid var(--grid)" }}>
-                <td style={{ ...cell, textAlign: "left", color: "var(--ink2)" }}>{name}</td>
-                {row.map((v, i) => <td key={i} style={cell}>{signed ? pct(v) : isNum(v) ? `${v.toFixed(1)}%` : "—"}</td>)}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// the tabs
+
+function Case({ title, items, kind }: { title: string; items: Point[]; kind: "bull" | "bear" }) {
+  const color = kind === "bull" ? "var(--pos)" : "var(--neg)";
+  return (
+    <section className="dbv-case" style={{ borderTop: `3px solid ${color}` }}>
+      <h3 style={{ color: "var(--ink)" }}><span style={{ color }}>{kind === "bull" ? "▲" : "▼"}</span>{title}<span style={{ fontWeight: 400, color: "var(--muted)" }}>{items.length}</span></h3>
+      <ul>
+        {items.map((p, i) => (
+          <li key={i}>
+            {p.tag && <span className="dbv-tag">{p.tag}</span>}
+            <div className="dbv-pt">{p.point}</div>
+            <div className="dbv-ev">↳ {p.evidence}</div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function DebateTab({ v }: { v: Verdict }) {
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <p style={{ margin: 0, fontSize: 14, lineHeight: 1.6, color: "var(--ink)", maxWidth: "72ch" }}>{v.summary}</p>
+      <div className="dbv-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
+        <Case title="Bull case" items={v.bull} kind="bull" />
+        <Case title="Bear case" items={v.bear} kind="bear" />
+      </div>
+      {v.risks?.length > 0 && (
+        <Panel title="Biggest risks">
+          <ul style={{ margin: 0, paddingLeft: 18, display: "grid", gap: 6, fontSize: 13.5, lineHeight: 1.5, color: "var(--ink)" }}>{v.risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
+        </Panel>
       )}
-      {m.tech && (
-        <div style={{ fontSize: 11, color: "var(--ink2)" }}>
-          {[["vs 20-day EMA", "pct_20d_ema"], ["vs 50-day EMA", "pct_50d_ema"], ["vs 200-day EMA", "pct_200d_ema"], ["vs 33-week EMA", "pct_33w_ema"], ["from high", "pct_from_ath"], ["1 week", "w_pct_1w"], ["1 month", "w_pct_1m"], ["3 months", "w_pct_3m"], ["6 months", "w_pct_6m"], ["1 year", "yearly_pct"]]
-            .filter(([, k]) => isNum(m.tech![k]))
-            .map(([l, k]) => `${l} ${fmtSigned(m.tech![k] as number)}%`)
-            .join(" · ")}
+      {v.change_my_mind && (
+        <div style={{ borderLeft: "3px solid var(--pos)", background: "var(--wash)", borderRadius: "0 8px 8px 0", padding: "10px 14px", fontSize: 13.5, lineHeight: 1.5, color: "var(--ink)" }}>
+          <b style={{ display: "block", fontSize: 11.5, color: "var(--ink2)", marginBottom: 2 }}>What would change this</b>{v.change_my_mind}
         </div>
       )}
+      {((v.data_gaps?.length ?? 0) > 0 || (v.fact_check_dropped?.length ?? 0) > 0) && (
+        <details>
+          <summary>What the data did not cover, and what the fact-check removed</summary>
+          <div style={{ marginTop: 8, display: "grid", gap: 6, fontSize: 12, lineHeight: 1.5, color: "var(--ink2)" }}>
+            {v.data_gaps && v.data_gaps.length > 0 && <div><b>Not covered by the data: </b>{v.data_gaps.join("; ")}</div>}
+            {v.fact_check_dropped && v.fact_check_dropped.length > 0 && <div><b>Removed or softened by the fact-check: </b>{v.fact_check_dropped.join("; ")}</div>}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
 
-
-const RAISE_SHORT: Record<string, string> = { QIP: "QIP", "Preferential / warrants": "Preferential", "Rights issue": "Rights" };
-const mgmtShort = (d?: string | null) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" }) : "");
-const kept = (m?: Mgmt) => (m && isNum(m.passed) && isNum(m.scored) && m.scored > 0 ? { passed: m.passed, scored: m.scored } : null);
-
-function MgmtPanel({ mgmt }: { mgmt: Mgmt }) {
-  const sh = mgmt.shares ?? {};
-  const years = Array.isArray(sh.years) ? sh.years : [];
-  const shareCr = Array.isArray(sh.cr) ? sh.cr : [];
-  const checks = Array.isArray(mgmt.checks) ? mgmt.checks : [];
-  const raises = Array.isArray(mgmt.raises) ? mgmt.raises : [];
-  const k = kept(mgmt);
-  const pts = (m: Record<string, number | null> | undefined, who: string) => [["y1", "1 yr"], ["y3", "3 yrs"], ["y5", "5 yrs"]].map(([key, l]) => ({ label: `${who} · ${l}`, value: m?.[key] }));
-  const big = (v: number) => (Math.abs(v) >= 1000 ? `${v > 0 ? ">+" : "<−"}999%` : `${fmtSigned(v)}%`);
-  const dil = (label: string, v: number | null | undefined, adj?: number | null) => <span style={{ marginRight: 12 }}>{label} <b style={{ color: isNum(v) ? ((isNum(adj) ? adj : v) < 5 ? "var(--good-text)" : "var(--crit)") : "var(--muted)" }}>{isNum(v) ? big(v) : "—"}</b>{isNum(adj) && isNum(v) && <span style={{ color: "var(--muted)" }}> ({big(adj)} ex bonus/split)</span>}</span>;
-  const [open, setOpen] = useState(false);
-  const failed = checks.filter((c) => c.pass === false);
-  const sh3 = isNum(sh.ex_bonus?.["3Y"]) ? sh.ex_bonus!["3Y"] : sh["3Y"];
+function BusinessTab({ m, q }: { m: Metrics; q: Quarters | null }) {
+  const ml = m.margin_latest;
   return (
-    <div className="mt-4 pt-3" style={{ borderTop: "1px solid var(--grid)" }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--ink)" }}>Management and capital allocation</span>
-        {k ? <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ border: `1px solid ${k.passed / k.scored >= 0.7 ? "var(--good-text)" : k.passed / k.scored >= 0.4 ? "var(--warn)" : "var(--crit)"}`, color: "var(--ink)" }} title="how many of the checks passed (those the data could score)">{k.passed} of {k.scored} kept</span> : <span className="text-[11px]" style={{ color: "var(--muted)" }}>too little history to score</span>}
-        {isNum(sh3) && <span className="text-[11px]" style={{ color: "var(--ink2)" }}>shares {big(sh3)} in 3 yrs{isNum(sh.ex_bonus?.["3Y"]) ? " (ex bonus/split)" : ""}</span>}
-        <span className="text-[11px]" style={{ color: "var(--ink2)" }}>{raises.length ? `${raises.length} raise${raises.length > 1 ? "s" : ""} in 2 yrs` : "no raise in 2 yrs"}</span>
-        <button onClick={() => setOpen(!open)} className="text-xs ml-auto hover:underline" style={{ color: "var(--pos)" }}>{open ? "Hide" : "Show the charts"}</button>
-      </div>
-      {failed.length > 0 && <div className="flex flex-wrap gap-1.5 mt-1.5">{failed.map((c) => <span key={c.n} title={c.detail} className="text-[11px] px-2 py-0.5 rounded-full" style={{ border: "1px solid var(--crit)", color: "var(--ink)" }}><b style={{ color: "var(--crit)" }}>✗</b> {c.label}</span>)}</div>}
-      {open && <div className="mt-3">
-      <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))" }}>
-        <Panel title="New shares issued (share count by year)">
-          <ShareCountBars years={years} cr={shareCr} bonus={Array.isArray(sh.bonus_flags) ? sh.bonus_flags : undefined} />
-          <div style={{ fontSize: 11, color: "var(--ink2)", marginTop: 3 }}>Change in share count: {dil("1 yr", sh["1Y"], sh.ex_bonus?.["1Y"])}{dil("3 yrs", sh["3Y"], sh.ex_bonus?.["3Y"])}{dil("5 yrs", sh["5Y"], sh.ex_bonus?.["5Y"])}</div>
-          {sh.bonus_flags?.some(Boolean) && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 2 }}>Grey = likely bonus or split (a clean ratio): ignored by the check.</div>}
-        </Panel>
-        <Panel title="Did new capital earn more? (change in points)">
-          <DeltaBars rows={[...pts(mgmt.roce_pts, "ROCE"), ...pts(mgmt.roe_pts, "ROE")]} unit=" pts" />
-        </Panel>
-        <Panel title="Kept or not (the number behind each)">
-          {checks.length ? (
-            <ul style={{ fontSize: 11, color: "var(--ink)", listStyle: "none", padding: 0, margin: 0 }}>
-              {checks.map((c) => (
-                <li key={c.n} title={c.detail} style={{ display: "flex", gap: 6, padding: "2px 0", borderTop: "1px solid var(--grid)" }}>
-                  <b style={{ width: 12, color: c.pass === true ? "var(--good-text)" : c.pass === false ? "var(--crit)" : "var(--muted)" }}>{c.pass === true ? "✓" : c.pass === false ? "✗" : "?"}</b>
-                  <span style={{ flex: "0 0 auto", minWidth: 130 }}>{c.label}</span>
-                  <span style={{ color: "var(--muted)" }}>{short(c.detail ?? "", 64)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No checks available.</div>}
-        </Panel>
-      </div>
-      <div className="mt-3">
-        <Panel title="Raises in the last two years (NSE filings)">
-          {raises.length ? (
-            <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))" }}>
-              <ul style={{ fontSize: 11, color: "var(--ink)", listStyle: "none", padding: 0, margin: 0 }}>
-                {raises.map((r, i) => (
-                  <li key={i} style={{ padding: "3px 0", borderTop: "1px solid var(--grid)" }}>
-                    <b>{RAISE_SHORT[r.type] ?? r.type}</b> · {mgmtShort(r.date)}{r.stage ? ` · ${r.stage}` : ""}{isNum(r.amount_cr) ? ` · ${cr(r.amount_cr)}` : ""}
-                    {isNum(r.issue_price) && <span style={{ color: "var(--ink2)" }}> · at ₹{r.issue_price.toLocaleString("en-IN")}{isNum(r.market_price) ? ` vs market ₹${r.market_price.toLocaleString("en-IN")}` : ""}{isNum(r.disc) ? ` (${fmtSigned(r.disc * 100)}%)` : ""}</span>}
-                    {r.url && <a href={r.url} target="_blank" rel="noreferrer" style={{ color: "var(--pos)", marginLeft: 6 }}>filing ↗</a>}
-                  </li>
-                ))}
-              </ul>
-              <div>
-                <div style={{ fontSize: 10.5, color: "var(--muted)", marginBottom: 2 }}>Move vs the Nifty Midcap 150, from the filing to now</div>
-                <DeltaBars rows={raises.map((r) => ({ label: `${RAISE_SHORT[r.type] ?? r.type} ${mgmtShort(r.date)}`, value: isNum(r.since_rel) ? r.since_rel * 100 : null, note: "return relative to the index since the first close after the filing" }))} />
-              </div>
-            </div>
-          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No QIP, preferential or rights issue found in NSE filings over the last two years.</div>}
-        </Panel>
-      </div>
-      <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 8 }}>From filings and reported numbers: a mechanical count, not a verdict on character.</div>
-      </div>}
-    </div>
-  );
-}
-
-function Card({ v, id }: { v: Verdict; id: string }) {
-  const [open, setOpen] = useState(false);
-  const m = v.metrics ?? {};
-  const q = normQuarters(m.quarters);
-  const val = m.val;
-  const pos = m.pos;
-  return (
-    <div id={id} className="rounded-xl p-4" style={{ border: "1px solid var(--ring)", background: "var(--surface)", scrollMarginTop: 80 }}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-base" style={{ color: "var(--ink)" }}>{v.symbol}</span>
-        {v.name && <span className="text-xs" style={{ color: "var(--ink2)" }}>{v.name}</span>}
-        <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${BADGE[v.verdict] ?? ""}`}>{v.verdict}</span>
-        <ConvictionBar n={v.conviction} />
-        {v.held && <span className="text-[11px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">held{isNum(pos?.weight) ? ` · ${pos!.weight!.toFixed(1)}% of portfolio` : ""}{isNum(pos?.pnl_pct) ? ` · ${fmtSigned(pos!.pnl_pct!)}% P&L` : ""}</span>}
-        {m.partial && <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: "var(--wash)", color: "var(--ink2)" }} title="Outside the NSE 750 data: no quarterly series, so some charts are replaced by the latest quarter only">partial data</span>}
-        <span className="ml-auto text-[11px]" style={{ color: "var(--muted)" }}>{v.as_of}</span>
-      </div>
-      <div className="mt-1.5 text-[15px]" style={{ color: "var(--ink)" }}>{headlineOf(v)}</div>
-      <div className="mt-2"><RuleTiles rules={v.rule_check} /></div>
-
-      <div className="grid gap-5 mt-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))" }}>
-        <Panel title="Growth vs a year ago">
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="dbv-grid">
+        <Panel title="Growth vs a year ago" hint="last quarters">
           {q ? <GrowthBars labels={q.labels} sales={q.sales} op={q.op} np={q.np} /> : m.latest ? (
             <div className="flex flex-wrap gap-2">
               <StatTile label="Sales growth" value={pct(m.latest.sales)} sub="latest quarter" />
               <StatTile label="Net profit growth" value={pct(m.latest.np)} sub="latest quarter" />
               <StatTile label="EPS growth" value={pct(m.latest.eps)} sub="latest quarter" />
             </div>
-          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No growth data.</div>}
+          ) : <Muted>No growth data.</Muted>}
         </Panel>
-        <Panel title="Operating margin">
-          {q && q.opm.some(isNum) ? <MarginLine labels={q.labels} opm={q.opm} /> : m.margin_latest && isNum(m.margin_latest.opm) ? (
+        <Panel title="Operating margin" hint="quarterly">
+          {q && q.opm.some(isNum) ? <MarginLine labels={q.labels} opm={q.opm} /> : ml && isNum(ml.opm) ? (
             <div>
               <div className="flex flex-wrap gap-2">
-                <StatTile label="Operating margin" value={`${m.margin_latest.opm.toFixed(1)}%`} sub={isNum(m.margin_latest.opm_qoq) || isNum(m.margin_latest.opm_yoy) ? `${isNum(m.margin_latest.opm_qoq) ? `${fmtSigned(m.margin_latest.opm_qoq)} pts vs last quarter` : ""}${isNum(m.margin_latest.opm_qoq) && isNum(m.margin_latest.opm_yoy) ? " · " : ""}${isNum(m.margin_latest.opm_yoy) ? `${fmtSigned(m.margin_latest.opm_yoy)} vs a year ago` : ""}` : undefined} subGood={isNum(m.margin_latest.opm_yoy) ? m.margin_latest.opm_yoy >= 0 : null} />
-                {isNum(m.margin_latest.gpm) && <StatTile label="Gross margin" value={`${m.margin_latest.gpm.toFixed(1)}%`} sub={isNum(m.margin_latest.gpm_yoy) ? `${fmtSigned(m.margin_latest.gpm_yoy)} vs a year ago` : undefined} subGood={isNum(m.margin_latest.gpm_yoy) ? m.margin_latest.gpm_yoy >= 0 : null} />}
+                <StatTile label="Operating margin" value={`${ml.opm.toFixed(1)}%`} sub={isNum(ml.opm_qoq) || isNum(ml.opm_yoy) ? `${isNum(ml.opm_qoq) ? `${fmtSigned(ml.opm_qoq)} vs last quarter` : ""}${isNum(ml.opm_qoq) && isNum(ml.opm_yoy) ? " · " : ""}${isNum(ml.opm_yoy) ? `${fmtSigned(ml.opm_yoy)} vs a year ago` : ""}` : undefined} subGood={isNum(ml.opm_yoy) ? ml.opm_yoy >= 0 : null} />
+                {isNum(ml.gpm) && <StatTile label="Gross margin" value={`${ml.gpm.toFixed(1)}%`} sub={isNum(ml.gpm_yoy) ? `${fmtSigned(ml.gpm_yoy)} vs a year ago` : undefined} subGood={isNum(ml.gpm_yoy) ? ml.gpm_yoy >= 0 : null} />}
               </div>
-              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4 }}>Latest quarter only{m.margin_latest.quarter ? ` (${m.margin_latest.quarter})` : ""}: this company has no six-quarter margin series in the data.</div>
+              <p className="dbv-note">Latest quarter only{ml.quarter ? ` (${ml.quarter})` : ""}: this company has no six-quarter margin series in the data.</p>
             </div>
-          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No operating-margin series for this stock (financial companies, such as banks and exchanges, do not report one).</div>}
-        </Panel>
-        <Panel title="Where the price sits">
-          {m.tech ? (
-            <div className="space-y-2">
-              <RsiMeter rsi={m.tech.rsi_w} />
-              <TrendBars tech={m.tech} />
-            </div>
-          ) : <div style={{ fontSize: 11, color: "var(--muted)" }}>No price data.</div>}
+          ) : <Muted>No operating-margin series for this stock (financial companies, such as banks and exchanges, do not report one).</Muted>}
         </Panel>
       </div>
-
-      {v.mgmt && <Guard label="the management panel"><MgmtPanel mgmt={v.mgmt} /></Guard>}
-
-      <div className="flex flex-wrap gap-2 mt-3">
-        <StatTile label="P/E (trailing)" value={isNum(val?.pe) ? val!.pe!.toFixed(0) : "—"} sub={isNum(val?.pe) ? undefined : "not meaningful (no trailing profit)"} />
-        <StatTile label="ROCE" value={isNum(val?.roce) ? `${val!.roce!.toFixed(0)}%` : "—"} sub={isNum(val?.roce_chg_1y) ? `${fmtSigned(val!.roce_chg_1y!)} pts in a year` : undefined} subGood={isNum(val?.roce_chg_1y) ? val!.roce_chg_1y! >= 0 : null} />
-        <StatTile label="Borrowings" value={cr(val?.borrowings_cr)} />
-        <StatTile label="Market cap" value={cr(val?.mcap_cr)} />
-        {isNum(m.tech?.yearly_pct) && <StatTile label="1-year price" value={`${fmtSigned(m.tech!.yearly_pct!, 0)}%`} />}
-      </div>
-
-      <div className="flex flex-wrap gap-1.5 mt-3">
-        {v.bull.slice(0, 3).map((p, i) => <Chip key={`b${i}`} kind="bull" text={p.tag || short(p.point)} title={p.point} />)}
-        {v.bear.slice(0, 3).map((p, i) => <Chip key={`r${i}`} kind="bear" text={p.tag || short(p.point)} title={p.point} />)}
-      </div>
-
-      <button onClick={() => setOpen(!open)} className="text-xs mt-3 hover:underline" style={{ color: "var(--pos)" }}>{open ? "Hide the details" : "Details: the reasoning, the numbers and what is missing"}</button>
-      {open && (
-        <div className="mt-3 space-y-4">
-          <p className="text-sm" style={{ color: "var(--ink)" }}>{v.summary}</p>
-          <div className="flex flex-wrap gap-5">
-            <Points title="Bull case" items={v.bull} kind="bull" />
-            <Points title="Bear case" items={v.bear} kind="bear" />
-          </div>
-          {v.risks?.length > 0 && <div><div className="text-xs font-semibold mb-1" style={{ color: "var(--ink2)" }}>Biggest risks</div><ul className="list-disc ml-5 text-sm" style={{ color: "var(--ink)" }}>{v.risks.map((r, i) => <li key={i}>{r}</li>)}</ul></div>}
-          {v.change_my_mind && <div className="text-sm" style={{ color: "var(--ink)" }}><b className="text-xs" style={{ color: "var(--ink2)" }}>What would change this: </b>{v.change_my_mind}</div>}
-          {q || m.tech ? <div><div className="text-xs font-semibold mb-1" style={{ color: "var(--ink2)" }}>The numbers behind the charts</div><NumbersTable m={m} q={q} /></div> : null}
-          {v.data_gaps && v.data_gaps.length > 0 && <div className="text-xs" style={{ color: "var(--muted)" }}><b>Not covered by the data: </b>{v.data_gaps.join("; ")}</div>}
-          {v.fact_check_dropped && v.fact_check_dropped.length > 0 && <div className="text-xs" style={{ color: "var(--muted)" }}><b>Removed or softened by the fact-check: </b>{v.fact_check_dropped.join("; ")}</div>}
-        </div>
+      {q && (
+        <details>
+          <summary>The numbers behind the charts</summary>
+          <div style={{ marginTop: 8 }}><NumbersTable q={q} /></div>
+        </details>
       )}
     </div>
   );
 }
 
+const MOVES: [string, string][] = [["1 week", "w_pct_1w"], ["1 month", "w_pct_1m"], ["3 months", "w_pct_3m"], ["6 months", "w_pct_6m"], ["1 year", "yearly_pct"]];
+function PriceTab({ m }: { m: Metrics }) {
+  const t = m.tech;
+  if (!t) return <Muted>No price data for this stock.</Muted>;
+  return (
+    <div className="dbv-grid">
+      <Panel title="Weekly RSI" hint="the tick is your 66 bar"><RsiMeter rsi={t.rsi_w} /></Panel>
+      <Panel title="Against its moving averages" hint="above or below"><TrendBars tech={t} /></Panel>
+      <Panel title="Price change" hint="over each period"><DeltaBars rows={MOVES.map(([label, k]) => ({ label, value: t[k] }))} /></Panel>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// the detail pane
+
+type Tab = "debate" | "business" | "price" | "mgmt";
+const TABS: Tab[] = ["debate", "business", "price", "mgmt"];
+
+function Kpi({ label, value, sub, subGood, onClick, title }: { label: string; value: ReactNode; sub?: ReactNode; subGood?: boolean | null; onClick?: () => void; title?: string }) {
+  const body = (
+    <>
+      <div style={{ fontSize: 11, color: "var(--ink2)" }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: "var(--ink)", lineHeight: 1.3 }}>{value}</div>
+      <div style={{ fontSize: 11, minHeight: 15, color: subGood === true ? "var(--good-text)" : subGood === false ? "var(--crit)" : "var(--muted)" }}>{sub ?? ""}</div>
+    </>
+  );
+  return onClick ? <button className="dbv-kpi" onClick={onClick} title={title}>{body}</button> : <div className="dbv-kpi" title={title}>{body}</div>;
+}
+
+function Detail({ v, tab, setTab }: { v: Verdict; tab: Tab; setTab: (t: Tab) => void }) {
+  const m = v.metrics ?? {};
+  const q = normQuarters(m.quarters);
+  const { val, pos } = m;
+  const k = kept(v.mgmt);
+  const labels: Record<Tab, ReactNode> = {
+    debate: <>Debate<span className="n">{v.bull.length} for · {v.bear.length} against</span></>,
+    business: "Business",
+    price: "Price",
+    mgmt: <>Management{k && <span className="n" style={{ color: keptColor(k.passed, k.scored), fontWeight: 600 }}>{k.passed}/{k.scored}</span>}</>,
+  };
+  const onKey = (e: KeyboardEvent) => {
+    const i = TABS.indexOf(tab);
+    const next = e.key === "ArrowRight" ? TABS[(i + 1) % TABS.length] : e.key === "ArrowLeft" ? TABS[(i + TABS.length - 1) % TABS.length] : null;
+    if (next) { e.preventDefault(); setTab(next); document.getElementById(`dbv-tab-${next}`)?.focus(); }
+  };
+  return (
+    <article id="dbv-detail" className="dbv-detail" aria-label={`${v.symbol} research debate`}>
+      <header className="dbv-dhead">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600, color: "var(--ink)", lineHeight: 1.2 }}>{v.symbol}</h2>
+          {v.name && <span style={{ fontSize: 13, color: "var(--ink2)" }}>{v.name}</span>}
+          <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ marginLeft: "auto", color: "var(--muted)" }}>{v.as_of}</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${BADGE[v.verdict] ?? ""}`}>{v.verdict}</span>
+          <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: "var(--ink2)" }}>Conviction <ConvictionBar n={v.conviction} /> {v.conviction} of 5</span>
+          {v.held && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">held{isNum(pos?.weight) ? ` · ${pos!.weight!.toFixed(1)}% of portfolio` : ""}{isNum(pos?.pnl_pct) ? ` · ${fmtSigned(pos!.pnl_pct!, 0)}% P&L` : ""}</span>}
+          {m.partial && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: "var(--wash)", color: "var(--ink2)" }} title="Outside the NSE 750 data: no quarterly series, so some charts are replaced by the latest figures only">partial data</span>}
+        </div>
+        <p style={{ margin: "14px 0 0", fontSize: 17, lineHeight: 1.45, fontWeight: 500, color: "var(--ink)", maxWidth: "60ch" }}>{headlineOf(v)}</p>
+        <div className="mt-3"><RuleTiles rules={v.rule_check} /></div>
+      </header>
+
+      <div className="dbv-kpis">
+        <Kpi label="P/E (trailing)" value={isNum(val?.pe) ? val!.pe!.toFixed(0) : "—"} sub={isNum(val?.pe) ? undefined : "no trailing profit"} />
+        <Kpi label="ROCE" value={isNum(val?.roce) ? `${val!.roce!.toFixed(0)}%` : "—"} sub={isNum(val?.roce_chg_1y) ? `${fmtSigned(val!.roce_chg_1y!)} pts in a year` : undefined} subGood={isNum(val?.roce_chg_1y) ? val!.roce_chg_1y! >= 0 : null} />
+        <Kpi label="Borrowings" value={cr(val?.borrowings_cr)} />
+        <Kpi label="Market cap" value={cr(val?.mcap_cr)} />
+        <Kpi label="1-year price" value={isNum(m.tech?.yearly_pct) ? `${fmtSigned(m.tech!.yearly_pct!, 0)}%` : "—"} subGood={isNum(m.tech?.yearly_pct) ? m.tech!.yearly_pct! >= 0 : null} />
+        <Kpi label="Management" value={k ? <span style={{ color: keptColor(k.passed, k.scored) }}>{k.passed} of {k.scored}</span> : "—"} sub={k ? "checks kept" : "not scored"} onClick={v.mgmt ? () => setTab("mgmt") : undefined} title="Open the management tab" />
+      </div>
+
+      <div role="tablist" aria-label="Evidence" className="dbv-tabs" onKeyDown={onKey}>
+        {TABS.map((t) => (
+          <button key={t} role="tab" id={`dbv-tab-${t}`} aria-selected={tab === t} aria-controls="dbv-panel" tabIndex={tab === t ? 0 : -1} className="dbv-tab" onClick={() => setTab(t)}>{labels[t]}</button>
+        ))}
+      </div>
+      <div role="tabpanel" id="dbv-panel" aria-labelledby={`dbv-tab-${tab}`} className="dbv-body">
+        <Guard label={`the ${tab} tab`}>
+          {tab === "debate" && <DebateTab v={v} />}
+          {tab === "business" && <BusinessTab m={m} q={q} />}
+          {tab === "price" && <PriceTab m={m} />}
+          {tab === "mgmt" && (v.mgmt ? <MgmtTab mgmt={v.mgmt} /> : <Muted>No management data for this stock yet. Run the management block (StockDebate scripts/mgmt_block.py) and push.</Muted>)}
+        </Guard>
+      </div>
+    </article>
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// the page
+
 type SortKey = "conviction" | "weight" | "symbol" | "verdict" | "mgmt";
+const FILTERS = ["all", "Strong candidate", "Watch", "Avoid"] as const;
 
 export default function ResearchDebate() {
   const { bundle } = useData();
@@ -314,85 +286,117 @@ export default function ResearchDebate() {
   const [filter, setFilter] = useState<string>("all");
   const [sort, setSort] = useState<SortKey>("conviction");
   const [q, setQ] = useState("");
+  const [sel, setSel] = useState<string>(() => (typeof window !== "undefined" ? decodeURIComponent(window.location.hash.slice(1)).toUpperCase() : ""));
+  const [tab, setTab] = useState<Tab>("debate");
   const rows: Verdict[] = (bundle.momentum_screeners as any)?.stockDebate?.rows ?? [];
   const w = (v: Verdict) => v.metrics?.pos?.weight ?? 0;
+  const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f, f === "all" ? rows.length : rows.filter((v) => v.verdict === f).length])), [rows]);
   const shown = useMemo(() => {
     const list = rows.filter((v) => (filter === "all" || v.verdict === filter) && (!q || v.symbol.includes(q.toUpperCase())));
+    const ratio = (v: Verdict) => { const k = kept(v.mgmt); return k ? k.passed / k.scored : -1; };
     const by: Record<SortKey, (a: Verdict, b: Verdict) => number> = {
       conviction: (a, b) => b.conviction - a.conviction || w(b) - w(a),
       weight: (a, b) => w(b) - w(a),
-      mgmt: (a, b) => { const r = (v: Verdict) => { const k = kept(v.mgmt); return k ? k.passed / k.scored : -1; }; return r(b) - r(a); },
+      mgmt: (a, b) => ratio(b) - ratio(a) || w(b) - w(a),
       symbol: (a, b) => a.symbol.localeCompare(b.symbol),
       verdict: (a, b) => ORDER[a.verdict] - ORDER[b.verdict] || b.conviction - a.conviction,
     };
     return [...list].sort(by[sort]);
   }, [rows, filter, q, sort]);
+  const current = shown.find((v) => v.symbol === sel) ?? shown[0];
+  useEffect(() => {
+    const onHash = () => setSel(decodeURIComponent(window.location.hash.slice(1)).toUpperCase());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+  useEffect(() => {
+    if (!current || typeof window === "undefined") return;
+    window.history.replaceState(null, "", `#${current.symbol}`);
+    document.getElementById(`dbvr-${current.symbol}`)?.scrollIntoView({ block: "nearest" }); // keep the picked row in view in the list
+  }, [current?.symbol]);
   if (!ready) return <ScreenerLoading label="research debates" />;
 
-  const go = (sym: string) => document.getElementById(`dbv-${sym}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  const th = { padding: "6px 10px", textAlign: "left" as const, fontSize: 11, fontWeight: 600, color: "var(--ink2)", whiteSpace: "nowrap" as const };
-  const td = { padding: "6px 10px", fontSize: 12, color: "var(--ink)", whiteSpace: "nowrap" as const };
+  const pick = (sym: string, focus = false) => {
+    setSel(sym);
+    if (focus) document.getElementById(`dbvr-${sym}`)?.focus();
+    else if (typeof window !== "undefined" && window.innerWidth < 1024) setTimeout(() => document.getElementById("dbv-detail")?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  };
+  const onListKey = (e: KeyboardEvent) => {
+    if (!current || (e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
+    const i = shown.findIndex((v) => v.symbol === current.symbol);
+    const n = shown[Math.min(shown.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))];
+    if (n) { e.preventDefault(); pick(n.symbol, true); }
+  };
+
   return (
     <div className="dbv">
       <style>{VIZ_CSS}</style>
-      <div className="flex flex-wrap items-baseline gap-3 mb-1">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-lg font-semibold">🗣️ Research Debate</h1>
-        <span className="text-xs text-slate-500">{rows.length} stock{rows.length === 1 ? "" : "s"} debated · bull, bear and a fact-checker, arguing only from this app's own data</span>
+        <span className="text-xs text-slate-500">{rows.length} stock{rows.length === 1 ? "" : "s"} · a bull, a bear and a fact-checker arguing only from this app's own data</span>
       </div>
-      <div className="text-xs text-slate-500 border border-slate-200 rounded-lg px-3 py-2 my-3 bg-slate-50">
-        A second opinion on stocks you already hold or shortlisted: an AI reading of stored numbers, <b>not advice and never an order</b>. Charts and the four rule checks are computed by code from the same data the agents read;
-        the headline and reasoning are the agents'. Hover a chart for exact values; open <i>Details</i> for the words and the numbers.
-        To add one, ask Claude: <i>run StockDebate on SYMBOL</i>.
-      </div>
+      <details className="my-2">
+        <summary>How to read this page</summary>
+        <p className="text-xs text-slate-500 mt-2" style={{ maxWidth: "80ch", lineHeight: 1.6 }}>
+          A second opinion on stocks you already hold or shortlisted: an AI reading of stored numbers, <b>not advice and never an order</b>. The charts, the four rule checks and the management checks are computed by code
+          from the same data the agents read; the headline and the reasoning are the agents'. Pick a stock on the left; the tabs hold the evidence. Hover a chart for exact values. To add one, ask Claude: <i>run StockDebate on SYMBOL</i>.
+        </p>
+      </details>
 
       <div className="flex flex-wrap items-center gap-2 mb-3">
-        {["all", "Strong candidate", "Watch", "Avoid"].map((f) => (
-          <button key={f} onClick={() => setFilter(f)} className={`text-xs px-2.5 py-1 rounded border ${filter === f ? "bg-slate-800 text-white border-slate-800" : "border-slate-300 text-slate-600"}`}>
-            {f === "all" ? "All" : f}
-          </button>
-        ))}
-        <label className="text-xs text-slate-500 ml-2">Sort by{" "}
+        <div role="group" aria-label="Filter by verdict" className="inline-flex rounded-lg overflow-hidden" style={{ border: "1px solid var(--ring)" }}>
+          {FILTERS.map((f) => (
+            <button key={f} onClick={() => setFilter(f)} aria-pressed={filter === f} className="text-xs px-3 py-1.5"
+              style={{ background: filter === f ? "var(--ink)" : "var(--surface)", color: filter === f ? "var(--surface)" : "var(--ink2)", borderLeft: f === "all" ? 0 : "1px solid var(--ring)" }}>
+              {f === "all" ? "All" : f} <span style={{ opacity: 0.65 }}>{counts[f]}</span>
+            </button>
+          ))}
+        </div>
+        <label className="text-xs text-slate-500">Sort{" "}
           <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="border border-slate-300 rounded px-1.5 py-1 text-xs text-slate-700">
             <option value="conviction">Conviction</option><option value="weight">Portfolio weight</option><option value="mgmt">Management checks</option><option value="verdict">Verdict</option><option value="symbol">Symbol</option>
           </select>
         </label>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Symbol" className="ml-auto px-2 py-1 border border-slate-300 rounded text-sm w-32" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a symbol" aria-label="Find a symbol" className="ml-auto px-2 py-1 border border-slate-300 rounded text-sm w-36" />
       </div>
 
-      {shown.length === 0 ? (
+      {!current ? (
         <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg p-6 text-center">
           {rows.length === 0 ? "No debates yet. Ask Claude to run StockDebate on a stock and it will show up here." : "Nothing matches that filter."}
         </div>
       ) : (
-        <>
-          <Guard label="the comparison table"><div className="overflow-x-auto rounded-xl mb-5" style={{ border: "1px solid var(--ring)", background: "var(--surface)" }}>
-            <table style={{ borderCollapse: "collapse", width: "100%" }}>
-              <thead>
-                <tr style={{ borderBottom: "1px solid var(--grid)" }}>
-                  <th style={th}>Stock</th><th style={th}>Verdict</th><th style={th}>Conviction</th><th style={th} title="RSI > 66 · above 33W EMA · margins held · Stage 2">Rules</th>
-                  <th style={th} title="how many management / capital-allocation checks passed: new shares, EPS vs profit, debt vs sales, ROCE and ROE, working capital">Mgmt</th><th style={{ ...th, textAlign: "right" }}>Weight</th><th style={th}>From the high</th><th style={th} title="weekly RSI; the tick marks your 66 bar">Weekly RSI</th><th style={th}>Op. margin</th><th style={{ ...th, textAlign: "right" }}>P/E</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((v) => (
-                  <tr key={v.symbol} onClick={() => go(v.symbol)} className="cursor-pointer hover:bg-slate-50" style={{ borderTop: "1px solid var(--grid)" }}>
-                    <td style={{ ...td, fontWeight: 600 }}>{v.symbol}</td>
-                    <td style={td}><span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${BADGE[v.verdict] ?? ""}`}>{v.verdict}</span></td>
-                    <td style={td}><ConvictionBar n={v.conviction} /></td>
-                    <td style={td}><RuleDots rules={v.rule_check} /></td>
-                    <td style={td}>{(() => { const k = kept(v.mgmt); return k ? <span style={{ fontSize: 11, color: "var(--ink)" }} title="management and capital-allocation checks passed"><b style={{ color: k.passed / k.scored >= 0.7 ? "var(--good-text)" : k.passed / k.scored >= 0.4 ? "var(--ink)" : "var(--crit)" }}>{k.passed}</b>/{k.scored}</span> : <span style={{ color: "var(--muted)" }}>—</span>; })()}</td>
-                    <td style={{ ...td, textAlign: "right" }}>{isNum(v.metrics?.pos?.weight) ? `${v.metrics!.pos!.weight!.toFixed(1)}%` : "—"}</td>
-                    <td style={td}><MiniFromHigh v={v.metrics?.tech?.pct_from_ath} /></td>
-                    <td style={td}><MiniRsi v={v.metrics?.tech?.rsi_w} /></td>
-                    <td style={td}><MiniSpark vals={v.metrics?.quarters?.opm} /></td>
-                    <td style={{ ...td, textAlign: "right" }}>{isNum(v.metrics?.val?.pe) ? v.metrics!.val!.pe!.toFixed(0) : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div></Guard>
-          <div className="space-y-4">{shown.map((v) => <Guard key={v.symbol} label={`the ${v.symbol} card`}><Card v={v} id={`dbv-${v.symbol}`} /></Guard>)}</div>
-        </>
+        <div className="dbv-layout">
+          <Guard label="the list">
+            <nav aria-label="Stocks" className="dbv-list" onKeyDown={onListKey}>
+              <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                {shown.map((v) => {
+                  const kp = kept(v.mgmt);
+                  return (
+                    <li key={v.symbol}>
+                      <button id={`dbvr-${v.symbol}`} className="dbv-row" aria-current={v.symbol === current.symbol} onClick={() => pick(v.symbol)}>
+                        <span className="dbv-vbar" style={{ background: VCOLOR[v.verdict] ?? "var(--muted)" }} aria-hidden />
+                        <span className="dbv-r1">
+                          <b style={{ fontWeight: 600 }}>{v.symbol}</b>
+                          <span style={{ fontSize: 11, color: "var(--muted)" }}>{isNum(v.metrics?.pos?.weight) ? `${v.metrics!.pos!.weight!.toFixed(1)}%` : ""}</span>
+                          <span className="sp" />
+                          <span style={{ fontSize: 11, color: v.verdict === "Avoid" ? "var(--crit)" : "var(--ink2)", fontWeight: 600 }}>{v.verdict === "Strong candidate" ? "Strong" : v.verdict}</span>
+                        </span>
+                        <span className="dbv-r2">
+                          <ConvictionBar n={v.conviction} />
+                          <RuleDots rules={v.rule_check} />
+                          <MiniFromHigh v={v.metrics?.tech?.pct_from_ath} />
+                          <span className="sp" style={{ flex: 1 }} />
+                          <span title="management and capital-allocation checks kept" style={{ color: kp ? keptColor(kp.passed, kp.scored) : "var(--muted)", fontWeight: 600 }}>{kp ? `${kp.passed}/${kp.scored}` : "—"}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </nav>
+          </Guard>
+          <Guard label={`the ${current.symbol} detail`}><Detail key={current.symbol} v={current} tab={tab} setTab={setTab} /></Guard>
+        </div>
       )}
     </div>
   );
