@@ -161,17 +161,22 @@ function compareVals(a: any, b: any): number {
 // next [to] company name under symbol col with a tap/untap"). Not a
 // Watchlist-only control: renders wherever `watchlist` is passed to
 // GenericTable, i.e. every screener page.
-export function WatchlistStar({ active, onToggle, symbol }: { active: boolean; onToggle: (symbol: string) => void; symbol: string }) {
+export function WatchlistStar({ active, onToggle, symbol, held }: { active: boolean; onToggle: (symbol: string) => void; symbol: string; held?: boolean }) {
+  // 2026-11-01 ("yellow if still in holdings, else green"): yellow = in your holdings (whether or not it is also on the watchlist);
+  // green = on the watchlist but NOT in your holdings (not bought yet, or sold); grey outline = neither. Clicking still toggles the watchlist only.
+  const state = held ? (active ? "held and on your watchlist" : "in your holdings") : active ? "on your watchlist, not in your holdings" : "";
+  const title = state ? `${symbol} — ${state}. Click to ${active ? "remove from" : "add to"} the watchlist.` : `Add ${symbol} to watchlist`;
+  const color = held ? "text-yellow-400" : active ? "text-emerald-500" : "text-slate-300 hover:text-amber-400";
   return (
     <button
       onClick={(e) => {
         e.stopPropagation();
         onToggle(symbol);
       }}
-      title={active ? `Remove ${symbol} from watchlist` : `Add ${symbol} to watchlist`}
-      className={`mr-1 leading-none align-middle ${active ? "text-amber-500" : "text-slate-300 hover:text-amber-400"}`}
+      title={title}
+      className={`mr-1 leading-none align-middle ${color}`}
     >
-      {active ? "★" : "☆"}
+      {held || active ? "★" : "☆"}
     </button>
   );
 }
@@ -189,6 +194,7 @@ function gridLineClass(gridLines: boolean, c: Col, i: number): string {
 export interface WatchlistControl {
   set: Set<string>;
   toggle: (symbol: string) => void;
+  held?: Set<string>; // symbols currently in the portfolio (latest PF snapshot) — drives the star colour
 }
 
 const PAGE_ROWS = 150;
@@ -441,7 +447,7 @@ export function GenericTable({
                     >
                       {c.key === "symbol" ? (
                         <>
-                          {watchlist && <WatchlistStar active={watchlist.set.has(sym)} onToggle={watchlist.toggle} symbol={sym} />}
+                          {watchlist && <WatchlistStar active={watchlist.set.has(sym)} onToggle={watchlist.toggle} symbol={sym} held={watchlist.held?.has(sym)} />}
                           <button onClick={() => navigate(String(r.symbol))} className="hover:underline">
                             {r.symbol}
                           </button>

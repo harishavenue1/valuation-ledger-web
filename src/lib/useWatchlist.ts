@@ -1,4 +1,5 @@
-import { useData } from "../App";
+import { useMemo } from "react";
+import { useData, useScreeners } from "../App";
 import { api } from "./api";
 
 // Shared by every screener page's Symbol-column star toggle
@@ -8,6 +9,10 @@ import { api } from "./api";
 export function useWatchlist() {
   const { bundle, setBundle } = useData();
   const set = new Set(bundle.watchlist.tickers);
+  // 2026-11-01 ("yellow if still in holdings, else green"): the holdings are the latest PF snapshot — the same source the Guidance and Business Radar pages
+  // use for "My holdings". A stock sold since the last PF update still counts as held until the next update.
+  useScreeners(["portfolioAllocation"]);
+  const held = useMemo(() => new Set<string>(((bundle.momentum_screeners as any)?.portfolioAllocation?.rows ?? []).map((r: any) => r.symbol)), [bundle.momentum_screeners]);
 
   function toggle(symbol: string) {
     const wasIn = set.has(symbol);
@@ -24,5 +29,5 @@ export function useWatchlist() {
     });
   }
 
-  return { set, toggle };
+  return { set, toggle, held };
 }
