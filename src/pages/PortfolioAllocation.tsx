@@ -670,24 +670,46 @@ export default function PortfolioAllocation() {
     return c;
   }, [rows, sizeFilter]);
   const shownCount = useMemo(() => rows.filter((r) => bySize(r) && byZone(r)).length, [rows, sizeFilter, zoneFilter]);
-  // Weekly RSI per symbol from the shared technicals store (the same one the All Technicals page reads), joined here so the PF update does not have to push it. 2026-11-01 ("we need to add now WeeklyRSI value")
-  const [rsiBy, setRsiBy] = useState<Map<string, { rsi_w: number | null; rsi_d: number | null }>>(new Map());
+  // Weekly RSI and the 1W / 1M / 1Q weekly-bar returns per symbol from the shared technicals store (the same one the All Technicals page reads), joined here so the PF update does not have to push
+  // them. The returns feed the RS percentile columns: a holding is ranked against every NSE 750 stock's return from THIS store, on the same bars, so the holding and its universe are always on one basis
+  // (the PF row's own pct_1w is stamped at the moment of the PF update and can differ by a few days).
+  const [techBy, setTechBy] = useState<Map<string, { rsi_w: number | null; w1: number | null; w1m: number | null; w3m: number | null }>>(new Map());
   useEffect(() => {
     let off = false;
+    const n = (v: any) => (typeof v === "number" && Number.isFinite(v) ? v : null);
     api.getBhavTechnicals().then((j) => {
       if (off || !j?.rows) return;
-      setRsiBy(new Map(j.rows.map((t: any) => [t.symbol, { rsi_w: typeof t.rsi_w === "number" ? t.rsi_w : null, rsi_d: typeof t.rsi_d === "number" ? t.rsi_d : null }])));
+      setTechBy(new Map(j.rows.map((t: any) => [t.symbol, { rsi_w: n(t.rsi_w), w1: n(t.w_pct_1w), w1m: n(t.w_pct_1m), w3m: n(t.w_pct_3m) }])));
     }).catch(() => {});
     return () => { off = true; };
   }, []);
-  const withRsi = (r: any) => ({ rsi_w: r.rsi_w ?? rsiBy.get(r.symbol)?.rsi_w ?? null });
+  // sorted returns of the NSE 750 universe, one array per window
+  const universe = useMemo(() => {
+    const syms = new Set<string>((bundle.momentum_screeners.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol));
+    const col = (k: "w1" | "w1m" | "w3m") => [...techBy.entries()].filter(([sym, t]) => syms.has(sym) && t[k] != null).map(([, t]) => t[k] as number).sort((a, b) => a - b);
+    return { w1: col("w1"), w1m: col("w1m"), w3m: col("w3m") };
+  }, [techBy, bundle.momentum_screeners.nse750Fundamentals]);
+  // percentile rank 1-99: the share of the universe this return beats, counting a tie as half (so the median stock reads 50)
+  const pctile = (arr: number[], x: number | null | undefined) => {
+    if (x == null || arr.length < 50) return null;
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] < x) lo = m + 1; else hi = m; }
+    let top = lo;
+    while (top < arr.length && arr[top] === x) top++;
+    return Math.min(99, Math.max(1, Math.round(((lo + 0.5 * (top - lo)) / arr.length) * 100)));
+  };
+  const withRsi = (r: any) => {
+    const t = techBy.get(r.symbol);
+    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
+  };
 
   // Column picker (2026-11-01, "allow column selector above table"): the picks are remembered on this device, like the picker on All Technicals. Rank and Symbol are always shown.
   const PICK_KEY = "portfolioAllocationHiddenCols_v1";
+  const DEFAULT_HIDDEN = ["rs_1w", "rs_1m", "rs_3m"]; // the points-vs-NIFTY 500 spreads: there, but off until switched on in the picker
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(PICK_KEY);
-      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : []);
+      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : DEFAULT_HIDDEN);
     } catch {
       return new Set<string>();
     }
@@ -710,11 +732,11 @@ export default function PortfolioAllocation() {
     const filtered = (selectedRealSectors ? rows.filter((r) => !r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => !r.is_fund)).filter(bySize).filter(byZone);
     // ath_zone is the Zone column's sort value: % from ATH, so a descending sort lists A (nearest the high) first, then B, then C
     return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r), ...withRsi(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, rsiBy]);
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, techBy, universe]);
   const fundRows = useMemo(() => {
     const filtered = (selectedRealSectors ? rows.filter((r) => r.is_fund && selectedRealSectors.includes(r.sector || "Unknown")) : rows.filter((r) => r.is_fund)).filter(bySize).filter(byZone);
     return filtered.map((r, i) => ({ ...r, rank: i + 1, ath_zone: r.pct_from_ath ?? null, size: r.pct_of_portfolio ?? 0, qtr_eps_sort: r.qtr_eps_growth_pct === "T" ? 1e9 : typeof r.qtr_eps_growth_pct === "number" ? r.qtr_eps_growth_pct : null, ...opmFields(r), ...withRsi(r) }));
-  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, rsiBy]);
+  }, [rows, selectedRealSectors, sizeFilter, zoneFilter, opmBy, techBy, universe]);
 
   const COLS: Col[] = useMemo(
     () => [
@@ -961,27 +983,39 @@ export default function PortfolioAllocation() {
         width: 4.7,
         render: (r) => <Signed v={r.pct_6m} digits={1} />,
       },
-      // 2026-11-01 ("add RS 1W, 1M, 1Q columns as well"): relative strength = the holding's own return minus the NIFTY 500's over the same window, in percentage points
-      // (the RSBenchmarkCheck convention). The windows are this table's own 1W / 1M / 1Q (1, 4 and 13 weekly bars) and the index is measured on the same bars, so a plus sign
-      // means the holding beat the market over that window. Pushed with the rows by the PF update (rs_1w / rs_1m / rs_3m).
+      // 2026-11-01 ("add RS 1W, 1M, 1Q columns as well", then "need the RS column as percentile"): RS is shown as a PERCENTILE, 1-99: the share of NSE 750 stocks whose return over the same window
+      // (1 / 4 / 13 weekly bars, from the technicals store) this holding beats, a tie counting half. 50 is the middle of the market, 80 and above is leadership territory. The same window's
+      // distance from the NIFTY 500 in percentage points (the RSBenchmarkCheck convention, pushed by the PF update as rs_1w / rs_1m / rs_3m) is in the picker as "RS 1W Δ" etc., off by default.
+      ...(["1w", "1m", "3m"] as const).map((k, idx): Col => ({
+        key: `rsp_${k}`,
+        label: `RS ${k === "3m" ? "1Q" : k.toUpperCase()}`,
+        width: 3.6,
+        groupStart: idx === 0,
+        render: (r) => {
+          const v = r[`rsp_${k}`] as number | null | undefined;
+          if (typeof v !== "number") return <span className="text-slate-300" title="no return in the technicals store for this holding">—</span>;
+          const w = r[`rsw_${k}`] as number | null | undefined;
+          const tone = v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
+          return <span className={tone} title={`${k === "3m" ? "1Q" : k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)`}>{v}</span>;
+        },
+      })),
       {
         key: "rs_1w",
-        label: "RS 1W",
+        label: "RS 1W Δ",
         width: 3.9,
-        groupStart: true,
-        render: (r) => (typeof r.rs_1w === "number" ? <span title={`1W return ${r.pct_1w?.toFixed?.(1)}% minus NIFTY 500`}><Signed v={r.rs_1w} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+        render: (r) => (typeof r.rs_1w === "number" ? <span title={`1W return ${r.pct_1w?.toFixed?.(1)}% minus NIFTY 500, in points`}><Signed v={r.rs_1w} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
       },
       {
         key: "rs_1m",
-        label: "RS 1M",
+        label: "RS 1M Δ",
         width: 3.9,
-        render: (r) => (typeof r.rs_1m === "number" ? <span title={`1M return ${r.pct_1m?.toFixed?.(1)}% minus NIFTY 500 (4 weekly bars)`}><Signed v={r.rs_1m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+        render: (r) => (typeof r.rs_1m === "number" ? <span title={`1M return ${r.pct_1m?.toFixed?.(1)}% minus NIFTY 500 (4 weekly bars), in points`}><Signed v={r.rs_1m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
       },
       {
         key: "rs_3m",
-        label: "RS 1Q",
+        label: "RS 1Q Δ",
         width: 3.9,
-        render: (r) => (typeof r.rs_3m === "number" ? <span title={`1Q return ${r.pct_3m?.toFixed?.(1)}% minus NIFTY 500 (13 weekly bars)`}><Signed v={r.rs_3m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+        render: (r) => (typeof r.rs_3m === "number" ? <span title={`1Q return ${r.pct_3m?.toFixed?.(1)}% minus NIFTY 500 (13 weekly bars), in points`}><Signed v={r.rs_3m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
       },
       {
         // 2026-11-01 ("50DEMA distance on left of 200DEMA"): the 50-day EMA distance returns (the PF update has kept pushing pct_50d_ema all along), same OHLC4 convention as 200DEMA.
