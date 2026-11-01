@@ -3,18 +3,18 @@ import { useData, useScreeners } from "../App";
 import { ScreenerLoading } from "../components/ScreenerTable";
 import { DeltaBars, Guard, VIZ_CSS, fmtSigned } from "../components/DebateViz";
 import { HoldersBars, OwnershipStack, PledgeMeter, type OwnerKey } from "../components/OwnershipViz";
+import { StatedBars } from "../components/EdgeViz";
 
 // Shareholding & Pledges — added 2026-11-01 ("maybe one more page for shareholding changes and pledges").
 //
 // The ShareholdingTracker skill (~/.claude/skills/ShareholdingTracker) reads Screener's shareholding tables (promoters, FIIs, DIIs and the public at each of the last 12 quarter ends, plus the number of shareholders and the
 // promoters' pledged share where Screener reports one) and NSE's Regulation 29 feed (every acquisition or sale of 2% or more of a company, with who, how many shares, which mode and a link to the filing), flags what moved
-// enough to look at, and pushes the `shareholdingChanges` key. No model writes any of it. Not covered: NSE's pledge and insider-trading endpoints return nothing to scripts, so pledges are today's figure only (no
-// history) and insider trades are absent. A promoter-group "sale" can be a transfer within the group or to a family trust: the filing says which.
+// enough to look at, and pushes the `shareholdingChanges` key. No model writes any of it. Pledges: NSE's pledge API returns nothing to scripts, but each quarterly shareholding filing carries the pledged share of the promoters' holding, so the last five quarters are read from those. Insider trades are absent. A promoter-group "sale" can be a transfer within the group or to a family trust: the filing says which.
 
 type Series = { labels: string[]; promoters: (number | null)[]; fiis: (number | null)[]; diis: (number | null)[]; public: (number | null)[]; others?: (number | null)[]; government?: (number | null)[]; shareholders: (number | null)[] };
 type Ev = { date: string; who: string; promoter: boolean; kind: "Sale" | "Acquisition"; security?: string | null; mode?: string | null; shares?: number | null; pct?: number | null; after_pct?: number | null; url?: string | null };
 interface Row {
-  symbol: string; name: string; as_of: string; held: boolean; weight?: number | null; mcap_cr?: number | null; pledge_pct?: number | null; series: Series; yearly?: Series;
+  symbol: string; name: string; as_of: string; held: boolean; weight?: number | null; mcap_cr?: number | null; pledge_pct?: number | null; series: Series; yearly?: Series; pledge_hist?: { label: string; of_promoter: number | null; of_company: number | null }[];
   delta: { promoter_q: number | null; promoter_y: number | null; fii_q: number | null; fii_y: number | null; dii_q: number | null; dii_y: number | null; public_y: number | null };
   holders_y_pct: number | null; flags: string[]; events: Ev[];
 }
@@ -48,6 +48,20 @@ const SH_CSS = `
 .sh-ev{width:100%;border-collapse:collapse;font-size:12.5px;color:var(--ink)}
 .sh-ev th{text-align:left;font-size:11px;font-weight:600;color:var(--ink2);padding:6px 10px;border-bottom:1px solid var(--grid);white-space:nowrap}
 .sh-ev td{padding:8px 10px;border-top:1px solid var(--grid);vertical-align:top}
+.sh-scroll{overflow:auto;max-height:calc(100vh - 230px);border:1px solid var(--ring);border-radius:12px;background:var(--surface)}
+.sh-sum{border-collapse:separate;border-spacing:0;font-size:12.5px;color:var(--ink);min-width:1180px;width:100%}
+.sh-sum th,.sh-sum td{padding:6px 10px;white-space:nowrap}
+.sh-sum thead th{position:sticky;background:var(--surface);z-index:2;text-align:center;font-weight:600;color:var(--ink2)}
+.sh-sum thead tr:first-child th{top:0;border-bottom:0}
+.sh-sum thead tr:nth-child(2) th{top:33px;font-weight:500;font-size:11.5px;border-bottom:1px solid var(--grid)}
+.sh-sum thead th.grp{cursor:pointer;border-top:3px solid var(--ring)}
+.sh-sum thead th.grp:hover{background:var(--wash)}
+.sh-sum tbody td{text-align:right;border-top:1px solid var(--grid);font-variant-numeric:tabular-nums}
+.sh-sum tbody td.l{position:sticky;left:0;background:var(--surface);text-align:left;z-index:1;border-right:1px solid var(--grid)}
+.sh-sum thead th.l{position:sticky;left:0;z-index:3;text-align:left}
+.sh-sum tbody td.gap,.sh-sum thead th.gap{border-left:1px solid var(--grid)}
+.sh-sum tbody tr{cursor:pointer}.sh-sum tbody tr:hover td{background:var(--wash)}
+.sh-sum tbody tr:hover td.l{background:var(--wash)}
 .sh-badge{display:inline-block;font-size:10.5px;font-weight:600;border-radius:999px;padding:0 7px;border:1px solid var(--s1);color:var(--ink);margin-left:6px;white-space:nowrap}
 `;
 
@@ -71,6 +85,89 @@ function Kpi({ label, value, sub, subColor }: { label: string; value: ReactNode;
   );
 }
 const tone = (v: number | null | undefined) => (!isNum(v) || v === 0 ? "var(--muted)" : v > 0 ? "var(--good-text)" : "var(--crit)");
+
+
+/** value at a quarter label, for the three most recent labels of the company's own table */
+const at = (r: Row, key: "promoters" | "fiis" | "diis" | "public", back: number) => { const a = r.series[key]; const i = a.length - 1 - back; return i >= 0 ? a[i] : null; };
+const pledgeAt = (r: Row, back: number) => {
+  const lab = r.series.labels[r.series.labels.length - 1 - back];
+  const h = (r.pledge_hist ?? []).find((x) => x.label === lab);
+  return h ? h.of_promoter : null;
+};
+type Grp = { key: "promoter" | "fii" | "dii" | "public" | "pledge"; label: string; color: string; get: (r: Row, back: number) => number | null; goodUp: boolean | null };
+const GROUPS: Grp[] = [
+  { key: "promoter", label: "Promoter", color: "var(--s1)", get: (r, b) => at(r, "promoters", b), goodUp: true },
+  { key: "fii", label: "FII", color: "var(--s2)", get: (r, b) => at(r, "fiis", b), goodUp: true },
+  { key: "dii", label: "DII", color: "var(--s3)", get: (r, b) => at(r, "diis", b), goodUp: true },
+  { key: "public", label: "Public", color: "var(--s4)", get: (r, b) => at(r, "public", b), goodUp: null },
+  { key: "pledge", label: "Pledge", color: "var(--crit)", get: (r, b) => pledgeAt(r, b), goodUp: false },
+];
+const QLAB = ["Latest Qtr", "Qtr - 1", "Qtr - 2"];
+
+function Cell({ g, r, back }: { g: Grp; r: Row; back: number }) {
+  const v = g.get(r, back), prev = g.get(r, back + 1);
+  const gap = back === 0 ? "gap" : "";
+  if (g.key === "pledge") {
+    const nw = isNum(v) && v > 0 && isNum(prev) && prev === 0;
+    return <td className={gap} style={{ color: isNum(v) && v > 0 ? "var(--crit)" : "var(--muted)", fontWeight: isNum(v) && v > 0 && back === 0 ? 700 : 400 }}>{isNum(v) ? (v > 0 ? v.toFixed(1) : "–") : "—"}{back === 0 && nw ? <span className="sh-badge" style={{ borderColor: "var(--crit)", marginLeft: 4 }}>new</span> : null}</td>;
+  }
+  const d = isNum(v) && isNum(prev) ? v - prev : null;
+  const big = back === 0 && d != null && Math.abs(d) >= 1;
+  const good = d == null || g.goodUp == null ? null : g.goodUp ? d > 0 : d < 0;
+  const color = !big ? "var(--ink)" : g.goodUp == null ? "var(--ink)" : good ? "var(--good-text)" : "var(--crit)";
+  return (
+    <td className={gap} style={{ fontWeight: big ? 700 : 400, color: back === 0 ? color : "var(--ink2)", background: big ? `color-mix(in srgb, ${g.goodUp == null ? "var(--s4)" : good ? "var(--good)" : "var(--crit)"} 12%, transparent)` : undefined }}
+      title={back === 0 && d != null ? `${fmtSigned(d, 2)} pts on the quarter before` : undefined}>
+      {isNum(v) ? v.toFixed(2) : "—"}{back === 0 && d != null && Math.abs(d) >= 0.5 ? <span style={{ fontSize: 10, marginLeft: 3 }}>{d > 0 ? "▲" : "▼"}</span> : null}
+    </td>
+  );
+}
+
+function SummaryTable({ list, open, sortKey, setSortKey, sortDir, setSortDir }: { list: Row[]; open: (s: string) => void; sortKey: string; setSortKey: (k: string) => void; sortDir: number; setSortDir: (d: number) => void }) {
+  const lab = (back: number) => { const r = list.find((x) => x.series.labels.length > back); return r ? r.series.labels[r.series.labels.length - 1 - back] : ""; };
+  const csv = () => {
+    const head = ["Company", ...GROUPS.flatMap((g) => QLAB.map((q) => `${g.label} ${q}`))];
+    const rows = list.map((r) => [r.symbol, ...GROUPS.flatMap((g) => [0, 1, 2].map((b) => { const v = g.get(r, b); return isNum(v) ? String(v) : ""; }))]);
+    const text = [head, ...rows].map((a) => a.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+    a.download = `shareholding-summary-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  };
+  return (
+    <div>
+      <div className="flex flex-wrap items-center gap-2 mb-2" style={{ fontSize: 11.5, color: "var(--muted)" }}>
+        <span>{list.length} companies · click a group heading to sort by its change on the quarter · click a row for the detail · shaded = moved 1 point or more</span>
+        <button className="sh-toggle" style={{ marginLeft: "auto" }} onClick={csv}>Download CSV</button>
+      </div>
+      <div className="sh-scroll">
+        <table className="sh-sum">
+          <thead>
+            <tr>
+              <th className="l" rowSpan={2} style={{ verticalAlign: "bottom" }}>Company</th>
+              {GROUPS.map((g) => (
+                <th key={g.key} className="grp gap" colSpan={3} style={{ borderTopColor: g.color }} onClick={() => { if (sortKey === g.key) setSortDir(-sortDir); else { setSortKey(g.key); setSortDir(-1); } }} title="sort by the change on the quarter">
+                  {g.label} {sortKey === g.key ? (sortDir < 0 ? "▼" : "▲") : <span style={{ opacity: 0.35 }}>↕</span>}
+                </th>
+              ))}
+            </tr>
+            <tr>
+              {GROUPS.flatMap((g) => QLAB.map((q, b) => <th key={g.key + q} className={b === 0 ? "gap" : ""} title={lab(b)}>{q}<div style={{ fontSize: 10, color: "var(--muted)", fontWeight: 400 }}>{lab(b).replace(/^(\w{3}) 20(\d\d)$/, "$1 ’$2")}</div></th>))}
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((r) => (
+              <tr key={r.symbol} onClick={() => open(r.symbol)}>
+                <td className="l"><b style={{ fontWeight: 600 }}>{r.symbol}</b>{isNum(r.weight) && <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>{r.weight.toFixed(1)}%</span>}</td>
+                {GROUPS.flatMap((g) => [0, 1, 2].map((b) => <Cell key={g.key + b} g={g} r={r} back={b} />))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
 
 function Detail({ r }: { r: Row }) {
   const s = r.series, d = r.delta;
@@ -123,8 +220,14 @@ function Detail({ r }: { r: Row }) {
             <Guard label="the holders chart"><HoldersBars labels={s.labels} values={s.shareholders} /></Guard>
           </Panel>
           <Panel title="Pledge" hint="share of the promoters' holding pledged">
-            {isNum(r.pledge_pct) ? <PledgeMeter pct={r.pledge_pct} /> : <Muted>Screener flags no pledge by the promoters of this company.</Muted>}
-            <p className="dbv-note">A pledge means the promoters borrowed against their shares: if the price falls the lender can sell them. The exchange's pledge data is not available to us, so this is today's figure from Screener with no history.</p>
+            {isNum(r.pledge_pct) ? <PledgeMeter pct={r.pledge_pct} /> : <Muted>No part of the promoters' holding is pledged in the latest filing.</Muted>}
+            {(r.pledge_hist ?? []).some((h) => isNum(h.of_promoter) && h.of_promoter > 0) && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 11, color: "var(--ink2)", marginBottom: 2 }}>Pledged share of the promoters' holding, by quarter</div>
+                <StatedBars color="var(--crit)" max={100} points={[...(r.pledge_hist ?? [])].reverse().filter((h) => isNum(h.of_promoter)).map((h) => ({ label: h.label, v: h.of_promoter as number, tip: <><b>{h.of_promoter}%</b> <span className="sub">{h.label}{isNum(h.of_company) ? ` · ${h.of_company}% of the whole company` : ""}</span></> }))} />
+              </div>
+            )}
+            <p className="dbv-note">A pledge means the promoters borrowed against their shares: if the price falls the lender can sell them. The figure is read from each quarterly shareholding filing (the last five quarters). A pledge created or invoked between filings only shows at the next one.</p>
           </Panel>
         </div>
 
@@ -164,6 +267,9 @@ export default function Shareholding() {
   const [heldOnly, setHeldOnly] = useState(true);
   const [sort, setSort] = useState<SortKey>("weight");
   const [q, setQ] = useState("");
+  const [view, setView] = useState<"summary" | "detail">("summary");
+  const [sumKey, setSumKey] = useState<string>("");
+  const [sumDir, setSumDir] = useState<number>(-1);
   const [sel, setSel] = useState<string>(() => (typeof window !== "undefined" ? decodeURIComponent(window.location.hash.slice(1)).toUpperCase() : ""));
   const rows: Row[] = (bundle.momentum_screeners as any)?.shareholdingChanges?.rows ?? [];
   const hasUniverse = rows.some((r) => !r.held);
@@ -182,6 +288,12 @@ export default function Shareholding() {
     };
     return [...f].sort(by[sort]);
   }, [scope, flag, q, sort]);
+  const sumList = useMemo(() => {
+    if (!sumKey) return list;
+    const g = GROUPS.find((x) => x.key === sumKey)!;
+    const chg = (r: Row) => { const a = g.get(r, 0), b = g.get(r, 1); return isNum(a) && isNum(b) ? a - b : isNum(a) && g.key === "pledge" ? a : null; };
+    return [...list].sort((a, b) => ((chg(b) ?? -1e9) - (chg(a) ?? -1e9)) * -sumDir);
+  }, [list, sumKey, sumDir]);
   const current = list.find((r) => r.symbol === sel) ?? list[0];
   useEffect(() => {
     const onHash = () => setSel(decodeURIComponent(window.location.hash.slice(1)).toUpperCase());
@@ -218,7 +330,7 @@ export default function Shareholding() {
         <p className="text-xs text-slate-500 mt-2" style={{ maxWidth: "80ch", lineHeight: 1.6 }}>
           Ownership by quarter comes from Screener's shareholding tables (the company's own exchange filings). A tile flags a company when promoters moved by 1 point in a quarter or 3 points in a year, when institutions moved by
           3 points in a year, when the number of shareholders is up 25% in a year, when Screener reports a promoter pledge, or when a promoter-group sale of 2% or more was filed. The filings list is the exchange's
-          Regulation 29 feed. Pledges are today's figure only, and insider trades below 2% are not covered: the exchange's own pledge and insider-trading data are not available to us. Not advice.
+          Regulation 29 feed. Pledges are read from each quarterly shareholding filing (the last five quarters; a pledge created between filings shows at the next one). Insider trades below 2% are not covered. Not advice.
         </p>
       </details>
 
@@ -241,8 +353,16 @@ export default function Shareholding() {
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a company" aria-label="Find a company" className="ml-auto px-2 py-1 border border-slate-300 rounded text-sm w-40" />
       </div>
 
+      <div className="cap-seg-like mb-3" role="group" aria-label="View" style={{ display: "inline-flex", border: "1px solid var(--ring)", borderRadius: 8, overflow: "hidden" }}>
+        {([["summary", "Summary table"], ["detail", "Company detail"]] as const).map(([k, l], i) => (
+          <button key={k} aria-pressed={view === k} onClick={() => setView(k)} className="text-xs" style={{ padding: "5px 14px", background: view === k ? "var(--ink)" : "var(--surface)", color: view === k ? "var(--surface)" : "var(--ink2)", borderLeft: i ? "1px solid var(--ring)" : 0 }}>{l}</button>
+        ))}
+      </div>
+
       {!current ? (
         <div className="text-sm text-slate-500 border border-dashed border-slate-300 rounded-lg p-6 text-center">{rows.length ? "Nothing matches that filter." : "No shareholding data yet. Ask Claude to run the ShareholdingTracker skill."}</div>
+      ) : view === "summary" ? (
+        <Guard label="the summary table"><SummaryTable list={sumList} open={(sym) => { setSel(sym); setView("detail"); }} sortKey={sumKey} setSortKey={setSumKey} sortDir={sumDir} setSortDir={setSumDir} /></Guard>
       ) : (
         <div className="dbv-layout">
           <Guard label="the list">
