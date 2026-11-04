@@ -87,6 +87,7 @@ export function ScreenerInLink({ symbol }: { symbol: string }) {
 export interface Col {
   key: string;
   label: string;
+  title?: string; // hover text for the header, so a short label can still carry the full name
   render?: (row: Record<string, any>) => React.ReactNode;
   align?: "left" | "right" | "center";
   // Optional width as a PERCENTAGE of the table (0-100, all columns'
@@ -228,6 +229,8 @@ export function GenericTable({
   fullHeight = false,
   // hides the name/sector filter bar (a page that shows several tables under one shared search, e.g. Watchlist's group sections)
   hideFilters = false,
+  // opt-in floor for the table's width in px: below it the table scrolls sideways instead of squeezing columns narrower than their headers (Blockbuster Results, 2026-11-04, "columns overlapping")
+  minWidth,
 }: {
   rows: Record<string, any>[];
   cols: Col[];
@@ -240,6 +243,7 @@ export function GenericTable({
   rowClassName?: (row: Record<string, any>) => string;
   fullHeight?: boolean;
   hideFilters?: boolean;
+  minWidth?: number;
 }) {
   const [q, setQ] = useState("");
   const [sector, setSector] = useState(initialSector ?? "All");
@@ -361,7 +365,7 @@ export function GenericTable({
           if (visibleCount < sorted.length && el.scrollTop + el.clientHeight > el.scrollHeight - 600) setVisibleCount((n) => Math.min(sorted.length, n + PAGE_ROWS));
         }}
       >
-        <table className="w-full text-sm border-collapse" style={{ tableLayout: "fixed" }}>
+        <table className="w-full text-sm border-collapse" style={{ tableLayout: "fixed", minWidth }}>
           <thead className="bg-slate-50 text-slate-500 text-xs sticky top-0 z-10">
             <tr>
               {cols.map((c, i) => (
@@ -370,7 +374,7 @@ export function GenericTable({
                   className={`px-2 py-2 whitespace-nowrap ${c.align === "left" ? "text-left" : "text-center"} ${gridLineClass(gridLines, c, i)}`}
                   style={{ width: `${colWidth(c)}%` }}
                 >
-                  <button onClick={() => clickHeader(c.key)} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
+                  <button onClick={() => clickHeader(c.key)} title={c.title} className={`hover:text-slate-800 ${sortKey === c.key ? "text-slate-800 font-semibold" : ""}`}>
                     {c.label} {sortKey === c.key ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
                 </th>

@@ -161,19 +161,19 @@ export default function BlockbusterResults() {
         </a>
       ),
     },
-    { key: "mcap", label: "Market Cap (₹ Cr)", width: 14, render: (r) => fmtNum(r.mcap, 0) },
-    { key: "price", label: "Price (₹)", width: 11, render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
-    { key: "quarter", label: "Quarter", align: "center", width: 9 },
-    { key: "ath", label: "From ATH %", width: 9, render: (r) => <FromHigh v={r.ath} what="all-time high" at="at ATH" /> },
-    { key: "wh52", label: "From 52W High %", width: 9, render: (r) => <FromHigh v={r.wh52} what="52-week high" at="at 52W high" /> },
-    { key: "sales", label: "Sales YoY %", width: 9, render: (r) => <Gr v={r.sales} /> },
-    { key: "op", label: "Operating Profit YoY %", width: 9, render: (r) => <Gr v={r.op} /> },
-    { key: "np", label: "Net Profit YoY %", width: 9, render: (r) => <Gr v={r.np} /> },
-    { key: "eps", label: "EPS YoY %", width: 9, render: (r) => <Gr v={r.eps} /> },
+    { key: "mcap", label: "Mcap (₹ Cr)", title: "Market capitalisation in ₹ crore", width: 10, render: (r) => fmtNum(r.mcap, 0) },
+    { key: "price", label: "Price (₹)", width: 9, render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+    { key: "quarter", label: "Quarter", align: "center", width: 8 },
+    { key: "ath", label: "ATH %", title: "Distance from the all-time high, in %", width: 8, render: (r) => <FromHigh v={r.ath} what="all-time high" at="at ATH" /> },
+    { key: "wh52", label: "52WH %", title: "Distance from the 52-week high, in %", width: 8, render: (r) => <FromHigh v={r.wh52} what="52-week high" at="at 52W high" /> },
+    { key: "sales", label: "Sales %", title: "Sales growth, latest quarter vs the same quarter a year earlier (YoY)", width: 8, render: (r) => <Gr v={r.sales} /> },
+    { key: "op", label: "Op. Profit %", title: "Operating profit growth, latest quarter vs a year earlier (YoY); T = turned profitable", width: 9.5, render: (r) => <Gr v={r.op} /> },
+    { key: "np", label: "Net Profit %", title: "Net profit growth, latest quarter vs a year earlier (YoY); T = turned profitable", width: 9.5, render: (r) => <Gr v={r.np} /> },
+    { key: "eps", label: "EPS %", title: "EPS growth, latest quarter vs a year earlier (YoY); T = turned profitable", width: 7, render: (r) => <Gr v={r.eps} /> },
     {
       key: "opmQoq",
       label: "OPM QoQ Δ",
-      width: 7,
+      width: 8.5,
       render: (r) =>
         r.opmQoq == null ? (
           <span className="text-slate-300" title="needs operating margin for this and the previous quarter — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
@@ -184,7 +184,7 @@ export default function BlockbusterResults() {
     {
       key: "opmYoy",
       label: "OPM YoY Δ",
-      width: 7,
+      width: 8.5,
       render: (r) =>
         r.opmYoy == null ? (
           <span className="text-slate-300" title="needs operating margin for this and the same quarter a year ago — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
@@ -195,7 +195,7 @@ export default function BlockbusterResults() {
     {
       key: "gpmQoq",
       label: "GPM QoQ Δ",
-      width: 7,
+      width: 8.5,
       render: (r) =>
         r.gpmQoq == null ? (
           <span className="text-slate-300" title="Gross margin = 100 − Material Cost % of sales. Shown only for companies that report a material cost, once the BlockbusterGPM fetch has run">—</span>
@@ -206,7 +206,7 @@ export default function BlockbusterResults() {
     {
       key: "gpmYoy",
       label: "GPM YoY Δ",
-      width: 7,
+      width: 8.5,
       render: (r) =>
         r.gpmYoy == null ? (
           <span className="text-slate-300" title="Gross margin = 100 − Material Cost % of sales. Shown only for companies that report a material cost, once the BlockbusterGPM fetch has run">—</span>
@@ -228,8 +228,8 @@ export default function BlockbusterResults() {
     },
     {
       key: "mcapOp",
-      label: "Mcap / OpProfit",
-      width: 9,
+      label: "Mcap / OP", title: "Market cap divided by operating profit",
+      width: 10,
       render: (r) =>
         r.mcapOp == null ? (
           <span className="text-slate-300" title="needs the latest quarter's Operating Profit — banks and NBFCs have none, and the cache fills in as the refresh runs">—</span>
@@ -316,7 +316,7 @@ export default function BlockbusterResults() {
         </p>
       </MethodologyNote>
 
-      <GenericTable rows={rows} cols={cols} navigate={navigate} fullHeight emptyMessage="No stock clears all four growth tests for this quarter yet." />
+      <GenericTable rows={rows} cols={cols} navigate={navigate} fullHeight minWidth={1520} emptyMessage="No stock clears all four growth tests for this quarter yet." />
     </div>
   );
 }
