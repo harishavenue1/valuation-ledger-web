@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
@@ -79,9 +79,17 @@ export default function MomentumScreeners() {
   // Only the active tab's screener is fetched — switching tabs fetches
   // (and then caches) that tab's data on demand rather than loading all
   // 18 screeners' worth up front.
-  const { ready } = useScreeners([tab]);
+  // 2026-11-04 ("add a market cap column to all time page under momentum screen"): the All-Time High rows carry no market cap, so that one tab also loads nse750Fundamentals and joins
+  // `marketcap` by symbol (₹ Cr), the same figure the other tabs show. A stock outside the NSE 750 cache shows "—".
+  const { ready } = useScreeners(tab === "allTimeHigh" ? [tab, "nse750Fundamentals"] : [tab]);
   const entry = bundle.momentum_screeners[tab];
-  const rows = entry?.rows ?? [];
+  const fundForCap = tab === "allTimeHigh" ? bundle.momentum_screeners.nse750Fundamentals : undefined;
+  const rows = useMemo(() => {
+    const base = entry?.rows ?? [];
+    if (tab !== "allTimeHigh") return base;
+    const cap = new Map<string, number>((fundForCap?.rows ?? []).filter((f: any) => typeof f.marketcap === "number").map((f: any) => [f.symbol, f.marketcap]));
+    return base.map((r: any) => ({ ...r, marketcap: r.marketcap ?? cap.get(r.symbol) ?? null }));
+  }, [entry, tab, fundForCap]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -283,6 +291,7 @@ export default function MomentumScreeners() {
       { key: "symbol", label: "Symbol", align: "left" },
       { key: "name", label: "Name", align: "left" },
       { key: "sector", label: "Sector", align: "left" },
+      { key: "marketcap", label: "Mkt Cap", render: (r) => fmtMktCap(r.marketcap) },
       { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
       { key: "ath", label: "All-Time High", render: (r) => fmtNum(r.ath) },
       { key: "pct_off_ath", label: "% Off ATH", render: (r) => <Signed v={r.pct_off_ath} digits={1} /> },
