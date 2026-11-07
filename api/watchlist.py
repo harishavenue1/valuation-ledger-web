@@ -84,7 +84,7 @@ def journal_sync(conn, body, hs):
     except Exception:
         tech = {}
     prev_h = snap.get("holdings") or {}
-    created = []
+    created, corporate = [], []
     for sym in sorted(set(holdings) | set(prev_h)):
         new, prev = holdings.get(sym), prev_h.get(sym) or {}
         nq, pq = (new or {}).get("qty", 0.0), prev.get("qty", 0.0) or 0.0
@@ -92,6 +92,12 @@ def journal_sync(conn, body, hs):
         if abs(d) < 1e-6:
             continue
         t = trades.get(sym) if isinstance(trades.get(sym), dict) else {}
+        # A bonus issue or a split changes the quantity and the average price in opposite directions and leaves the TOTAL COST where it was (2026-11-07: CONCORDBIO's 1:1 bonus, 71 -> 142 shares, was queued
+        # as a "buy of 71 at ₹0"). A real buy or sell always moves the cost, so unchanged cost with no executed price from today's positions means a corporate action, not a trade: report it, queue nothing.
+        avg_n, avg_p = (new or {}).get("avg"), prev.get("avg")
+        if nq > 0 and pq > 0 and avg_n and avg_p and not _num(t.get("buy_price")) and not _num(t.get("sell_price")) and abs(nq * avg_n - pq * avg_p) <= 0.005 * pq * avg_p:
+            corporate.append({"symbol": sym, "qty_before": round(pq, 4), "qty_after": round(nq, 4), "ratio": round(nq / pq, 4)})
+            continue
         if d > 0:
             adj = d - manual_buy.get(sym, 0)
             if adj <= 1e-6:
@@ -129,7 +135,7 @@ def journal_sync(conn, body, hs):
         created.append({"symbol": sym, "type": stub["type"], "qty": stub["qty"], "price": stub["price"]})
     set_meta(conn, "journal_inbox", inbox)
     save_snap()
-    return {"ok": True, "baseline": False, "created": len(created), "trades": created, "inbox": len(inbox)}
+    return {"ok": True, "baseline": False, "created": len(created), "trades": created, "corporate_actions": corporate, "inbox": len(inbox)}
 
 
 class handler(BaseHTTPRequestHandler):
