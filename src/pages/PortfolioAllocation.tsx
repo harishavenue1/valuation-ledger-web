@@ -707,7 +707,13 @@ export default function PortfolioAllocation() {
   const [hiddenCols, setHiddenCols] = useState<Set<string>>(() => {
     try {
       const raw = localStorage.getItem(PICK_KEY);
-      return new Set<string>(raw ? (JSON.parse(raw) as string[]) : DEFAULT_HIDDEN);
+      const set = new Set<string>(raw ? (JSON.parse(raw) as string[]) : DEFAULT_HIDDEN);
+      if (!localStorage.getItem("portfolioAllocationRs3m_v1")) { // 2026-11-07: RS 3M is now the headline RS (it reuses the old "RS 1Q" key, which a saved pick may have hidden): show it once
+        set.delete("rsp_3m");
+        localStorage.setItem("portfolioAllocationRs3m_v1", "1");
+        localStorage.setItem(PICK_KEY, JSON.stringify([...set]));
+      }
+      return set;
     } catch {
       return new Set<string>();
     }
