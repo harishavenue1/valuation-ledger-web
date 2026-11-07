@@ -3994,6 +3994,31 @@ def _run_gap_hold(symbols, name_map, sector_map):
     return {"label": "Gap-Up Hold", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of")}, None
 
 
+def _run_chartist_rs(symbols, name_map, sector_map):
+    """The "Chartist_RS_Scanner" tab (Himanshu Sharma, @thechartist26): reads what bhavTechnicals computed for the latest
+    session (api/_bhav.py compute_chartist_scan) and adds the theme view — how many scan names share the sector and where this
+    one ranks in it by RS (his "first and second name of a strong theme")."""
+    conn = get_conn()
+    try:
+        scan = get_meta(conn, "bhav_scan_chartist", None)
+    finally:
+        conn.close()
+    if not scan:
+        return None, "the Chartist RS scan has not been published yet (bhavTechnicals computes it each evening)"
+    rows = [{**r, "sector": sector_map.get(r["symbol"], "")} for r in (scan.get("rows") or [])]
+    by_sector = {}
+    for r in rows:
+        if r["sector"]:
+            by_sector.setdefault(r["sector"], []).append(r)
+    for members in by_sector.values():
+        members.sort(key=lambda x: (-(x.get("rs_rating") or 0), -(x.get("pct_3m") or 0)))
+        for i, m in enumerate(members, 1):
+            m["theme_n"], m["theme_rank"] = len(members), i
+    funnel = scan.get("funnel") or {}
+    return {"label": "Chartist_RS_Scanner", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of"),
+            "extra": {"funnel": funnel, "health": scan.get("health") or {}, "session": scan.get("as_of")}}, None
+
+
 def _run_four_pct_scan(symbols, name_map, sector_map):
     """The "4% Scan" tab: reads what bhavTechnicals computed for the latest
     session (api/_bhav.py compute_four_pct_scan) — all NSE stocks, not only the
@@ -7061,7 +7086,7 @@ TECHNICAL_BATCH_WEEKLY = [
 # all-stocks technicals -> patch the weekly DC/RSI patterns into them -> the scans that read what was published.
 # As separate crons (13:30 store, 13:50 publish, 13:58-14:05 scans/patterns) nothing guaranteed that order — a late or
 # skipped store run meant the publish/scans re-ran on yesterday's data, and a publish after the patterns wiped them.
-BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory", "marketPulse"]
+BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "chartistRs", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory", "marketPulse"]
 
 TECHNICAL_BATCHES = {
     "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
@@ -7104,6 +7129,7 @@ SCREENER_RUNNERS = {
     "bhavCompare": _run_bhav_compare,
     "bhavDiff": _run_bhav_diff,
     "fourPctScan": _run_four_pct_scan,
+    "chartistRs": _run_chartist_rs,
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
     "uprunHold": _run_uprun_hold,
@@ -7365,6 +7391,7 @@ class handler(BaseHTTPRequestHandler):
                     "label": result["label"],
                     "as_of": date.today().isoformat(),
                     "rows": result["push_rows"],
+                    **(result.get("extra") or {}),
                 }
                 per_screener[name] = {
                     "ok": True, "scanned": result["scanned"], "skipped": result["skipped"],
@@ -7401,6 +7428,7 @@ class handler(BaseHTTPRequestHandler):
                 "label": result["label"],
                 "as_of": date.today().isoformat(),
                 "rows": result["push_rows"],
+                **(result.get("extra") or {}),
             }
             set_meta(conn, "momentum_screeners", all_screeners)
         finally:

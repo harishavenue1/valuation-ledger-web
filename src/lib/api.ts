@@ -51,6 +51,10 @@ export interface MomentumScreenerEntry {
   label: string;
   as_of: string | null;
   rows: Record<string, any>[];
+  // optional summary a screener may publish next to its rows (Chartist_RS_Scanner: the filter funnel and the market-health counts)
+  funnel?: Record<string, number>;
+  health?: Record<string, number>;
+  session?: string | null;
 }
 export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
 

@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
+import { rsTone } from "../lib/rsRating";
 import { Col, fmtNum, GenericTable, MethodologyNote, NSE_SCREENER_COLS, PriceLink, ScreenerLoading, Signed } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 
@@ -51,6 +52,7 @@ const TABS: { key: string; label: string; emoji: string }[] = [
   { key: "weekendInvesting", label: "weekendInvesting", emoji: "🏁" },
   { key: "quantBollinger", label: "quantBollinger", emoji: "📊" },
   { key: "Nifty500RelativeStrength", label: "RS (NSE750)", emoji: "💪" },
+  { key: "chartistRs", label: "Chartist_RS_Scanner", emoji: "🔭" },
   { key: "nseScreener", label: "NSE Screener", emoji: "📈" },
   { key: "sectorAlpha", label: "Sector Alpha", emoji: "🧭" },
   { key: "sectorStockAlpha", label: "Stocks vs Sector", emoji: "🎯" },
@@ -84,12 +86,28 @@ export default function MomentumScreeners() {
   const { ready } = useScreeners(tab === "allTimeHigh" ? [tab, "nse750Fundamentals"] : [tab]);
   const entry = bundle.momentum_screeners[tab];
   const fundForCap = tab === "allTimeHigh" ? bundle.momentum_screeners.nse750Fundamentals : undefined;
+  // Chartist_RS_Scanner chips (filter the rows in the browser; the scan itself is the same for everyone)
+  const [cStatus, setCStatus] = useState<"all" | "setups" | "Breakout" | "Ready">("setups");
+  const [cLeg, setCLeg] = useState<"all" | "early" | "earlymid">("all");
+  const [cLeaders, setCLeaders] = useState(false);
+  const [cDry, setCDry] = useState(false);
   const rows = useMemo(() => {
     const base = entry?.rows ?? [];
+    if (tab === "chartistRs") {
+      return base.filter((r: any) => {
+        if (cStatus === "setups" && !["Breakout", "Ready", "In base"].includes(r.status)) return false;
+        if ((cStatus === "Breakout" || cStatus === "Ready") && r.status !== cStatus) return false;
+        if (cLeg === "early" && r.phase !== "Early") return false;
+        if (cLeg === "earlymid" && r.phase !== "Early" && r.phase !== "Mid") return false;
+        if (cLeaders && !(r.theme_rank != null && r.theme_rank <= 2)) return false;
+        if (cDry && !(r.vol_dry_x != null && r.vol_dry_x < 1)) return false;
+        return true;
+      });
+    }
     if (tab !== "allTimeHigh") return base;
     const cap = new Map<string, number>((fundForCap?.rows ?? []).filter((f: any) => typeof f.marketcap === "number").map((f: any) => [f.symbol, f.marketcap]));
     return base.map((r: any) => ({ ...r, marketcap: r.marketcap ?? cap.get(r.symbol) ?? null }));
-  }, [entry, tab, fundForCap]);
+  }, [entry, tab, fundForCap, cStatus, cLeg, cLeaders, cDry]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -431,6 +449,67 @@ export default function MomentumScreeners() {
       { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
       { key: "traded_value_cr", label: "Traded Value (₹ Cr)", render: (r) => fmtNum(r.traded_value_cr, 1) },
     ],
+    chartistRs: [
+      { key: "rank", label: "Rank" },
+      { key: "symbol", label: "Symbol", align: "left" },
+      { key: "name", label: "Name", align: "left" },
+      { key: "sector", label: "Sector", align: "left" },
+      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+      {
+        key: "status",
+        label: "Setup",
+        align: "left",
+        title: "Breakout = closed above the tight zone's high (within 5%); Ready = within 3% below it; In base = inside the zone; Extended = already more than 5% above it; Below base = closed under its low; No base = no 1-month base with a tight right side",
+        render: (r) => (
+          <span
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
+              r.status === "Breakout"
+                ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                : r.status === "Ready"
+                  ? "bg-sky-50 text-sky-700 border-sky-300"
+                  : r.status === "In base"
+                    ? "bg-amber-50 text-amber-700 border-amber-300"
+                    : r.status === "Extended"
+                      ? "bg-orange-50 text-orange-700 border-orange-300"
+                      : r.status === "Below base"
+                        ? "bg-red-50 text-red-600 border-red-300"
+                        : "bg-slate-100 text-slate-500 border-slate-300"
+            }`}
+          >
+            {r.status}
+            {r.status === "Breakout" && r.breakout_age ? ` (${r.breakout_age}d)` : ""}
+          </span>
+        ),
+      },
+      {
+        key: "phase",
+        label: "Leg",
+        align: "left",
+        title: "Move since RS last crossed 80: Early up to 50%, Mid up to 100%, Late beyond",
+        render: (r) => (r.phase ? <span className={r.phase === "Late" ? "text-orange-600" : "text-emerald-700 font-medium"}>{r.phase}</span> : "—"),
+      },
+      { key: "rs_rating", label: "RS Rating", render: (r) => <span className={`font-semibold ${rsTone(r.rs_rating)}`}>{r.rs_rating}</span> },
+      { key: "rs_3m", label: "RS 3M", render: (r) => (r.rs_3m == null ? "—" : r.rs_3m) },
+      { key: "rs_4w_ago", label: "RS 4W ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
+      { key: "rs_weeks", label: "Weeks RS ≥ 80", render: (r) => (r.rs_weeks == null ? "—" : `${r.rs_weeks}${r.rs_weeks_capped ? "+" : ""}`) },
+      { key: "move_since_rs80_pct", label: "Move since RS 80 %", render: (r) => <Signed v={r.move_since_rs80_pct} digits={0} /> },
+      { key: "base_days", label: "Base (sessions)", render: (r) => (r.base_days ? r.base_days : "—") },
+      { key: "base_depth_pct", label: "Base depth %", render: (r) => fmtNum(r.base_depth_pct, 1) },
+      { key: "tight_days", label: "Tight zone (sessions)", render: (r) => (r.tight_days ? r.tight_days : "—") },
+      { key: "trigger", label: "Trigger ₹", render: (r) => fmtNum(r.trigger, 2) },
+      { key: "stop", label: "Stop ₹", render: (r) => fmtNum(r.stop, 2) },
+      { key: "risk_pct", label: "Risk %", render: (r) => fmtNum(r.risk_pct, 1) },
+      { key: "size_pct", label: "Size % (1% risk)", title: "100 ÷ risk %, the video's position-size shortcut", render: (r) => fmtNum(r.size_pct, 1) },
+      { key: "above_trigger_pct", label: "vs Trigger %", render: (r) => <Signed v={r.above_trigger_pct} digits={1} /> },
+      { key: "to_base_high_pct", label: "vs Base High %", render: (r) => <Signed v={r.to_base_high_pct} digits={1} /> },
+      { key: "vol_dry_x", label: "Vol dry-up ×", title: "Average volume of the last 10 sessions ÷ the 50 before; under 1 means drying up", render: (r) => fmtNum(r.vol_dry_x, 2) },
+      { key: "vol_x", label: "Day Vol ×", render: (r) => (r.vol_x == null ? "—" : `${fmtNum(r.vol_x, 1)}×`) },
+      { key: "theme_rank", label: "Theme rank", title: "Rank by RS among this scan's names in the same sector (NSE-750 members only)", render: (r) => (r.theme_n ? `${r.theme_rank}/${r.theme_n}` : "—") },
+      { key: "pct_50d_ema", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_50d_ema} digits={1} /> },
+      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
+      { key: "turnover_30d_cr", label: "Avg Turnover 30D (₹ Cr)", render: (r) => fmtNum(r.turnover_30d_cr, 1) },
+    ],
     fourPctScan: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -680,6 +759,30 @@ export default function MomentumScreeners() {
         (the video's rule has none) — check <b>Avg Traded</b>: microcaps can be hard to enter and exit at size. A ranking, not advice.
       </>
     ),
+    chartistRs: (
+      <>
+        <b>Chartist_RS_Scanner</b> — from Himanshu Sharma's (@thechartist26) Konversation with Kushal #403, "His Exact 5-Step Strategy". Runs every
+        evening over <b>every NSE stock</b> in our daily store. <b>Step 1, his "RS 80" scan:</b> price above the <b>200 DMA</b> (simple average of
+        closes), <b>RS Rating 80–100</b>, average daily turnover over the last 30 sessions ≥ <b>₹10 Cr</b>, market cap above <b>₹500 Cr</b>, price above
+        ₹10 (he got 265 stocks on 5 Nov 2026 — the funnel above shows today's count). <b>RS Rating</b> is the same number as on All Technicals and
+        Portfolio Allocation: <b>0.4 × 3M + 0.3 × 6M + 0.3 × 1Y</b> return (weekly bars), turned into a 1–99 percentile and ranked among the{" "}
+        <b>NSE 750</b>, ties counting half. He ranks all ~2,500 NSE stocks and never states the weights (he calls 3 months the key window), so a
+        small stock outside the 750 can read high — the market-cap and turnover filters limit that. <b>Step 2, his chart template, computed for
+        each name:</b> a <b>long base</b> of at least <b>21 sessions</b> inside a range no deeper than <b>25%</b>, with a <b>tight right side</b> of at least{" "}
+        <b>8 sessions</b> inside <b>8%</b> ("if the base is wider than 8% it is not a proper base"). <b>Trigger</b> = the tight zone's high (his entry),{" "}
+        <b>Stop</b> = its low, <b>Risk %</b> = entry to stop, <b>Size %</b> = <b>100 ÷ risk %</b> (his shortcut for risking 1% of capital; he runs 10–30%
+        positions). Setup: <b>Breakout</b> = closed above the trigger within 5% (age in days if it happened in the last 5 sessions), <b>Ready</b> = within
+        3% below it, <b>In base</b> = inside the zone, <b>Extended</b> = already more than 5% above it (chasing widens the stop), <b>Below base</b> =
+        closed under the stop. <b>Leg</b>: "first or second leg after RS crosses 80" is read as the price move since the RS Rating last went from below
+        80 to 80+ (<b>Early</b> up to 50%, <b>Mid</b> up to 100%, <b>Late</b> beyond); <b>Weeks RS ≥ 80</b> counts the unbroken streak (a + means it was
+        already above 80 at the start of the year of history we hold). <b>Theme rank</b>: his "first and second name of a strong theme" — rank by RS
+        among this scan's names in the same sector, so 1/9 is the leader of nine; sectors are only known for NSE-750 members. <b>Vol dry-up ×</b>
+        under 1 = volume drying up in the last 10 sessions. <b>Exit</b> (not computed): he trails the <b>50 EMA</b> — see <b>% vs 50D EMA</b>.
+        The base lengths/depths, 5%/3% bands and leg limits are my readings where the video gives no number (constants in api/_bhav.py, CHARTIST).
+        The top strip shows his <b>market health</b> gauge (share of liquid stocks above their 50/200 DMA, advancers vs decliners, new 52-week
+        highs vs lows). Default view shows setups only; use the chips for the rest. Educational — not advice.
+      </>
+    ),
     pullBackMom: (
       <>
         The <b>Momentum Pullback Scan</b> from CMA Gurvinder Malhotra (@cmagurvinder, 4 Oct 2026): strong stocks taking a healthy pullback inside
@@ -801,6 +904,59 @@ export default function MomentumScreeners() {
       </div>
 
       <MethodologyNote>{METHODOLOGY[tab]}</MethodologyNote>
+
+      {tab === "chartistRs" && entry?.funnel && (
+        <div className="mb-3 space-y-2">
+          <div className="text-xs text-slate-600 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            <span className="font-medium text-slate-700">Scan funnel{entry.session ? ` (session ${entry.session})` : ""}:</span>
+            {[
+              ["Traded", entry.funnel.universe],
+              ["above 200 DMA", entry.funnel.above_200dma],
+              ["RS ≥ 80", entry.funnel.rs_80],
+              ["turnover ≥ ₹10 Cr", entry.funnel.turnover],
+              ["mcap > ₹500 Cr", entry.funnel.mcap],
+              ["price > ₹10", entry.funnel.price],
+            ].map(([lab, n], i) => (
+              <span key={String(lab)}>
+                {i > 0 && <span className="text-slate-300 mr-1.5">→</span>}
+                {lab} <b className="text-slate-800">{n ?? "—"}</b>
+              </span>
+            ))}
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
+              setups <b>{entry.funnel.setups ?? 0}</b> (breakout {entry.funnel.breakouts ?? 0}, ready {entry.funnel.ready ?? 0})
+            </span>
+          </div>
+          {entry.health && entry.health.liquid ? (
+            <div className="text-xs text-slate-600">
+              <span className="font-medium text-slate-700">Market health</span> (the {entry.health.liquid} liquid stocks): {entry.health.above_50dma}% above 50 DMA · {entry.health.above_200dma}% above 200 DMA ·{" "}
+              {entry.health.advancers} advancing / {entry.health.decliners} declining today · {entry.health.new_highs} new 52-week highs vs {entry.health.new_lows} lows
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-slate-500">Show:</span>
+            {([["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
+              <button key={k} onClick={() => setCStatus(k)} className={`px-2 py-0.5 rounded-full border ${cStatus === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+                {lab}
+              </button>
+            ))}
+            <span className="text-slate-300 mx-1">|</span>
+            <span className="text-slate-500">Leg:</span>
+            {([["all", "Any"], ["early", "Early"], ["earlymid", "Early + Mid"]] as const).map(([k, lab]) => (
+              <button key={k} onClick={() => setCLeg(k)} className={`px-2 py-0.5 rounded-full border ${cLeg === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+                {lab}
+              </button>
+            ))}
+            <span className="text-slate-300 mx-1">|</span>
+            <button onClick={() => setCLeaders((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cLeaders ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+              Theme leaders (top 2)
+            </button>
+            <button onClick={() => setCDry((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cDry ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+              Volume drying up
+            </button>
+            <span className="text-slate-400 ml-1">{rows.length} shown</span>
+          </div>
+        </div>
+      )}
 
       {/* key={tab} — remounts fresh per tab so search/sector/sort
           state doesn't leak from one screener's filters into the

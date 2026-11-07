@@ -43,6 +43,7 @@ const CLOUD_SCREENERS = new Set([
   "momentumPersonal",
   "volumeRockers",
   "fourPctScan",
+  "chartistRs",
   "nse750TechDaily",
   "gapHold",
   "pullBackMom",

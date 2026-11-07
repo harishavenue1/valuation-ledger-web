@@ -1675,6 +1675,252 @@ def compute_pullback_mom(df, rows):
     return out, funnel
 
 
+# ── "Chartist_RS_Scanner" (Himanshu Sharma / @thechartist26, Konversation with Kushal #403, 2026-11-05) ──
+#
+# Stage 1 is the "RS 80" scan he shows on screen (265 charts on 5 Nov 2026): price above the 200 DMA, RS Rating 80-100,
+# average daily turnover Rs 10 Cr, market cap above Rs 500 Cr, price above Rs 10. Stage 2 reads his chart template for
+# the survivors: a long base (at least one month) with a tight right side no wider than 8% ("if it is wider than 8% it is not a
+# proper base"), entry at the tight zone's high, stop at its low, position % = 100 / stop %, and "first or second leg
+# after RS crosses 80". Numbers he does not give are explicit constants below. RS Rating is the app's one shared
+# definition (src/lib/rsRating.ts: 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y weekly-bar returns, percentile among the NSE 750,
+# a tie counts half); "above the 200 DMA" is a simple average of closes (SMAs stay on Close, this account's rule).
+
+CHARTIST = {
+    "rs_min": 80, "turnover_cr": 10.0, "turnover_days": 30, "mcap_cr": 500, "min_price": 10.0, "sma_days": 200,
+    "base_min_days": 21, "base_max_depth_pct": 25.0, "tight_min_days": 8, "tight_max_depth_pct": 8.0, "base_max_days": 126, "ready_within_pct": 3.0, "breakout_max_ext_pct": 5.0, "recent_breakout_sessions": 5,
+    "leg_early_pct": 50.0, "leg_mid_pct": 100.0, "min_universe": 50, "rs_history_weeks": 60,
+}
+
+
+def _rs_percentile(sorted_vals, x, min_universe=50):
+    """Same rule as percentileRank() in src/lib/rsRating.ts: share of the universe x beats, a tie counting half, 1..99."""
+    if x is None or x != x or len(sorted_vals) < min_universe:
+        return None
+    lo = bisect.bisect_left(sorted_vals, x)
+    top = bisect.bisect_right(sorted_vals, x)
+    return int(min(99, max(1, np.floor(((lo + 0.5 * (top - lo)) / len(sorted_vals)) * 100 + 0.5))))
+
+
+def _tight_run(h, l, end, max_depth_pct):
+    """Longest run of sessions ending at index `end` (inclusive), going back, whose whole range (high - low) / high stays
+    within max_depth_pct. Returns (sessions, high, low, depth_pct); sessions 0 when even that one bar is wider."""
+    if end < 0:
+        return 0, None, None, None
+    hh, ll = h[: end + 1][::-1], l[: end + 1][::-1]
+    cmax, cmin = np.maximum.accumulate(hh), np.minimum.accumulate(ll)
+    depth = (cmax - cmin) / cmax * 100
+    days = int((depth <= max_depth_pct).sum())  # depth only widens going back, so the True values are the leading run
+    if days == 0:
+        return 0, None, None, None
+    return days, float(cmax[days - 1]), float(cmin[days - 1]), float(depth[days - 1])
+
+
+def _chartist_base(h, l, c, v, cfg):
+    """Base status of the latest bar. Two layers, as he describes it: a LONG BASE (>= base_min_days sessions inside a
+    range no deeper than base_max_depth_pct) and, on its right side, a TIGHT zone (>= tight_min_days sessions inside
+    tight_max_depth_pct) whose high is the entry and whose low is the stop. Judged on the window ending yesterday, so
+    today's close can break out of it, or a few sessions earlier for a breakout that is still fresh."""
+    n = len(c)
+    price = float(c[-1])
+    out = {"status": "No base", "base_days": 0, "base_depth_pct": None, "tight_days": 0, "trigger": None, "stop": None, "risk_pct": None,
+           "size_pct": None, "above_trigger_pct": None, "to_base_high_pct": None, "breakout_age": None, "vol_dry_x": None}
+    if n < cfg["base_min_days"] + 8:
+        return out
+    if n >= 60:
+        v10, v50 = float(np.nanmean(v[-10:])), float(np.nanmean(v[-60:-10]))
+        out["vol_dry_x"] = round(v10 / v50, 2) if v50 > 0 and np.isfinite(v10) and np.isfinite(v50) else None
+
+    def zone(end):
+        td, th, tl, _ = _tight_run(h, l, end, cfg["tight_max_depth_pct"])
+        bd, bh, bl, bdep = _tight_run(h, l, end, cfg["base_max_depth_pct"])
+        return td, th, tl, bd, bh, bdep
+
+    td, TH, TL, bd, BH, bdep = zone(n - 2)
+    out["tight_days"], out["base_days"], out["base_depth_pct"] = td, bd, (round(bdep, 1) if bdep is not None else None)
+    def classify(TH, TL):
+        if price > TH:
+            return "Breakout" if (price / TH - 1) * 100 <= cfg["breakout_max_ext_pct"] else "Extended"
+        if price < TL:
+            return "Below base"
+        return "Ready" if (TH - price) / TH * 100 <= cfg["ready_within_pct"] else "In base"
+
+    status, age = None, None
+    if td >= cfg["tight_min_days"] and bd >= cfg["base_min_days"]:
+        status = classify(TH, TL)
+        age = 0 if price > TH else None
+    else:  # a setup that ended up to a few sessions ago, was cleared since, and may have pulled back into its zone
+        for k in range(2, cfg["recent_breakout_sessions"] + 1):
+            td2, TH2, TL2, bd2, BH2, bdep2 = zone(n - 1 - k)
+            if td2 >= cfg["tight_min_days"] and bd2 >= cfg["base_min_days"]:
+                above = np.flatnonzero(c[n - k:] > TH2)
+                if above.size and price >= TL2:
+                    td, TH, TL, bd, BH, bdep, status, age = td2, TH2, TL2, bd2, BH2, bdep2, classify(TH2, TL2), int(k - above[0] - 1)
+                    out["tight_days"], out["base_days"], out["base_depth_pct"] = td2, bd2, round(bdep2, 1)
+                break
+    if status is None:
+        return out
+    out["status"] = status
+    if status in ("Breakout", "Ready", "In base", "Extended"):
+        entry = max(price, TH)
+        risk = (entry - TL) / entry * 100
+        out.update(trigger=round(TH, 2), stop=round(TL, 2), risk_pct=round(risk, 1), size_pct=round(min(100.0, 100.0 / risk), 1) if risk > 0 else None,
+                   above_trigger_pct=round((price / TH - 1) * 100, 1), to_base_high_pct=round((price / BH - 1) * 100, 1), breakout_age=age)
+    return out
+
+
+def compute_chartist_scan(df, rows, universe=None):
+    """Returns (matching rows, funnel counts, market-health numbers). Runs over every NSE stock in the store."""
+    cfg = CHARTIST
+    if df.empty or not rows:
+        return [], {}, {}
+    last_iso = df["date"].max().date().isoformat()
+    live = [r for r in rows if r.get("as_of") == last_iso]
+
+    def score(r):
+        a, b, y = r.get("w_pct_3m"), r.get("w_pct_6m"), r.get("yearly_pct")
+        return None if a is None or b is None or y is None else 0.4 * a + 0.3 * b + 0.3 * y
+
+    scores = {r["symbol"]: score(r) for r in live}
+    scores = {k: v for k, v in scores.items() if v is not None}
+    uni = set(universe or ())
+    if len(uni) < cfg["min_universe"]:  # no NSE-750 list handed in: the 750 largest by market cap
+        uni = {r["symbol"] for r in sorted(live, key=lambda r: -(r.get("market_cap_cr") or 0))[:750]}
+    sorted_u = sorted(v for k, v in scores.items() if k in uni)
+    sorted_3m = sorted(r["w_pct_3m"] for r in live if r["symbol"] in uni and r.get("w_pct_3m") is not None)
+
+    d = df[["symbol", "date", "h", "l", "c", "v"]].sort_values(["symbol", "date"], kind="stable")
+    g = d.groupby("symbol", sort=False)
+    sma_n = cfg["sma_days"]
+    t200 = g.tail(sma_n).groupby("symbol", sort=False)["c"].agg(["mean", "count"])
+    sma200 = t200["mean"].where(t200["count"] >= sma_n)
+    t50 = g.tail(50).groupby("symbol", sort=False)["c"].agg(["mean", "count"])
+    sma50 = t50["mean"].where(t50["count"] >= 50)
+    tv = g.tail(cfg["turnover_days"]).assign(tv=lambda x: x["c"] * x["v"] / 1e7).groupby("symbol", sort=False)["tv"].agg(["mean", "count"])
+    turnover = tv["mean"].where(tv["count"] >= 20)
+    t252 = g.tail(252).groupby("symbol", sort=False).agg(hi=("h", "max"), lo=("l", "min"))
+    lastbar = g.tail(1).set_index("symbol")
+
+    funnel = {"universe": 0, "above_200dma": 0, "rs_80": 0, "turnover": 0, "mcap": 0, "price": 0, "setups": 0, "breakouts": 0, "ready": 0}
+    health = {"liquid": 0, "above_50dma": 0, "above_200dma": 0, "advancers": 0, "decliners": 0, "new_highs": 0, "new_lows": 0}
+    surv = []
+    for r in live:
+        sym = r["symbol"]
+        funnel["universe"] += 1
+        px = r["price"]
+        tv_cr, mc = turnover.get(sym), r.get("market_cap_cr")
+        if mc is not None and tv_cr == tv_cr and tv_cr is not None and mc > cfg["mcap_cr"] and tv_cr >= cfg["turnover_cr"] and px > cfg["min_price"]:  # liquid names: the health read
+            health["liquid"] += 1
+            health["above_50dma"] += int(sma50.get(sym, np.nan) == sma50.get(sym, np.nan) and px > sma50.get(sym))
+            health["above_200dma"] += int(sma200.get(sym, np.nan) == sma200.get(sym, np.nan) and px > sma200.get(sym))
+            ch = r.get("change_pct")
+            health["advancers"] += int(ch is not None and ch > 0)
+            health["decliners"] += int(ch is not None and ch < 0)
+            if sym in t252.index and sym in lastbar.index:
+                health["new_highs"] += int(lastbar.at[sym, "h"] >= t252.at[sym, "hi"] - 1e-9)
+                health["new_lows"] += int(lastbar.at[sym, "l"] <= t252.at[sym, "lo"] + 1e-9)
+        s200 = sma200.get(sym, np.nan)
+        if not (s200 == s200 and px > s200):
+            continue
+        funnel["above_200dma"] += 1
+        rs = _rs_percentile(sorted_u, scores.get(sym), cfg["min_universe"])
+        if rs is None or rs < cfg["rs_min"]:
+            continue
+        funnel["rs_80"] += 1
+        if not (tv_cr == tv_cr and tv_cr is not None and tv_cr >= cfg["turnover_cr"]):
+            continue
+        funnel["turnover"] += 1
+        if mc is None or not mc > cfg["mcap_cr"]:
+            continue
+        funnel["mcap"] += 1
+        if not px > cfg["min_price"]:
+            continue
+        funnel["price"] += 1
+        surv.append((r, rs, float(tv_cr), float(s200)))
+    if health["liquid"]:
+        for k in ("above_50dma", "above_200dma"):
+            health[k] = round(health[k] / health["liquid"] * 100, 1)
+    if not surv:
+        return [], funnel, health
+
+    # RS Rating week by week (weekly closes, 13/26/52-week returns) for the survivors: how long it has been >= 80 and how far the price has gone since it crossed
+    surv_syms = [s[0]["symbol"] for s in surv]
+    need = uni | set(surv_syms)
+    w = d[d["symbol"].isin(need)].copy()
+    w["wk"] = w["date"].dt.to_period("W-FRI")
+    wc = w.groupby(["symbol", "wk"], sort=True)["c"].last().unstack(0)
+    S = (0.4 * (wc / wc.shift(13) - 1) + 0.3 * (wc / wc.shift(26) - 1) + 0.3 * (wc / wc.shift(52) - 1)).to_numpy() * 100
+    cols = {s: i for i, s in enumerate(wc.columns)}
+    U_idx = [cols[s] for s in uni if s in cols]
+    surv_idx = [cols[s] for s in surv_syms if s in cols]
+    W = S.shape[0]
+    hist = np.full((W, len(cols)), np.nan)
+    for t in range(max(0, W - cfg["rs_history_weeks"]), W):
+        row = S[t, U_idx]
+        sv = np.sort(row[~np.isnan(row)])
+        if len(sv) < cfg["min_universe"]:
+            continue
+        xs = S[t, surv_idx]
+        ok = ~np.isnan(xs)
+        lo = np.searchsorted(sv, xs[ok], side="left")
+        top = np.searchsorted(sv, xs[ok], side="right")
+        rating = np.clip(np.floor(((lo + 0.5 * (top - lo)) / len(sv)) * 100 + 0.5), 1, 99)
+        tmp = np.full(len(xs), np.nan)
+        tmp[ok] = rating
+        hist[t, surv_idx] = tmp
+
+    need_bars = cfg["base_max_days"] + 12
+    tail = g.tail(need_bars)
+    bars = {s: grp for s, grp in tail[tail["symbol"].isin(set(surv_syms))].groupby("symbol", sort=False)}
+    wc_np = wc.to_numpy()
+    out = []
+    for r, rs, tv_cr, s200 in surv:
+        sym = r["symbol"]
+        grp = bars.get(sym)
+        if grp is None or len(grp) < cfg["base_min_days"] + 8:
+            continue
+        h_, l_, c_, v_ = (grp[k].to_numpy(dtype=float) for k in ("h", "l", "c", "v"))
+        base = _chartist_base(h_, l_, c_, v_, cfg)
+        j = cols.get(sym)
+        weeks, move, capped, rs_4w = None, None, False, None
+        if j is not None:
+            hs = hist[:, j]
+            if W >= 5 and hs[W - 5] == hs[W - 5]:
+                rs_4w = int(hs[W - 5])
+            streak, k, crossed = 0, W - 2, False
+            while k >= 0 and hs[k] == hs[k]:
+                if hs[k] >= cfg["rs_min"]:
+                    streak += 1
+                    k -= 1
+                else:
+                    crossed = True
+                    break
+            weeks, capped = streak + 1, not crossed
+            base_week = k if crossed else k + 1  # the last week below 80, or the earliest rated week when it never was
+            if 0 <= base_week < W and wc_np[base_week, j] == wc_np[base_week, j] and wc_np[base_week, j] > 0:
+                move = round((float(c_[-1]) / float(wc_np[base_week, j]) - 1) * 100, 1)
+        phase = None if move is None else ("Early" if move <= cfg["leg_early_pct"] else "Mid" if move <= cfg["leg_mid_pct"] else "Late")
+        out.append(
+            {
+                "symbol": sym, "name": r.get("name") or sym, "price": r["price"], "change_pct": r.get("change_pct"),
+                **base,
+                "rs_rating": rs, "rs_3m": _rs_percentile(sorted_3m, r.get("w_pct_3m"), cfg["min_universe"]), "rs_4w_ago": rs_4w,
+                "rs_weeks": weeks, "rs_weeks_capped": capped, "move_since_rs80_pct": move, "phase": phase,
+                "pct_3m": r.get("w_pct_3m"), "vol_x": r.get("vol_x"),
+                "pct_vs_200dma": round((r["price"] / s200 - 1) * 100, 1), "pct_50d_ema": r.get("pct_50d_ema"),
+                "pct_from_52w_high": r.get("pct_from_52w_high"), "rsi_w": r.get("rsi_w"),
+                "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": round(tv_cr, 1), "as_of": r["as_of"],
+            }
+        )
+    tier = {"Breakout": 0, "Ready": 1, "In base": 2, "Extended": 3, "No base": 4, "Below base": 5}
+    out.sort(key=lambda x: (tier.get(x["status"], 5), -x["rs_rating"], -(x.get("pct_3m") or 0)))
+    for i, x in enumerate(out, 1):
+        x["rank"] = i
+    funnel["setups"] = sum(1 for x in out if x["status"] in ("Breakout", "Ready", "In base"))
+    funnel["breakouts"] = sum(1 for x in out if x["status"] == "Breakout")
+    funnel["ready"] = sum(1 for x in out if x["status"] == "Ready")
+    return out, funnel, health
+
+
 # ── Microcap Momentum (Techno Charts, "Microcap Swing Trading Strategy") ──────
 #
 # As described by the video's own summary (no captions to check against):
@@ -2120,6 +2366,12 @@ def publish(budget_s=240):
         pb_rows, pb_funnel = compute_pullback_mom(df, rows)
     except Exception as e:
         pb_funnel = {"error": str(e)[:120]}
+    ch_rows, ch_funnel, ch_health = [], {}, {}
+    try:
+        nse750 = {x.get("symbol") for x in ((ms.get("nse750Fundamentals") or {}).get("rows") or [])}  # same RS ranking universe the pages use client-side
+        ch_rows, ch_funnel, ch_health = compute_chartist_scan(df, rows, nse750)
+    except Exception as e:
+        ch_funnel = {"error": str(e)[:120]}
     up_rows, up_funnel = [], {}
     try:
         up_rows, up_funnel = compute_uprun_hold(df, rows)
@@ -2171,9 +2423,10 @@ def publish(budget_s=240):
             set_meta(conn, "bhav_scan_uprun", {"as_of": stats.get("latest_trade_date"), "rows": up_rows, "funnel": up_funnel, "filters": UP})
             set_meta(conn, "bhav_scan_gap", {"as_of": stats.get("latest_trade_date"), "rows": gap_rows, "funnel": gap_funnel, "filters": GAP})
             set_meta(conn, "bhav_scan4", {"as_of": stats.get("latest_trade_date"), "rows": scan_rows, "funnel": scan_funnel, "filters": SCAN4})
+            set_meta(conn, "bhav_scan_chartist", {"as_of": stats.get("latest_trade_date"), "rows": ch_rows, "funnel": ch_funnel, "health": ch_health, "filters": CHARTIST})
     finally:
         conn.close()
-    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}, {"item": "microcap momentum rows / funnel", "value": f"{len(mc_rows)} / {mc_funnel}"}, {"item": "index directory rows", "value": f"{len(dir_rows)} / {dir_counts}"}]
+    out = [{"item": "ok (page will use the NSE universe)", "value": ok}, {"item": "rows computed", "value": len(rows)}, {"item": "4% scan matches / funnel", "value": f"{len(scan_rows)} / {scan_funnel}"}, {"item": "chartist RS scanner rows / funnel", "value": f"{len(ch_rows)} / {ch_funnel}"}, {"item": "gap-up hold matches / funnel", "value": f"{len(gap_rows)} / {gap_funnel}"}, {"item": "pullback momentum matches / funnel", "value": f"{len(pb_rows)} / {pb_funnel}"}, {"item": "microcap momentum rows / funnel", "value": f"{len(mc_rows)} / {mc_funnel}"}, {"item": "index directory rows", "value": f"{len(dir_rows)} / {dir_counts}"}]
     out += [{"item": f"corporate actions: {k}", "value": v} for k, v in action_stats.items()]
     out += [{"item": f"verify: {k}", "value": v} for k, v in stats.items() if k != "vs_yahoo"]
     for k, v in stats.get("vs_yahoo", {}).items():
