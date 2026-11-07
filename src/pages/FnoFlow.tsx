@@ -66,7 +66,7 @@ const COLS: Col[] = ((): Col[] => {
       key: "resistance",
       label: "Resist.",
       title: "Strike with the most call open interest at or above spot (where call writers cap it), and how far it is above the future",
-      render: (r) => (r.resistance ? <span>{fmtNum(r.resistance, 0)} <span className="text-slate-400 text-[10px]">+{fmtNum(away(r.resistance, r.spot ?? r.fut_close), 1)}%</span></span> : "—"),
+      render: (r) => (r.resistance ? <span>{fmtNum(r.resistance, 0)} <span className="text-slate-400 text-[10px]">{(away(r.resistance, r.spot ?? r.fut_close) ?? 0) >= 0 ? "+" : ""}{fmtNum(away(r.resistance, r.spot ?? r.fut_close), 1)}%</span></span> : "—"),
     },
     { w: 4.6, key: "max_pain", label: "Max pain", title: "Strike where option buyers lose the most at expiry", render: (r) => (r.max_pain ? fmtNum(r.max_pain, 0) : "—") },
     {
