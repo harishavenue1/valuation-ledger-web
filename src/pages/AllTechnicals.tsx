@@ -5,7 +5,7 @@ import { api } from "../lib/api";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 import { saveChartList } from "../lib/chartList";
-import { buildRsUniverse, rsRatingOf, rsTone } from "../lib/rsRating";
+import { buildRsUniverse, percentileRank, rsRatingOf, rsTone } from "../lib/rsRating";
 
 // 2026-09-18 — "design for technical and fundamental in intention to
 // speed up the app and reduce redundant info across pages" -> "let's
@@ -77,6 +77,19 @@ const ALL_COLUMNS: ColumnDef[] = [
         <span className={rsTone(r.rs_rating)} title={`RS Rating ${r.rs_rating}: this stock's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${r.rs_rating}% of NSE 750 stocks. 80+ is leadership territory.`}>{r.rs_rating}</span>
       ) : (
         <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history in the technicals store">—</span>
+      ),
+  },
+  // 2026-11-07 ("remove 1Y% and add 3M RS"): the 3-month RS, the percentile (1-99) of the 13-week weekly-bar return among NSE 750 stocks: the number Portfolio Allocation shows as its headline RS and the Chartist_RS_Scanner screens on. (The "RS 3M" further down is a different thing: points against the index.)
+  {
+    key: "rs3m_pct",
+    label: "RS 3M",
+    group: "Relative Strength",
+    source: "core",
+    render: (r) =>
+      typeof r.rs3m_pct === "number" ? (
+        <span className={rsTone(r.rs3m_pct)} title={`RS 3M ${r.rs3m_pct}: this stock's 3-month return (13 weekly bars) beats ${r.rs3m_pct}% of NSE 750 stocks. 80+ is leadership territory.`}>{r.rs3m_pct}</span>
+      ) : (
+        <span className="text-slate-300" title="needs 13 weeks of price history in the technicals store">—</span>
       ),
   },
   { key: "rs_1w", label: "RS 1W", group: "Relative Strength", source: "rs", render: (r) => <Signed v={r.rs_1w} digits={1} /> },
@@ -266,6 +279,7 @@ const DEFAULT_ENABLED = [
   "weekly_pct",
   "monthly_pct",
   "rsi_w",
+  "rs3m_pct",
   "rs_rating",
   "rs_score",
   "alpha_score",
@@ -281,6 +295,11 @@ function loadEnabledColumns(): Set<string> {
       if (!localStorage.getItem("allTechnicalsRsRating_v1")) { // 2026-11-01: surface the new RS Rating column once for a saved pick that predates it
         saved.add("rs_rating");
         localStorage.setItem("allTechnicalsRsRating_v1", "1");
+      }
+      if (!localStorage.getItem("allTechnicalsRs3m_v1")) { // 2026-11-07: Year % out, the 3-month RS in, once, for a saved pick that predates it
+        saved.delete("yearly_pct");
+        saved.add("rs3m_pct");
+        localStorage.setItem("allTechnicalsRs3m_v1", "1");
       }
       return saved;
     }
@@ -658,7 +677,15 @@ export default function AllTechnicals() {
   }, [ms, bhavOk, bhav]);
   // RS Rating: ranked against the NSE 750 (nse750Fundamentals' symbols) on the technicals store's own returns, so the number is the same one Portfolio Allocation shows
   const rsUni = useMemo(() => buildRsUniverse(bhav?.rows ?? [], new Set<string>((ms?.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol))), [bhav, ms?.nse750Fundamentals]);
-  const rows = useMemo(() => rowsBase.map((r: any) => ({ ...r, rs_rating: rsRatingOf(rsUni, r.symbol) })), [rowsBase, rsUni]);
+  // RS 3M: the percentile of the 13-week weekly-bar return (w_pct_3m) among the same NSE 750 universe
+  const rs3 = useMemo(() => {
+    const uni = new Set<string>((ms?.nse750Fundamentals?.rows ?? []).map((f: any) => f.symbol));
+    const by = new Map<string, number>();
+    for (const t of bhav?.rows ?? []) if (typeof t.w_pct_3m === "number" && Number.isFinite(t.w_pct_3m)) by.set(t.symbol, t.w_pct_3m);
+    const sorted = [...by.entries()].filter(([sym]) => uni.has(sym)).map(([, v]) => v).sort((a, b) => a - b);
+    return { by, sorted };
+  }, [bhav, ms?.nse750Fundamentals]);
+  const rows = useMemo(() => rowsBase.map((r: any) => ({ ...r, rs_rating: rsRatingOf(rsUni, r.symbol), rs3m_pct: percentileRank(rs3.sorted, rs3.by.get(r.symbol)) })), [rowsBase, rsUni, rs3]);
 
   const cols: Col[] = useMemo(() => {
     const optional = optionalCols.filter((c) => enabledCols.has(c.key));
