@@ -9,6 +9,7 @@ const Detail = lazy(() => import("./pages/Detail"));
 const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
 const VirajScreen = lazy(() => import("./pages/VirajScreen"));
 const MomentumScreeners = lazy(() => import("./pages/MomentumScreeners"));
+const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
 const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
 const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
@@ -216,10 +217,15 @@ export default function App() {
               <NavLink to="/summary" className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
+              <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
+                💼 Allocation
+              </NavLink>
+              <NavLink to="/chartist-rs-scanner" className={({ isActive }) => navClass(isActive)}>
+                🔭 Chartist RS
+              </NavLink>
               <NavGroup
                 label="💼 Portfolio"
                 items={[
-                  { to: "/portfolio-allocation", label: "💼 Allocation" },
                   { to: "/portfolio-charts", label: "📈 Charts" },
                   { to: "/portfolio-performance", label: "📊 Performance" },
                   { to: "/mtf-calculator", label: "📐 MTF" },
@@ -305,6 +311,7 @@ export default function App() {
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
+            <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/all-technicals" element={<AllTechnicals />} />
             <Route path="/all-fundamentals" element={<AllFundamentals />} />
