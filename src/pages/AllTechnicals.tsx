@@ -699,8 +699,8 @@ export default function AllTechnicals() {
   const [fAth, setFAth] = useState(false);
   const [f52w, setF52w] = useState(false);
   const [fMcap, setFMcap] = useState(false);
-  const [fRs, setFRs] = useState(false); // 2026-11-01 ("add a filter for RS Rating > 85")
-  const [vRs, setVRs] = useState(85);
+  const [fRs, setFRs] = useState(false); // 2026-11-01 ("add a filter for RS Rating > 85"); 2026-11-07 ("Change the RS Rating filter to RS 3M > 80"): now the 3-month percentile, default 80
+  const [vRs, setVRs] = useState(80);
   const [f3m, setF3m] = useState(false);
   const [vAth, setVAth] = useState(10);
   const [v52w, setV52w] = useState(10);
@@ -738,7 +738,7 @@ export default function AllTechnicals() {
     if (fAth) parts.push(`ATH within ${vAth}%`);
     if (f52w) parts.push(`52WH within ${v52w}%`);
     if (fMcap) parts.push(`Mcap > ${vMcap} Cr`);
-    if (fRs) parts.push(`RS Rating > ${vRs}`);
+    if (fRs) parts.push(`RS 3M > ${vRs}`);
     if (f3m) parts.push(`3M > ${v3m}%`);
     if (fEma) parts.push(`vs 33W EMA ${emaLo}% to ${emaHi}%`);
     if (fDcRecent) parts.push(`DC27W trigger ≤ ${vDcRecent}w`);
@@ -767,7 +767,7 @@ export default function AllTechnicals() {
     if (fAth) base = base.filter((r: any) => within(r.nt_pct_from_ath, vAth));
     if (f52w) base = base.filter((r: any) => within(r.nt_pct_from_52w_high, v52w));
     if (fMcap) base = base.filter((r: any) => typeof r.nt_market_cap === "number" && r.nt_market_cap > vMcap);
-    if (fRs) base = base.filter((r: any) => typeof r.rs_rating === "number" && r.rs_rating > vRs);
+    if (fRs) base = base.filter((r: any) => typeof r.rs3m_pct === "number" && r.rs3m_pct > vRs);
     if (f3m) base = base.filter((r: any) => {
       const v = r.three_month_pct ?? r.nt_3m_pct;
       return typeof v === "number" && v > v3m;
@@ -882,7 +882,7 @@ export default function AllTechnicals() {
         {([
           [fAth, setFAth, "ATH within", vAth, setVAth, "%", "Within this % of the all-time high (% from ATH between −N and 0)"],
           [f52w, setF52w, "52WH within", v52w, setV52w, "%", "Within this % of the 52-week high"],
-          [fRs, setFRs, "RS Rating >", vRs, setVRs, "", "RS Rating above this (1-99: the percentile of the weighted 3M / 6M / 1Y return among NSE 750 stocks; 80+ is leadership). Rows with no rating (under a year of history) are hidden"],
+          [fRs, setFRs, "RS 3M >", vRs, setVRs, "", "RS 3M above this (1-99: the percentile of the 3-month return among NSE 750 stocks, the RS the Chartist_RS_Scanner screens on; 80+ is leadership). Rows with no rating (under 13 weeks of history) are hidden"],
           [fMcap, setFMcap, "Mcap >", vMcap, setVMcap, "Cr", "Market cap above this many ₹ crore (rows with no market cap are hidden)"],
           [f3m, setF3m, "3M >", v3m, setV3m, "%", "3-month return above this %"],
           [fDcRecent, setFDcRecent, "DC27W recent ≤", vDcRecent, setVDcRecent, "wks", "Weekly chart: a close above the flat upper band of a narrowed 27-week Donchian channel (squeeze → trigger) within this many weeks"],
