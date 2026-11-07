@@ -1016,17 +1016,6 @@ export default function PortfolioAllocation() {
         },
       })),
       {
-        // reference only: ONE overall 1-99 number, the percentile of the 40/30/30 score of the 3-month, 6-month and 1-year returns among NSE 750 stocks (the All Technicals "RS Rating")
-        key: "rs_rating",
-        label: "RS comp.",
-        width: 3.9,
-        render: (r) => {
-          const v = r.rs_rating as number | null | undefined;
-          if (typeof v !== "number") return <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history">—</span>;
-          return <span className="text-slate-600" title={`Composite RS Rating ${v}: this holding's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${v}% of NSE 750 stocks. Reference only: a stock that ran far in 6M-1Y can read high here while its 3M RS has cooled.`}>{v}</span>;
-        },
-      },
-      {
         key: "rs_1w",
         label: "RS 1W Δ",
         width: 3.9,
