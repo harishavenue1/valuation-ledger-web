@@ -449,67 +449,64 @@ export default function MomentumScreeners() {
       { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
       { key: "traded_value_cr", label: "Traded Value (₹ Cr)", render: (r) => fmtNum(r.traded_value_cr, 1) },
     ],
-    chartistRs: [
-      { key: "rank", label: "Rank" },
-      { key: "symbol", label: "Symbol", align: "left" },
-      { key: "name", label: "Name", align: "left" },
-      { key: "sector", label: "Sector", align: "left" },
-      { key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
-      {
-        key: "status",
-        label: "Setup",
-        align: "left",
-        title: "Breakout = closed above the tight zone's high (within 5%); Ready = within 3% below it; In base = inside the zone; Extended = already more than 5% above it; Below base = closed under its low; No base = no 1-month base with a tight right side",
-        render: (r) => (
-          <span
-            className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
-              r.status === "Breakout"
-                ? "bg-emerald-50 text-emerald-700 border-emerald-300"
-                : r.status === "Ready"
-                  ? "bg-sky-50 text-sky-700 border-sky-300"
-                  : r.status === "In base"
-                    ? "bg-amber-50 text-amber-700 border-amber-300"
-                    : r.status === "Extended"
-                      ? "bg-orange-50 text-orange-700 border-orange-300"
-                      : r.status === "Below base"
-                        ? "bg-red-50 text-red-600 border-red-300"
-                        : "bg-slate-100 text-slate-500 border-slate-300"
-            }`}
-          >
-            {r.status}
-            {r.status === "Breakout" && r.breakout_age ? ` (${r.breakout_age}d)` : ""}
-          </span>
-        ),
-      },
-      {
-        key: "phase",
-        label: "Leg",
-        align: "left",
-        title: "Move since RS last crossed 80: Early up to 50%, Mid up to 100%, Late beyond",
-        render: (r) => (r.phase ? <span className={r.phase === "Late" ? "text-orange-600" : "text-emerald-700 font-medium"}>{r.phase}</span> : "—"),
-      },
-      { key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
-      { key: "rs_4w_ago", label: "RS 3M 4W ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
-      { key: "rs_rating", label: "RS Rating (All Tech.)", title: "Reference only: the composite 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y rating shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
-      { key: "rs_weeks", label: "Weeks RS ≥ 80", render: (r) => (r.rs_weeks == null ? "—" : `${r.rs_weeks}${r.rs_weeks_capped ? "+" : ""}`) },
-      { key: "move_since_rs80_pct", label: "Move since RS 80 %", render: (r) => <Signed v={r.move_since_rs80_pct} digits={0} /> },
-      { key: "base_days", label: "Base (sessions)", render: (r) => (r.base_days ? r.base_days : "—") },
-      { key: "base_depth_pct", label: "Base depth %", render: (r) => fmtNum(r.base_depth_pct, 1) },
-      { key: "tight_days", label: "Tight zone (sessions)", render: (r) => (r.tight_days ? r.tight_days : "—") },
-      { key: "trigger", label: "Trigger ₹", render: (r) => fmtNum(r.trigger, 2) },
-      { key: "stop", label: "Stop ₹", render: (r) => fmtNum(r.stop, 2) },
-      { key: "risk_pct", label: "Risk %", render: (r) => fmtNum(r.risk_pct, 1) },
-      { key: "size_pct", label: "Size % (1% risk)", title: "100 ÷ risk %, the video's position-size shortcut", render: (r) => fmtNum(r.size_pct, 1) },
-      { key: "above_trigger_pct", label: "vs Trigger %", render: (r) => <Signed v={r.above_trigger_pct} digits={1} /> },
-      { key: "to_base_high_pct", label: "vs Base High %", render: (r) => <Signed v={r.to_base_high_pct} digits={1} /> },
-      { key: "vol_dry_x", label: "Vol dry-up ×", title: "Average volume of the last 10 sessions ÷ the 50 before; under 1 means drying up", render: (r) => fmtNum(r.vol_dry_x, 2) },
-      { key: "vol_x", label: "Day Vol ×", render: (r) => (r.vol_x == null ? "—" : `${fmtNum(r.vol_x, 1)}×`) },
-      { key: "theme_rank", label: "Theme rank", title: "Rank by RS among this scan's names in the same sector (NSE-750 members only)", render: (r) => (r.theme_n ? `${r.theme_rank}/${r.theme_n}` : "—") },
-      { key: "pct_50d_ema", label: "% vs 50D EMA", render: (r) => <Signed v={r.pct_50d_ema} digits={1} /> },
-      { key: "pct_from_52w_high", label: "% from 52W High", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
-      { key: "market_cap_cr", label: "Mkt Cap (₹ Cr)", render: (r) => fmtNum(r.market_cap_cr, 0) },
-      { key: "turnover_30d_cr", label: "Avg Turnover 30D (₹ Cr)", render: (r) => fmtNum(r.turnover_30d_cr, 1) },
-    ],
+    // 25 columns: short headers (full name on hover) and a weight per column, normalised to 100% below; the table has a minimum width (see minWidth on the GenericTable) so it scrolls sideways instead of overlapping headers
+    chartistRs: ((): Col[] => {
+      const W: (Col & { w: number })[] = [
+        { w: 5.5, key: "symbol", label: "Symbol", align: "left" },
+        { w: 9, key: "name", label: "Name", align: "left" },
+        { w: 7.5, key: "sector", label: "Sector", align: "left" },
+        { w: 4.6, key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+        {
+          w: 6.6,
+          key: "status",
+          label: "Setup",
+          align: "left",
+          title: "Breakout = closed above the tight zone's high (within 5%); Ready = within 3% below it; In base = inside the zone; Extended = already more than 5% above it; Below base = closed under its low; No base = no 1-month base with a tight right side",
+          render: (r) => (
+            <span
+              className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
+                r.status === "Breakout"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300"
+                  : r.status === "Ready"
+                    ? "bg-sky-50 text-sky-700 border-sky-300"
+                    : r.status === "In base"
+                      ? "bg-amber-50 text-amber-700 border-amber-300"
+                      : r.status === "Extended"
+                        ? "bg-orange-50 text-orange-700 border-orange-300"
+                        : r.status === "Below base"
+                          ? "bg-red-50 text-red-600 border-red-300"
+                          : "bg-slate-100 text-slate-500 border-slate-300"
+              }`}
+            >
+              {r.status}
+              {r.status === "Breakout" && r.breakout_age ? ` (${r.breakout_age}d)` : ""}
+            </span>
+          ),
+        },
+        { w: 3.8, key: "phase", label: "Leg", align: "left", title: "Move since the 3M RS last crossed 80: Early up to 50%, Mid up to 100%, Late beyond", render: (r) => (r.phase ? <span className={r.phase === "Late" ? "text-orange-600" : "text-emerald-700 font-medium"}>{r.phase}</span> : "—") },
+        { w: 4, key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
+        { w: 4.8, key: "rs_4w_ago", label: "RS 4W ago", title: "The 3M RS four weeks ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
+        { w: 4.4, key: "rs_rating", label: "RS comp.", title: "Reference only: the composite RS Rating (0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
+        { w: 4.4, key: "rs_weeks", label: "Wks ≥ 80", title: "Weeks the 3M RS has stayed at 80 or more (a + means it was already above 80 at the start of the history we hold)", render: (r) => (r.rs_weeks == null ? "—" : `${r.rs_weeks}${r.rs_weeks_capped ? "+" : ""}`) },
+        { w: 5, key: "move_since_rs80_pct", label: "Since 80 %", title: "Price move since the 3M RS last went from below 80 to 80+", render: (r) => <Signed v={r.move_since_rs80_pct} digits={0} /> },
+        { w: 5, key: "base_days", label: "Base/tight", title: "Sessions in the long base / sessions in the tight zone on its right side", render: (r) => (r.base_days ? `${r.base_days} / ${r.tight_days || 0}` : "—") },
+        { w: 4.4, key: "base_depth_pct", label: "Depth %", title: "Depth of the long base (high to low, % of high)", render: (r) => fmtNum(r.base_depth_pct, 1) },
+        { w: 5, key: "trigger", label: "Trigger ₹", title: "High of the tight zone: the entry", render: (r) => fmtNum(r.trigger, 2) },
+        { w: 4.8, key: "stop", label: "Stop ₹", title: "Low of the tight zone: the stop", render: (r) => fmtNum(r.stop, 2) },
+        { w: 4, key: "risk_pct", label: "Risk %", title: "Entry (the higher of price and trigger) down to the stop", render: (r) => fmtNum(r.risk_pct, 1) },
+        { w: 4, key: "size_pct", label: "Size %", title: "Position size for 1% capital risk = 100 ÷ risk % (the video's shortcut)", render: (r) => fmtNum(r.size_pct, 1) },
+        { w: 4.6, key: "above_trigger_pct", label: "vs Trig %", title: "Price against the trigger", render: (r) => <Signed v={r.above_trigger_pct} digits={1} /> },
+        { w: 4.8, key: "to_base_high_pct", label: "vs Base %", title: "Price against the high of the long base (overhead resistance)", render: (r) => <Signed v={r.to_base_high_pct} digits={1} /> },
+        { w: 4.6, key: "vol_dry_x", label: "Dry-up ×", title: "Average volume of the last 10 sessions ÷ the 50 before; under 1 means volume is drying up", render: (r) => fmtNum(r.vol_dry_x, 2) },
+        { w: 4, key: "theme_rank", label: "Theme", title: "Rank by 3M RS among this scan's names in the same sector, e.g. 1/9 = leader of nine (NSE-750 members only)", render: (r) => (r.theme_n ? `${r.theme_rank}/${r.theme_n}` : "—") },
+        { w: 4.4, key: "pct_50d_ema", label: "vs 50D %", title: "Close against the 50-day EMA (his trailing exit)", render: (r) => <Signed v={r.pct_50d_ema} digits={1} /> },
+        { w: 5.6, key: "pct_from_52w_high", label: "vs 52WH %", title: "Distance from the 52-week high", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
+        { w: 5, key: "market_cap_cr", label: "Mcap ₹Cr", render: (r) => fmtNum(r.market_cap_cr, 0) },
+        { w: 5.8, key: "turnover_30d_cr", label: "Turnover ₹Cr", title: "Average daily traded value over the last 30 sessions", render: (r) => fmtNum(r.turnover_30d_cr, 1) },
+      ];
+      const total = W.reduce((a, c) => a + c.w, 0);
+      return W.map(({ w, ...c }) => ({ ...c, width: +((w / total) * 100).toFixed(3) }));
+    })(),
     fourPctScan: [
       { key: "rank", label: "Rank" },
       { key: "symbol", label: "Symbol", align: "left" },
@@ -963,7 +960,7 @@ export default function MomentumScreeners() {
           state doesn't leak from one screener's filters into the
           next (e.g. a sector selection that doesn't exist there). */}
       {ready ? (
-        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} />
+        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={tab === "chartistRs" ? 2600 : undefined} />
       ) : (
         <ScreenerLoading label={TABS.find((t) => t.key === tab)?.label ?? tab} />
       )}
