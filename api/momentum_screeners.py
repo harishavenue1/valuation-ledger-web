@@ -4008,7 +4008,7 @@ def _run_chartist_rs(symbols, name_map, sector_map):
     rows = [{**r, "sector": sector_map.get(r["symbol"], "")} for r in (scan.get("rows") or [])]
     by_sector = {}
     for r in rows:
-        if r["sector"]:
+        if r["sector"] and not r.get("misses"):  # theme = the full matches only, so a thin or short-history name does not inflate a sector's count
             by_sector.setdefault(r["sector"], []).append(r)
     for members in by_sector.values():
         members.sort(key=lambda x: (-(x.get("rs_3m") or 0), -(x.get("pct_3m") or 0)))

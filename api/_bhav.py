@@ -1803,6 +1803,7 @@ def compute_chartist_scan(df, rows, universe=None):
 
     funnel = {"universe": 0, "above_200dma": 0, "rs_80": 0, "turnover": 0, "mcap": 0, "price": 0, "setups": 0, "breakouts": 0, "ready": 0}
     health = {"liquid": 0, "above_50dma": 0, "above_200dma": 0, "advancers": 0, "decliners": 0, "new_highs": 0, "new_lows": 0}
+    nb = g.size()
     surv = []
     for r in live:
         sym = r["symbol"]
@@ -1820,23 +1821,39 @@ def compute_chartist_scan(df, rows, universe=None):
                 health["new_highs"] += int(lastbar.at[sym, "h"] >= t252.at[sym, "hi"] - 1e-9)
                 health["new_lows"] += int(lastbar.at[sym, "l"] <= t252.at[sym, "lo"] + 1e-9)
         s200 = sma200.get(sym, np.nan)
-        if not (s200 == s200 and px > s200):
-            continue
-        funnel["above_200dma"] += 1
+        has200 = s200 == s200
+        tv_ok = tv_cr is not None and tv_cr == tv_cr
         rs = _rs_percentile(sorted_3m, r.get("w_pct_3m"), cfg["min_universe"])  # his RS: percentile of the 3-month return
+        # the funnel keeps the video's order of filters (200 DMA, RS, turnover, market cap, price) for the full matches
+        if has200 and px > s200:
+            funnel["above_200dma"] += 1
+            if rs is not None and rs >= cfg["rs_min"]:
+                funnel["rs_80"] += 1
+                if tv_ok and tv_cr >= cfg["turnover_cr"]:
+                    funnel["turnover"] += 1
+                    if mc is not None and mc > cfg["mcap_cr"]:
+                        funnel["mcap"] += 1
+                        if px > cfg["min_price"]:
+                            funnel["price"] += 1
         if rs is None or rs < cfg["rs_min"]:
             continue
-        funnel["rs_80"] += 1
-        if not (tv_cr == tv_cr and tv_cr is not None and tv_cr >= cfg["turnover_cr"]):
-            continue
-        funnel["turnover"] += 1
-        if mc is None or not mc > cfg["mcap_cr"]:
-            continue
-        funnel["mcap"] += 1
+        # every RS >= 80 stock is listed; the other filters it misses are named (partial match), none missed = full match
+        misses = []
+        if not has200:
+            misses.append(f"no 200 DMA ({int(nb.get(sym, 0))} sessions stored)")
+        elif not px > s200:
+            misses.append(f"below 200 DMA ({(px / s200 - 1) * 100:.0f}%)")
+        if not tv_ok:
+            misses.append("no turnover data")
+        elif tv_cr < cfg["turnover_cr"]:
+            misses.append(f"30D turnover ₹{tv_cr:.1f} Cr (< ₹{cfg['turnover_cr']:.0f} Cr)")
+        if mc is None:
+            misses.append("market cap unknown")
+        elif not mc > cfg["mcap_cr"]:
+            misses.append(f"mcap ₹{mc:,.0f} Cr (< ₹{cfg['mcap_cr']} Cr)")
         if not px > cfg["min_price"]:
-            continue
-        funnel["price"] += 1
-        surv.append((r, rs, float(tv_cr), float(s200)))
+            misses.append(f"price ₹{px:g} (≤ ₹{cfg['min_price']:.0f})")
+        surv.append((r, rs, float(tv_cr) if tv_ok else None, float(s200) if has200 else None, misses))
     if health["liquid"]:
         for k in ("above_50dma", "above_200dma"):
             health[k] = round(health[k] / health["liquid"] * 100, 1)
@@ -1874,7 +1891,7 @@ def compute_chartist_scan(df, rows, universe=None):
     bars = {s: grp for s, grp in tail[tail["symbol"].isin(set(surv_syms))].groupby("symbol", sort=False)}
     wc_np = wc.to_numpy()
     out = []
-    for r, rs, tv_cr, s200 in surv:
+    for r, rs, tv_cr, s200, misses in surv:
         sym = r["symbol"]
         grp = bars.get(sym)
         if grp is None or len(grp) < cfg["base_min_days"] + 8:
@@ -1907,18 +1924,20 @@ def compute_chartist_scan(df, rows, universe=None):
                 "rs_3m": rs, "rs_4w_ago": rs_4w, "rs_rating": _rs_percentile(sorted_u, scores.get(sym), cfg["min_universe"]),
                 "rs_weeks": weeks, "rs_weeks_capped": capped, "move_since_rs80_pct": move, "phase": phase,
                 "pct_3m": r.get("w_pct_3m"), "vol_x": r.get("vol_x"),
-                "pct_vs_200dma": round((r["price"] / s200 - 1) * 100, 1), "pct_50d_ema": r.get("pct_50d_ema"),
+                "pct_vs_200dma": round((r["price"] / s200 - 1) * 100, 1) if s200 else None, "pct_50d_ema": r.get("pct_50d_ema"),
                 "pct_from_52w_high": r.get("pct_from_52w_high"), "rsi_w": r.get("rsi_w"),
-                "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": round(tv_cr, 1), "as_of": r["as_of"],
+                "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": round(tv_cr, 1) if tv_cr is not None else None, "match": "Partial" if misses else "Full", "misses": misses, "as_of": r["as_of"],
             }
         )
     tier = {"Breakout": 0, "Ready": 1, "In base": 2, "Extended": 3, "No base": 4, "Below base": 5}
-    out.sort(key=lambda x: (tier.get(x["status"], 5), -x["rs_3m"], -(x.get("pct_3m") or 0)))
+    out.sort(key=lambda x: (bool(x["misses"]), tier.get(x["status"], 5), -x["rs_3m"], -(x.get("pct_3m") or 0)))  # full matches first
     for i, x in enumerate(out, 1):
         x["rank"] = i
-    funnel["setups"] = sum(1 for x in out if x["status"] in ("Breakout", "Ready", "In base"))
-    funnel["breakouts"] = sum(1 for x in out if x["status"] == "Breakout")
-    funnel["ready"] = sum(1 for x in out if x["status"] == "Ready")
+    full = [x for x in out if not x["misses"]]
+    funnel["setups"] = sum(1 for x in full if x["status"] in ("Breakout", "Ready", "In base"))
+    funnel["breakouts"] = sum(1 for x in full if x["status"] == "Breakout")
+    funnel["ready"] = sum(1 for x in full if x["status"] == "Ready")
+    funnel["partial"] = len(out) - len(full)
     return out, funnel, health
 
 

@@ -91,6 +91,7 @@ export default function MomentumScreeners() {
   const [cLeg, setCLeg] = useState<"all" | "early" | "earlymid">("all");
   const [cLeaders, setCLeaders] = useState(false);
   const [cDry, setCDry] = useState(false);
+  const [cMatch, setCMatch] = useState<"full" | "partial" | "all">("full"); // 2026-11-07: RS 80+ stocks that miss another filter are listed too, tagged with what they miss
   const [cHeld, setCHeld] = useState(false); // 2026-11-07 ("why chartist page dont have stocks from my pf page though RS > 80"): your own holdings, whatever their setup status
   const rows = useMemo(() => {
     const base = entry?.rows ?? [];
@@ -102,6 +103,8 @@ export default function MomentumScreeners() {
         if (cLeg === "earlymid" && r.phase !== "Early" && r.phase !== "Mid") return false;
         if (cLeaders && !(r.theme_rank != null && r.theme_rank <= 2)) return false;
         if (cDry && !(r.vol_dry_x != null && r.vol_dry_x < 1)) return false;
+        if (cMatch === "full" && r.misses?.length) return false;
+        if (cMatch === "partial" && !r.misses?.length) return false;
         if (cHeld && !watchlist.held?.has(r.symbol)) return false;
         return true;
       });
@@ -109,7 +112,7 @@ export default function MomentumScreeners() {
     if (tab !== "allTimeHigh") return base;
     const cap = new Map<string, number>((fundForCap?.rows ?? []).filter((f: any) => typeof f.marketcap === "number").map((f: any) => [f.symbol, f.marketcap]));
     return base.map((r: any) => ({ ...r, marketcap: r.marketcap ?? cap.get(r.symbol) ?? null }));
-  }, [entry, tab, fundForCap, cStatus, cLeg, cLeaders, cDry, cHeld, watchlist.held]);
+  }, [entry, tab, fundForCap, cStatus, cLeg, cLeaders, cDry, cHeld, cMatch, watchlist.held]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -486,6 +489,14 @@ export default function MomentumScreeners() {
           ),
         },
         { w: 3.8, key: "phase", label: "Leg", align: "left", title: "Move since the 3M RS last crossed 80: Early up to 50%, Mid up to 100%, Late beyond", render: (r) => (r.phase ? <span className={r.phase === "Late" ? "text-orange-600" : "text-emerald-700 font-medium"}>{r.phase}</span> : "—") },
+        {
+          w: 13,
+          key: "misses",
+          label: "Misses",
+          align: "left",
+          title: "Filters of the scan this RS 80+ stock does not meet (empty = full match): 200 DMA, 30-day turnover ₹10 Cr, market cap ₹500 Cr, price ₹10",
+          render: (r) => (r.misses?.length ? <span className="text-orange-700" title={r.misses.join(" · ")}>{r.misses.join(" · ")}</span> : <span className="text-emerald-600">full match</span>),
+        },
         { w: 4, key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
         { w: 4.8, key: "rs_4w_ago", label: "RS 4W ago", title: "The 3M RS four weeks ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
         { w: 4.4, key: "rs_rating", label: "RS comp.", title: "Reference only: the composite RS Rating (0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
@@ -780,7 +791,7 @@ export default function MomentumScreeners() {
         under 1 = volume drying up in the last 10 sessions. <b>Exit</b> (not computed): he trails the <b>50 EMA</b> — see <b>% vs 50D EMA</b>.
         The base lengths/depths, 5%/3% bands and leg limits are my readings where the video gives no number (constants in api/_bhav.py, CHARTIST).
         The top strip shows his <b>market health</b> gauge (share of liquid stocks above their 50/200 DMA, advancers vs decliners, new 52-week
-        highs vs lows). Default view shows setups only; use the chips for the rest. Educational — not advice.
+        highs vs lows). <b>Partial matches</b>: every stock with 3M RS of 80+ is listed, and one that fails another filter (below its 200 DMA, 30-day turnover under ₹10 Cr, market cap under ₹500 Cr, price ₹10 or less, or under 200 stored sessions so no 200 DMA) is tagged <b>Partial</b> with the filters it misses in the <b>Misses</b> column; <b>Full</b> means it meets every filter. Theme rank counts full matches only. Default view shows full matches, setups only; use the chips for the rest. Educational — not advice.
       </>
     ),
     pullBackMom: (
@@ -925,6 +936,7 @@ export default function MomentumScreeners() {
             <span className="ml-2 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700">
               setups <b>{entry.funnel.setups ?? 0}</b> (breakout {entry.funnel.breakouts ?? 0}, ready {entry.funnel.ready ?? 0})
             </span>
+            {entry.funnel.partial != null && <span className="px-2 py-0.5 rounded-full bg-orange-50 border border-orange-200 text-orange-700">+ <b>{entry.funnel.partial}</b> RS 80+ partial matches (miss a filter)</span>}
           </div>
           {entry.health && entry.health.liquid ? (
             <div className="text-xs text-slate-600">
@@ -933,6 +945,13 @@ export default function MomentumScreeners() {
             </div>
           ) : null}
           <div className="flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="text-slate-500">Match:</span>
+            {([["full", "Full"], ["partial", "Partial (misses a filter)"], ["all", "Both"]] as const).map(([k, lab]) => (
+              <button key={k} onClick={() => setCMatch(k)} className={`px-2 py-0.5 rounded-full border ${cMatch === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+                {lab}
+              </button>
+            ))}
+            <span className="text-slate-300 mx-1">|</span>
             <span className="text-slate-500">Show:</span>
             {([["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
               <button key={k} onClick={() => setCStatus(k)} className={`px-2 py-0.5 rounded-full border ${cStatus === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
@@ -950,7 +969,7 @@ export default function MomentumScreeners() {
             <button onClick={() => setCLeaders((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cLeaders ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
               Theme leaders (top 2)
             </button>
-            <button onClick={() => { if (!cHeld) setCStatus("all"); setCHeld((v) => !v); }} title="Only stocks you hold (from Portfolio Allocation), whatever their setup status" className={`px-2 py-0.5 rounded-full border ${cHeld ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+            <button onClick={() => { if (!cHeld) { setCStatus("all"); setCMatch("all"); } setCHeld((v) => !v); }} title="Only stocks you hold (from Portfolio Allocation), whatever their setup status" className={`px-2 py-0.5 rounded-full border ${cHeld ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
               In my PF
             </button>
             <button onClick={() => setCDry((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cDry ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
@@ -965,7 +984,7 @@ export default function MomentumScreeners() {
           state doesn't leak from one screener's filters into the
           next (e.g. a sector selection that doesn't exist there). */}
       {ready ? (
-        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={tab === "chartistRs" ? 2900 : undefined} />
+        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={tab === "chartistRs" ? 3300 : undefined} />
       ) : (
         <ScreenerLoading label={TABS.find((t) => t.key === tab)?.label ?? tab} />
       )}
