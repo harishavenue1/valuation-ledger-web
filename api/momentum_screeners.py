@@ -4019,6 +4019,33 @@ def _run_chartist_rs(symbols, name_map, sector_map):
             "extra": {"funnel": funnel, "health": scan.get("health") or {}, "session": scan.get("as_of")}}, None
 
 
+def _run_fno_flow(symbols, name_map, sector_map):
+    """The "F&O Flow" page: every F&O underlying from NSE's end-of-day F&O bhavcopy (api/_fno.py) - futures move and open interest
+    (build-up), option-chain support / resistance / PCR, conviction checks - joined to the app's own RS 3M and technicals. Keeps the
+    last 8 sessions of (spot, OI) in meta fo_hist for the 5-session view and the build-up streak."""
+    import _fno
+
+    conn = get_conn()
+    try:
+        hist = get_meta(conn, "fo_hist", {}) or {}
+        tech = get_meta(conn, "bhav_technicals", None) or {}
+    finally:
+        conn.close()
+    hist, newest, last = _fno.load_days(requests.Session(), hist)
+    if not newest or not last:
+        return None, "NSE has no F&O bhavcopy for the last 16 days (or it is not published yet)"
+    techs = {r["symbol"]: r for r in (tech.get("rows") or [])}
+    nse750 = set(sector_map) if len(sector_map) >= 500 else set()
+    rows, summary = _fno.build_rows(newest, last, hist, techs, sector_map, nse750)
+    conn = get_conn()
+    try:
+        set_meta(conn, "fo_hist", hist)
+    finally:
+        conn.close()
+    return {"label": "F&O Flow", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": newest,
+            "extra": {"summary": summary, "session": newest}}, None
+
+
 def _run_four_pct_scan(symbols, name_map, sector_map):
     """The "4% Scan" tab: reads what bhavTechnicals computed for the latest
     session (api/_bhav.py compute_four_pct_scan) — all NSE stocks, not only the
@@ -7086,7 +7113,7 @@ TECHNICAL_BATCH_WEEKLY = [
 # all-stocks technicals -> patch the weekly DC/RSI patterns into them -> the scans that read what was published.
 # As separate crons (13:30 store, 13:50 publish, 13:58-14:05 scans/patterns) nothing guaranteed that order — a late or
 # skipped store run meant the publish/scans re-ran on yesterday's data, and a publish after the patterns wiped them.
-BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "chartistRs", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory", "marketPulse"]
+BHAV_DAILY = ["bhavStore", "bhavTechnicals", "weeklyPatterns", "chartistRs", "foFlow", "fourPctScan", "gapHold", "pullBackMom", "uprunHold", "microcapMom", "indexDirectory", "marketPulse"]
 
 TECHNICAL_BATCHES = {
     "technicalBatchDaily": TECHNICAL_BATCH_DAILY,
@@ -7130,6 +7157,7 @@ SCREENER_RUNNERS = {
     "bhavDiff": _run_bhav_diff,
     "fourPctScan": _run_four_pct_scan,
     "chartistRs": _run_chartist_rs,
+    "foFlow": _run_fno_flow,
     "gapHold": _run_gap_hold,
     "pullBackMom": _run_pullback_mom,
     "uprunHold": _run_uprun_hold,

@@ -44,6 +44,7 @@ const CLOUD_SCREENERS = new Set([
   "volumeRockers",
   "fourPctScan",
   "chartistRs",
+  "foFlow",
   "nse750TechDaily",
   "gapHold",
   "pullBackMom",

@@ -55,6 +55,7 @@ export interface MomentumScreenerEntry {
   funnel?: Record<string, number>;
   health?: Record<string, number>;
   session?: string | null;
+  summary?: Record<string, any>; // F&O Flow: market counts, index cards, sector medians
 }
 export type MomentumScreeners = Record<string, MomentumScreenerEntry>;
 

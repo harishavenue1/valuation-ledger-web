@@ -10,6 +10,7 @@ const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
 const VirajScreen = lazy(() => import("./pages/VirajScreen"));
 const MomentumScreeners = lazy(() => import("./pages/MomentumScreeners"));
 const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
+const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
 const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
 const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
@@ -265,6 +266,7 @@ export default function App() {
                 items={[
                   { to: "/global-macro", label: "🌍 Macro" },
                   { to: "/fii-trend", label: "🌊 FII Trend" },
+                  { to: "/fno-flow", label: "📊 F&O Flow" },
                   { to: "/strategic-alpha", label: "📡 Strategic" },
                   { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
                   { to: "/sector-directory", label: "📚 Directory" },
@@ -312,6 +314,7 @@ export default function App() {
             <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
+            <Route path="/fno-flow" element={<FnoFlow />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/all-technicals" element={<AllTechnicals />} />
             <Route path="/all-fundamentals" element={<AllFundamentals />} />
