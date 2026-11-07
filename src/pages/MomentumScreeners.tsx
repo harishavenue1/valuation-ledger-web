@@ -452,8 +452,8 @@ export default function MomentumScreeners() {
     // 25 columns: short headers (full name on hover) and a weight per column, normalised to 100% below; the table has a minimum width (see minWidth on the GenericTable) so it scrolls sideways instead of overlapping headers
     chartistRs: ((): Col[] => {
       const W: (Col & { w: number })[] = [
-        { w: 5.5, key: "symbol", label: "Symbol", align: "left" },
-        { w: 9, key: "name", label: "Name", align: "left" },
+        { w: 9.5, key: "symbol", label: "Symbol", align: "left" },
+        { w: 10.5, key: "name", label: "Name", align: "left" },
         { w: 7.5, key: "sector", label: "Sector", align: "left" },
         { w: 4.6, key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
         {
@@ -960,7 +960,7 @@ export default function MomentumScreeners() {
           state doesn't leak from one screener's filters into the
           next (e.g. a sector selection that doesn't exist there). */}
       {ready ? (
-        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={tab === "chartistRs" ? 2600 : undefined} />
+        <GenericTable key={tab} rows={rows} cols={COLS[tab]} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={tab === "chartistRs" ? 2900 : undefined} />
       ) : (
         <ScreenerLoading label={TABS.find((t) => t.key === tab)?.label ?? tab} />
       )}
