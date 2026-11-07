@@ -83,7 +83,7 @@ export default function MomentumScreeners() {
   // 18 screeners' worth up front.
   // 2026-11-04 ("add a market cap column to all time page under momentum screen"): the All-Time High rows carry no market cap, so that one tab also loads nse750Fundamentals and joins
   // `marketcap` by symbol (₹ Cr), the same figure the other tabs show. A stock outside the NSE 750 cache shows "—".
-  const { ready } = useScreeners(tab === "allTimeHigh" ? [tab, "nse750Fundamentals"] : [tab]);
+  const { ready } = useScreeners(tab === "allTimeHigh" ? [tab, "nse750Fundamentals"] : tab === "chartistRs" ? [tab, "portfolioAllocation"] : [tab]); // Chartist also loads the PF rows for its "In my PF" chip
   const entry = bundle.momentum_screeners[tab];
   const fundForCap = tab === "allTimeHigh" ? bundle.momentum_screeners.nse750Fundamentals : undefined;
   // Chartist_RS_Scanner chips (filter the rows in the browser; the scan itself is the same for everyone)
@@ -91,6 +91,7 @@ export default function MomentumScreeners() {
   const [cLeg, setCLeg] = useState<"all" | "early" | "earlymid">("all");
   const [cLeaders, setCLeaders] = useState(false);
   const [cDry, setCDry] = useState(false);
+  const [cHeld, setCHeld] = useState(false); // 2026-11-07 ("why chartist page dont have stocks from my pf page though RS > 80"): your own holdings, whatever their setup status
   const rows = useMemo(() => {
     const base = entry?.rows ?? [];
     if (tab === "chartistRs") {
@@ -101,13 +102,14 @@ export default function MomentumScreeners() {
         if (cLeg === "earlymid" && r.phase !== "Early" && r.phase !== "Mid") return false;
         if (cLeaders && !(r.theme_rank != null && r.theme_rank <= 2)) return false;
         if (cDry && !(r.vol_dry_x != null && r.vol_dry_x < 1)) return false;
+        if (cHeld && !watchlist.held?.has(r.symbol)) return false;
         return true;
       });
     }
     if (tab !== "allTimeHigh") return base;
     const cap = new Map<string, number>((fundForCap?.rows ?? []).filter((f: any) => typeof f.marketcap === "number").map((f: any) => [f.symbol, f.marketcap]));
     return base.map((r: any) => ({ ...r, marketcap: r.marketcap ?? cap.get(r.symbol) ?? null }));
-  }, [entry, tab, fundForCap, cStatus, cLeg, cLeaders, cDry]);
+  }, [entry, tab, fundForCap, cStatus, cLeg, cLeaders, cDry, cHeld, watchlist.held]);
 
   async function doRefresh() {
     setRefreshing(true);
@@ -947,6 +949,9 @@ export default function MomentumScreeners() {
             <span className="text-slate-300 mx-1">|</span>
             <button onClick={() => setCLeaders((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cLeaders ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
               Theme leaders (top 2)
+            </button>
+            <button onClick={() => { if (!cHeld) setCStatus("all"); setCHeld((v) => !v); }} title="Only stocks you hold (from Portfolio Allocation), whatever their setup status" className={`px-2 py-0.5 rounded-full border ${cHeld ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
+              In my PF
             </button>
             <button onClick={() => setCDry((v) => !v)} className={`px-2 py-0.5 rounded-full border ${cDry ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
               Volume drying up
