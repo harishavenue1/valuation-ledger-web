@@ -694,7 +694,11 @@ export default function PortfolioAllocation() {
   const pctile = percentileRank;
   const withRsi = (r: any) => {
     const t = techBy.get(r.symbol);
-    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rs_rating: rsRatingOf(universe.rating, r.symbol), rs_score: rsScoreOf(t?.w3m, t?.w6m, t?.y1), rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
+    // The composite needs a year of history in the store. A recent mainboard listing (SIGMAADV) can lack it there while the PF update's own 1Y return (same weekly-bar basis since 2026-11-07) exists: rank that score against the same universe rather than show a blank. A stock with under a year of real history still has no composite (its RS 3M below still works).
+    const y1 = t?.y1 ?? (typeof r.pct_1y === "number" && Number.isFinite(r.pct_1y) ? r.pct_1y : null);
+    const score = rsScoreOf(t?.w3m, t?.w6m, y1);
+    const rating = rsRatingOf(universe.rating, r.symbol) ?? (score != null ? pctile(universe.rating.sorted, score) : null);
+    return { rsi_w: r.rsi_w ?? t?.rsi_w ?? null, rs_rating: rating, rs_score: score, rsp_1w: pctile(universe.w1, t?.w1), rsp_1m: pctile(universe.w1m, t?.w1m), rsp_3m: pctile(universe.w3m, t?.w3m), rsw_1w: t?.w1 ?? null, rsw_1m: t?.w1m ?? null, rsw_3m: t?.w3m ?? null };
   };
 
   // Column picker (2026-11-01, "allow column selector above table"): the picks are remembered on this device, like the picker on All Technicals. Rank and Symbol are always shown.
@@ -995,14 +999,14 @@ export default function PortfolioAllocation() {
       },
       ...(["1w", "1m", "3m"] as const).map((k, idx): Col => ({
         key: `rsp_${k}`,
-        label: `RS ${k === "3m" ? "1Q" : k.toUpperCase()}`,
+        label: `RS ${k.toUpperCase()}`,
         width: 3.6,
         render: (r) => {
           const v = r[`rsp_${k}`] as number | null | undefined;
           if (typeof v !== "number") return <span className="text-slate-300" title="no return in the technicals store for this holding">—</span>;
           const w = r[`rsw_${k}`] as number | null | undefined;
           const tone = v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
-          return <span className={tone} title={`${k === "3m" ? "1Q" : k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)`}>{v}</span>;
+          return <span className={tone} title={`${k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)${k === "3m" ? ". This is the RS the Chartist_RS_Scanner screens on (3-month percentile, 80+ = leader)." : ""}`}>{v}</span>;
         },
       })),
       {
