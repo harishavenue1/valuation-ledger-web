@@ -985,19 +985,19 @@ export default function PortfolioAllocation() {
       // (1 / 4 / 13 weekly bars, from the technicals store) this holding beats, a tie counting half. 50 is the middle of the market, 80 and above is leadership territory. The same window's
       // distance from the NIFTY 500 in percentage points (the RSBenchmarkCheck convention, pushed by the PF update as rs_1w / rs_1m / rs_3m) is in the picker as "RS 1W Δ" etc., off by default.
       {
-        // 2026-11-01 ("was expecting RS this way", the screener's RS Rating column): ONE overall 1-99 number, the percentile of the 40/30/30 score of the 3-month, 6-month and 1-year returns among NSE 750 stocks.
-        key: "rs_rating",
-        label: "RS Rating",
+        // 2026-11-07 ("Use 3M RS as PF headline"): the headline RS is the 3-month percentile, the same number the Chartist_RS_Scanner screens on (Himanshu Sharma: 3 months is "the apt number"). The 40/30/30 composite (the All Technicals "RS Rating") stays as a reference column.
+        key: "rsp_3m",
+        label: "RS 3M",
         width: 4.2,
         groupStart: true,
         render: (r) => {
-          const v = r.rs_rating as number | null | undefined;
-          if (typeof v !== "number") return <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history in the technicals store">—</span>;
-          const tone = rsTone(v);
-          return <span className={tone} title={`RS Rating ${v}: this holding's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${v}% of NSE 750 stocks. 80+ is leadership territory.`}>{v}</span>;
+          const v = r.rsp_3m as number | null | undefined;
+          if (typeof v !== "number") return <span className="text-slate-300" title="needs 13 weeks of price history in the NSE technicals store (BSE-only listings are not in it)">—</span>;
+          const w = r.rsw_3m as number | null | undefined;
+          return <span className={rsTone(v)} title={`RS 3M ${v}: the 3-month return (${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"}, 13 weekly bars) beats ${v}% of NSE 750 stocks. 80+ is leadership territory; this is the RS the Chartist_RS_Scanner screens on.`}>{v}</span>;
         },
       },
-      ...(["1w", "1m", "3m"] as const).map((k, idx): Col => ({
+      ...(["1w", "1m"] as const).map((k): Col => ({
         key: `rsp_${k}`,
         label: `RS ${k.toUpperCase()}`,
         width: 3.6,
@@ -1006,9 +1006,20 @@ export default function PortfolioAllocation() {
           if (typeof v !== "number") return <span className="text-slate-300" title="no return in the technicals store for this holding">—</span>;
           const w = r[`rsw_${k}`] as number | null | undefined;
           const tone = v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
-          return <span className={tone} title={`${k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)${k === "3m" ? ". This is the RS the Chartist_RS_Scanner screens on (3-month percentile, 80+ = leader)." : ""}`}>{v}</span>;
+          return <span className={tone} title={`${k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)`}>{v}</span>;
         },
       })),
+      {
+        // reference only: ONE overall 1-99 number, the percentile of the 40/30/30 score of the 3-month, 6-month and 1-year returns among NSE 750 stocks (the All Technicals "RS Rating")
+        key: "rs_rating",
+        label: "RS comp.",
+        width: 3.9,
+        render: (r) => {
+          const v = r.rs_rating as number | null | undefined;
+          if (typeof v !== "number") return <span className="text-slate-300" title="needs 3 months, 6 months and a year of price history">—</span>;
+          return <span className="text-slate-600" title={`Composite RS Rating ${v}: this holding's weighted 3M (40%) / 6M (30%) / 1Y (30%) return beats ${v}% of NSE 750 stocks. Reference only: a stock that ran far in 6M-1Y can read high here while its 3M RS has cooled.`}>{v}</span>;
+        },
+      },
       {
         key: "rs_1w",
         label: "RS 1W Δ",
@@ -1023,9 +1034,9 @@ export default function PortfolioAllocation() {
       },
       {
         key: "rs_3m",
-        label: "RS 1Q Δ",
+        label: "RS 3M Δ",
         width: 3.9,
-        render: (r) => (typeof r.rs_3m === "number" ? <span title={`1Q return ${r.pct_3m?.toFixed?.(1)}% minus NIFTY 500 (13 weekly bars), in points`}><Signed v={r.rs_3m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
+        render: (r) => (typeof r.rs_3m === "number" ? <span title={`3M return ${r.pct_3m?.toFixed?.(1)}% minus NIFTY 500 (13 weekly bars), in points`}><Signed v={r.rs_3m} digits={1} /></span> : <span className="text-slate-300" title="no weekly history yet">—</span>),
       },
       {
         // 2026-11-01 ("50DEMA distance on left of 200DEMA"): the 50-day EMA distance returns (the PF update has kept pushing pct_50d_ema all along), same OHLC4 convention as 200DEMA.
