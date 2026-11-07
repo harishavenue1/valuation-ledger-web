@@ -488,9 +488,9 @@ export default function MomentumScreeners() {
         title: "Move since RS last crossed 80: Early up to 50%, Mid up to 100%, Late beyond",
         render: (r) => (r.phase ? <span className={r.phase === "Late" ? "text-orange-600" : "text-emerald-700 font-medium"}>{r.phase}</span> : "—"),
       },
-      { key: "rs_rating", label: "RS Rating", render: (r) => <span className={`font-semibold ${rsTone(r.rs_rating)}`}>{r.rs_rating}</span> },
-      { key: "rs_3m", label: "RS 3M", render: (r) => (r.rs_3m == null ? "—" : r.rs_3m) },
-      { key: "rs_4w_ago", label: "RS 4W ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
+      { key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
+      { key: "rs_4w_ago", label: "RS 3M 4W ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
+      { key: "rs_rating", label: "RS Rating (All Tech.)", title: "Reference only: the composite 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y rating shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
       { key: "rs_weeks", label: "Weeks RS ≥ 80", render: (r) => (r.rs_weeks == null ? "—" : `${r.rs_weeks}${r.rs_weeks_capped ? "+" : ""}`) },
       { key: "move_since_rs80_pct", label: "Move since RS 80 %", render: (r) => <Signed v={r.move_since_rs80_pct} digits={0} /> },
       { key: "base_days", label: "Base (sessions)", render: (r) => (r.base_days ? r.base_days : "—") },
@@ -763,19 +763,20 @@ export default function MomentumScreeners() {
       <>
         <b>Chartist_RS_Scanner</b> — from Himanshu Sharma's (@thechartist26) Konversation with Kushal #403, "His Exact 5-Step Strategy". Runs every
         evening over <b>every NSE stock</b> in our daily store. <b>Step 1, his "RS 80" scan:</b> price above the <b>200 DMA</b> (simple average of
-        closes), <b>RS Rating 80–100</b>, average daily turnover over the last 30 sessions ≥ <b>₹10 Cr</b>, market cap above <b>₹500 Cr</b>, price above
-        ₹10 (he got 265 stocks on 5 Nov 2026 — the funnel above shows today's count). <b>RS Rating</b> is the same number as on All Technicals and
-        Portfolio Allocation: <b>0.4 × 3M + 0.3 × 6M + 0.3 × 1Y</b> return (weekly bars), turned into a 1–99 percentile and ranked among the{" "}
-        <b>NSE 750</b>, ties counting half. He ranks all ~2,500 NSE stocks and never states the weights (he calls 3 months the key window), so a
-        small stock outside the 750 can read high — the market-cap and turnover filters limit that. <b>Step 2, his chart template, computed for
+        closes), <b>RS 80–100</b>, average daily turnover over the last 30 sessions ≥ <b>₹10 Cr</b>, market cap above <b>₹500 Cr</b>, price above
+        ₹10 (he got 265 stocks on 5 Nov 2026 — the funnel above shows today's count). <b>RS</b> is his 3-month RS — he says 3 months is "the apt number", neither late nor early: the <b>percentile (1–99) of the
+        3-month return</b> (13 weekly bars) ranked among the <b>NSE 750</b>, ties counting half, so 99 = top 1%. He ranks all ~2,500 NSE stocks, so a
+        small stock outside the 750 can read high — the market-cap and turnover filters limit that. The composite <b>RS Rating (All Tech.)</b>
+        column (0.4 × 3M + 0.3 × 6M + 0.3 × 1Y, the number on All Technicals and Portfolio Allocation) is shown for reference only and is not
+        used to select. <b>Step 2, his chart template, computed for
         each name:</b> a <b>long base</b> of at least <b>21 sessions</b> inside a range no deeper than <b>25%</b>, with a <b>tight right side</b> of at least{" "}
         <b>8 sessions</b> inside <b>8%</b> ("if the base is wider than 8% it is not a proper base"). <b>Trigger</b> = the tight zone's high (his entry),{" "}
         <b>Stop</b> = its low, <b>Risk %</b> = entry to stop, <b>Size %</b> = <b>100 ÷ risk %</b> (his shortcut for risking 1% of capital; he runs 10–30%
         positions). Setup: <b>Breakout</b> = closed above the trigger within 5% (age in days if it happened in the last 5 sessions), <b>Ready</b> = within
         3% below it, <b>In base</b> = inside the zone, <b>Extended</b> = already more than 5% above it (chasing widens the stop), <b>Below base</b> =
-        closed under the stop. <b>Leg</b>: "first or second leg after RS crosses 80" is read as the price move since the RS Rating last went from below
-        80 to 80+ (<b>Early</b> up to 50%, <b>Mid</b> up to 100%, <b>Late</b> beyond); <b>Weeks RS ≥ 80</b> counts the unbroken streak (a + means it was
-        already above 80 at the start of the year of history we hold). <b>Theme rank</b>: his "first and second name of a strong theme" — rank by RS
+        closed under the stop. <b>Leg</b>: "first or second leg after RS crosses 80" is read as the price move since the 3M RS last went from below
+        80 to 80+ (<b>Early</b> up to 50%, <b>Mid</b> up to 100%, <b>Late</b> beyond); <b>Weeks RS ≥ 80</b> counts the unbroken streak of 3M RS ≥ 80 (a + means
+        it was already above 80 at the start of the history we hold). <b>Theme rank</b>: his "first and second name of a strong theme" — rank by 3M RS
         among this scan's names in the same sector, so 1/9 is the leader of nine; sectors are only known for NSE-750 members. <b>Vol dry-up ×</b>
         under 1 = volume drying up in the last 10 sessions. <b>Exit</b> (not computed): he trails the <b>50 EMA</b> — see <b>% vs 50D EMA</b>.
         The base lengths/depths, 5%/3% bands and leg limits are my readings where the video gives no number (constants in api/_bhav.py, CHARTIST).
@@ -912,7 +913,7 @@ export default function MomentumScreeners() {
             {[
               ["Traded", entry.funnel.universe],
               ["above 200 DMA", entry.funnel.above_200dma],
-              ["RS ≥ 80", entry.funnel.rs_80],
+              ["3M RS ≥ 80", entry.funnel.rs_80],
               ["turnover ≥ ₹10 Cr", entry.funnel.turnover],
               ["mcap > ₹500 Cr", entry.funnel.mcap],
               ["price > ₹10", entry.funnel.price],

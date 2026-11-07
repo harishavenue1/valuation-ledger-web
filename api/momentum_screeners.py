@@ -4011,7 +4011,7 @@ def _run_chartist_rs(symbols, name_map, sector_map):
         if r["sector"]:
             by_sector.setdefault(r["sector"], []).append(r)
     for members in by_sector.values():
-        members.sort(key=lambda x: (-(x.get("rs_rating") or 0), -(x.get("pct_3m") or 0)))
+        members.sort(key=lambda x: (-(x.get("rs_3m") or 0), -(x.get("pct_3m") or 0)))
         for i, m in enumerate(members, 1):
             m["theme_n"], m["theme_rank"] = len(members), i
     funnel = scan.get("funnel") or {}

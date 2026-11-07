@@ -1681,14 +1681,15 @@ def compute_pullback_mom(df, rows):
 # average daily turnover Rs 10 Cr, market cap above Rs 500 Cr, price above Rs 10. Stage 2 reads his chart template for
 # the survivors: a long base (at least one month) with a tight right side no wider than 8% ("if it is wider than 8% it is not a
 # proper base"), entry at the tight zone's high, stop at its low, position % = 100 / stop %, and "first or second leg
-# after RS crosses 80". Numbers he does not give are explicit constants below. RS Rating is the app's one shared
-# definition (src/lib/rsRating.ts: 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y weekly-bar returns, percentile among the NSE 750,
-# a tie counts half); "above the 200 DMA" is a simple average of closes (SMAs stay on Close, this account's rule).
+# after RS crosses 80". Numbers he does not give are explicit constants below. RS here is his 3-month RS ("3 months is the
+# apt number", user confirmed 2026-11-07): the percentile (1-99, a tie counts half) of the 13-week weekly-bar return among
+# the NSE 750. The app's composite RS Rating (src/lib/rsRating.ts: 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) is carried as a
+# reference column only. "Above the 200 DMA" is a simple average of closes (SMAs stay on Close, this account's rule).
 
 CHARTIST = {
     "rs_min": 80, "turnover_cr": 10.0, "turnover_days": 30, "mcap_cr": 500, "min_price": 10.0, "sma_days": 200,
     "base_min_days": 21, "base_max_depth_pct": 25.0, "tight_min_days": 8, "tight_max_depth_pct": 8.0, "base_max_days": 126, "ready_within_pct": 3.0, "breakout_max_ext_pct": 5.0, "recent_breakout_sessions": 5,
-    "leg_early_pct": 50.0, "leg_mid_pct": 100.0, "min_universe": 50, "rs_history_weeks": 60,
+    "leg_early_pct": 50.0, "leg_mid_pct": 100.0, "min_universe": 50, "rs_history_weeks": 100,
 }
 
 
@@ -1822,7 +1823,7 @@ def compute_chartist_scan(df, rows, universe=None):
         if not (s200 == s200 and px > s200):
             continue
         funnel["above_200dma"] += 1
-        rs = _rs_percentile(sorted_u, scores.get(sym), cfg["min_universe"])
+        rs = _rs_percentile(sorted_3m, r.get("w_pct_3m"), cfg["min_universe"])  # his RS: percentile of the 3-month return
         if rs is None or rs < cfg["rs_min"]:
             continue
         funnel["rs_80"] += 1
@@ -1842,13 +1843,13 @@ def compute_chartist_scan(df, rows, universe=None):
     if not surv:
         return [], funnel, health
 
-    # RS Rating week by week (weekly closes, 13/26/52-week returns) for the survivors: how long it has been >= 80 and how far the price has gone since it crossed
+    # 3-month RS week by week (weekly closes, 13-week return) for the survivors: how long it has been >= 80 and how far the price has gone since it crossed
     surv_syms = [s[0]["symbol"] for s in surv]
     need = uni | set(surv_syms)
     w = d[d["symbol"].isin(need)].copy()
     w["wk"] = w["date"].dt.to_period("W-FRI")
     wc = w.groupby(["symbol", "wk"], sort=True)["c"].last().unstack(0)
-    S = (0.4 * (wc / wc.shift(13) - 1) + 0.3 * (wc / wc.shift(26) - 1) + 0.3 * (wc / wc.shift(52) - 1)).to_numpy() * 100
+    S = ((wc / wc.shift(13) - 1) * 100).to_numpy()  # 3-month (13-week) return, the same window as w_pct_3m
     cols = {s: i for i, s in enumerate(wc.columns)}
     U_idx = [cols[s] for s in uni if s in cols]
     surv_idx = [cols[s] for s in surv_syms if s in cols]
@@ -1903,7 +1904,7 @@ def compute_chartist_scan(df, rows, universe=None):
             {
                 "symbol": sym, "name": r.get("name") or sym, "price": r["price"], "change_pct": r.get("change_pct"),
                 **base,
-                "rs_rating": rs, "rs_3m": _rs_percentile(sorted_3m, r.get("w_pct_3m"), cfg["min_universe"]), "rs_4w_ago": rs_4w,
+                "rs_3m": rs, "rs_4w_ago": rs_4w, "rs_rating": _rs_percentile(sorted_u, scores.get(sym), cfg["min_universe"]),
                 "rs_weeks": weeks, "rs_weeks_capped": capped, "move_since_rs80_pct": move, "phase": phase,
                 "pct_3m": r.get("w_pct_3m"), "vol_x": r.get("vol_x"),
                 "pct_vs_200dma": round((r["price"] / s200 - 1) * 100, 1), "pct_50d_ema": r.get("pct_50d_ema"),
@@ -1912,7 +1913,7 @@ def compute_chartist_scan(df, rows, universe=None):
             }
         )
     tier = {"Breakout": 0, "Ready": 1, "In base": 2, "Extended": 3, "No base": 4, "Below base": 5}
-    out.sort(key=lambda x: (tier.get(x["status"], 5), -x["rs_rating"], -(x.get("pct_3m") or 0)))
+    out.sort(key=lambda x: (tier.get(x["status"], 5), -x["rs_3m"], -(x.get("pct_3m") or 0)))
     for i, x in enumerate(out, 1):
         x["rank"] = i
     funnel["setups"] = sum(1 for x in out if x["status"] in ("Breakout", "Ready", "In base"))
