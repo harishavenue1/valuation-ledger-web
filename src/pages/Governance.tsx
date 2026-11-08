@@ -10,7 +10,7 @@ import { MethodologyNote, ScreenerLoading } from "../components/ScreenerTable";
 type Item = { category: string; date?: string; status: string; severity: 1 | 2 | 3; title: string; detail: string; source_title?: string; source_url: string; quote: string; verified?: boolean | null };
 interface Rep {
   symbol: string; name: string; as_of: string; verdict: "Clean" | "Watch" | "Concerns" | "Serious"; verdict_note?: string; summary: string; items: Item[]; tv_note?: string; searched?: string[]; gaps?: string[];
-  pledge_now?: number | null; pledge_hist?: { quarter?: string; of_promoter?: number | null; of_company?: number | null }[]; promoter_series?: { q?: string; promoters?: number | null }[] | null;
+  pledge_now?: number | null; pledge_hist?: { label?: string; of_promoter?: number | null; of_company?: number | null }[]; promoter_series?: { q?: string; promoters?: number | null }[] | null;
   nse_matches?: { date: string; subject: string; text: string; file?: string }[]; nse_scanned?: number;
   concall?: { call_date: string; tone: string; tone_note?: string; negatives?: string[]; between_the_lines?: string[] } | null;
 }
@@ -56,7 +56,7 @@ function Report({ r }: { r: Rep }) {
   const cats = useMemo(() => Array.from(new Set(r.items.map((i) => i.category))), [r.items]);
   const items = useMemo(() => r.items.filter((i) => cat === "all" || i.category === cat).sort((a, b) => b.severity - a.severity || (b.date ?? "").localeCompare(a.date ?? "")), [r.items, cat]);
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
-  const ph = (r.pledge_hist ?? []).filter((h) => h.quarter);
+  const ph = (r.pledge_hist ?? []).filter((h) => h.label);
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-slate-200 bg-white p-4">
@@ -73,10 +73,10 @@ function Report({ r }: { r: Rep }) {
       <div className="grid md:grid-cols-2 gap-3">
         <div className="rounded-lg border border-slate-200 bg-white p-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-2">Promoter pledge and holding (from exchange filings)</div>
-          <div className="text-sm text-slate-800 mb-1">Pledged now: <b>{r.pledge_now == null ? "none reported" : `${r.pledge_now}% of promoter holding`}</b></div>
+          <div className="text-sm text-slate-800 mb-1">Pledged now: <b>{r.pledge_now == null ? "none reported" : r.pledge_now === 0 ? "none (0% of promoter holding)" : `${r.pledge_now}% of promoter holding`}</b></div>
           {ph.length > 0 ? (
             <table className="w-full text-xs"><thead className="text-slate-400"><tr><th className="text-left font-normal">Quarter</th><th className="text-right font-normal">% of promoter holding</th><th className="text-right font-normal">% of company</th></tr></thead>
-              <tbody>{ph.map((h, i) => <tr key={i} className="border-t border-slate-100"><td className="py-0.5">{h.quarter}</td><td className="text-right">{h.of_promoter ?? "n/a"}</td><td className="text-right">{h.of_company ?? "n/a"}</td></tr>)}</tbody></table>
+              <tbody>{ph.map((h, i) => <tr key={i} className="border-t border-slate-100"><td className="py-0.5">{h.label}</td><td className="text-right">{h.of_promoter ?? "n/a"}</td><td className="text-right">{h.of_company ?? "n/a"}</td></tr>)}</tbody></table>
           ) : <div className="text-xs text-slate-400">No pledge history found in the filings.</div>}
           {!!r.promoter_series?.length && <div className="text-xs text-slate-500 mt-2">Promoter holding %: {r.promoter_series.map((p) => `${p.q}: ${p.promoters ?? "n/a"}`).join(" · ")}</div>}
         </div>
