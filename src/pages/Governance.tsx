@@ -7,11 +7,15 @@ import { MethodologyNote, ScreenerLoading } from "../components/ScreenerTable";
 // facts (pledge history, promoter holding, governance-keyword NSE filings, concall tone), checks that every quote appears on its linked page, and pushes (key governanceCheck).
 // The page cannot research a new name by itself: typing a company that has no report shows the sentence to send to Claude.
 
-type Item = { category: string; date?: string; status: string; severity: 1 | 2 | 3; title: string; detail: string; source_title?: string; source_url: string; quote: string; verified?: boolean | null };
+type Item = { effect?: "Friendly" | "Neutral" | "Unfriendly"; category: string; date?: string; status: string; severity: 1 | 2 | 3; title: string; detail: string; source_title?: string; source_url: string; quote: string; verified?: boolean | null };
 interface Rep {
   symbol: string; name: string; as_of: string; verdict: "Clean" | "Watch" | "Concerns" | "Serious"; verdict_note?: string; summary: string; items: Item[]; tv_note?: string; searched?: string[]; gaps?: string[];
   pledge_now?: number | null; pledge_hist?: { label?: string; of_promoter?: number | null; of_company?: number | null }[]; promoter_series?: { q?: string; promoters?: number | null }[] | null;
   nse_matches?: { date: string; subject: string; text: string; file?: string }[]; nse_scanned?: number;
+  borrowing_note?: string;
+  borrowing?: { basis: string; years: { fy: string; interest: number | null; borrowings: number | null; rate_pct: number | null; interest_cover: number | null; reliable?: boolean }[] } | null;
+  rpt_filings?: { date: string; file: string; scanned_pdf?: boolean; loan_rate_lines?: string[]; error?: string }[] | null;
+  annual_report?: { year: string; url: string; scanned_pdf?: boolean; error?: string; rate_lines?: { p: number; t: string }[]; related_loan_lines?: { p: number; t: string }[] }[] | null;
   concall?: { call_date: string; tone: string; tone_note?: string; negatives?: string[]; between_the_lines?: string[] } | null;
 }
 
@@ -34,6 +38,7 @@ function ItemCard({ it }: { it: Item }) {
     <div className="rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2 mb-1">
         <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${SEV[it.severity] ?? SEV[1]}`}>{SEVL[it.severity] ?? "minor"}</span>
+        {it.effect && <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full border ${it.effect === "Friendly" ? "bg-emerald-50 text-emerald-700 border-emerald-300" : it.effect === "Unfriendly" ? "bg-red-50 text-red-600 border-red-300" : "bg-slate-50 text-slate-600 border-slate-300"}`}>{it.effect === "Friendly" ? "friendly to minorities" : it.effect === "Unfriendly" ? "not minority-friendly" : "neutral"}</span>}
         <span title={STATUS_HELP[it.status]} className="text-[11px] px-2 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">{it.status}</span>
         {it.date && <span className="text-xs text-slate-400">{it.date}</span>}
         <span className="text-xs text-slate-400">{it.category}</span>
@@ -47,6 +52,37 @@ function ItemCard({ it }: { it: Item }) {
           <a className="underline hover:text-slate-600" href={it.source_url} target="_blank" rel="noreferrer">{it.source_title || new URL(it.source_url).hostname}</a>
         </span>
       </div>
+    </div>
+  );
+}
+
+function BorrowCard({ r }: { r: Rep }) {
+  const ys = r.borrowing?.years ?? [];
+  const ar = r.annual_report?.[0];
+  const rpts = (r.rpt_filings ?? []).filter((x) => x.loan_rate_lines?.length);
+  if (!ys.length && !ar && !r.borrowing_note) return null;
+  const rel = ar?.related_loan_lines ?? [];
+  const rate = (ar?.rate_lines ?? []).filter((l) => /\d\s?%|@\s?\d/.test(l.t) && /loan|term|bank|debenture|ncd|facility|cash credit|working capital|borrow/i.test(l.t)).slice(0, 8);
+  const link = (p: number) => (ar?.url ? `${ar.url}#page=${p}` : "#");
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Cost of borrowing, and loans with promoters and related parties</div>
+      {r.borrowing_note && <p className="text-sm text-slate-800 mb-2">{r.borrowing_note}</p>}
+      {ys.length > 0 && (
+        <div className="overflow-x-auto mb-2">
+          <table className="text-xs w-full min-w-[28rem]"><thead className="text-slate-400"><tr><th className="text-left font-normal">Year</th><th className="text-right font-normal">Borrowings ₹ Cr</th><th className="text-right font-normal">Interest ₹ Cr</th><th className="text-right font-normal" title="Interest divided by average borrowings. Screener rounds to whole crores, so small amounts are noisy (grey). Interest can include lease and other finance costs.">Interest ÷ avg borrowings</th><th className="text-right font-normal">Operating profit ÷ interest</th></tr></thead>
+            <tbody>{ys.map((y) => <tr key={y.fy} className="border-t border-slate-100"><td className="py-0.5">{y.fy}</td><td className="text-right">{y.borrowings ?? "n/a"}</td><td className="text-right">{y.interest ?? "n/a"}</td>
+              <td className={`text-right ${y.reliable ? (y.rate_pct != null && y.rate_pct > 12 ? "text-red-600 font-medium" : "") : "text-slate-400"}`}>{y.rate_pct != null ? `${y.rate_pct}%` : "n/a"}{!y.reliable && y.rate_pct != null ? " (rounded)" : ""}</td><td className="text-right">{y.interest_cover ?? "n/a"}</td></tr>)}</tbody></table>
+          <div className="text-[11px] text-slate-400 mt-1">Computed from Screener ({r.borrowing?.basis}). It is an average cost, not a loan-by-loan rate; the rates below come from the annual report.</div>
+        </div>
+      )}
+      {rate.length > 0 && <div className="mb-2"><div className="text-xs font-medium text-slate-600 mb-0.5">Interest rates the annual report states ({ar?.year})</div>
+        <ul className="text-xs text-slate-600 space-y-0.5">{rate.map((l, i) => <li key={i}>{l.t} <a className="underline text-slate-400" href={link(l.p)} target="_blank" rel="noreferrer">p.{l.p}</a></li>)}</ul></div>}
+      {rel.length > 0 && <div className="mb-2"><div className="text-xs font-medium text-amber-800 mb-0.5">Loans, deposits or advances that mention directors, promoters or related parties ({ar?.year}); read these for the rate and who lends to whom</div>
+        <ul className="text-xs text-slate-600 space-y-0.5">{rel.slice(0, 10).map((l, i) => <li key={i}>{l.t} <a className="underline text-slate-400" href={link(l.p)} target="_blank" rel="noreferrer">p.{l.p}</a></li>)}</ul></div>}
+      {rpts.length > 0 && <div><div className="text-xs font-medium text-slate-600 mb-0.5">Related-party loan lines in half-yearly exchange filings</div>
+        <ul className="text-xs text-slate-600 space-y-0.5">{rpts.slice(0, 4).map((x, i) => <li key={i}><a className="underline" href={x.file} target="_blank" rel="noreferrer">{x.date}</a>: {x.loan_rate_lines?.slice(0, 3).join(" / ")}</li>)}</ul></div>}
+      {!rate.length && !rel.length && !rpts.length && <div className="text-xs text-slate-400">The annual report text gave no interest-rate or related-party-loan lines{ar?.scanned_pdf ? " (it looks like a scanned PDF, so nothing could be read)" : ""}. Small companies are often exempt from the half-yearly related-party filing.</div>}
     </div>
   );
 }
@@ -92,6 +128,8 @@ function Report({ r }: { r: Rep }) {
           <div className="text-sm text-slate-700 mt-2"><b>TV and media interviews:</b> {r.tv_note || "not checked"}</div>
         </div>
       </div>
+
+      <BorrowCard r={r} />
 
       <div>
         <div className="flex flex-wrap items-center gap-1.5 mb-2">
