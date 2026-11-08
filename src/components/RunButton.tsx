@@ -108,6 +108,11 @@ const MAX_POLL_MS = 15 * 60_000;
 // Each gets a plain note instead of pretending a click does something,
 // with its own reason (why it can't be automated) as the tooltip.
 const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = {
+  // 2026-11-08 — Concall Summary: the transcripts are read and written up by Claude in a Claude Code session (no API key, no model call from the site)
+  concallSummary: {
+    skill: "ConcallSummary",
+    reason: "each summary is written by Claude reading the transcript in a Claude Code session, then checked and pushed by the skill's script. Ask Claude to summarise more holdings",
+  },
   smeMomentum: {
     skill: "SmeMomentum",
     reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",

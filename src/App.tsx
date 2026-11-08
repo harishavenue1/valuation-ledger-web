@@ -11,6 +11,7 @@ const VirajScreen = lazy(() => import("./pages/VirajScreen"));
 const MomentumScreeners = lazy(() => import("./pages/MomentumScreeners"));
 const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const FnoFlow = lazy(() => import("./pages/FnoFlow"));
+const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
 const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
 const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
 const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
@@ -255,6 +256,7 @@ export default function App() {
                   { to: "/fund-raising", label: "💰 Fund Raising" },
                   { to: "/capacity-news", label: "🏭 Capacity & Technology" },
                   { to: "/company-edge", label: "🧬 Company Edge" },
+                  { to: "/concall-summary", label: "📞 Concall Summary" },
                   { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
@@ -315,6 +317,7 @@ export default function App() {
             <Route path="/momentum-screeners" element={<MomentumScreeners />} />
             <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
             <Route path="/fno-flow" element={<FnoFlow />} />
+            <Route path="/concall-summary" element={<ConcallSummary />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/all-technicals" element={<AllTechnicals />} />
             <Route path="/all-fundamentals" element={<AllFundamentals />} />
