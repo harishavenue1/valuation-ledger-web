@@ -113,6 +113,11 @@ const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = 
     skill: "ConcallSummary",
     reason: "each summary is written by Claude reading the transcript in a Claude Code session, then checked and pushed by the skill's script. Ask Claude to summarise more holdings",
   },
+  // 2026-11-08 — Governance Check: Claude researches the web for one named company in a Claude Code session and the skill checks the sources and pushes
+  governanceCheck: {
+    skill: "GovernanceCheck",
+    reason: "each report is researched by Claude on the web for one company at a time, then the skill checks every source link and pushes. Ask Claude: governance check on <company>",
+  },
   smeMomentum: {
     skill: "SmeMomentum",
     reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",
