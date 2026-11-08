@@ -2,12 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/*.py": { "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
     "api/watchlist_detail.py": { "maxDuration": 60, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
     "api/refresh_price.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
     "api/fetch_company.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
     "api/momentum_screeners.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/viraj_screen.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" }
+    "api/viraj_screen.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
+    "api/*.py": { "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" }
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
