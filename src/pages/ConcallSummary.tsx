@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useData, useScreeners } from "../App";
 import RunButton from "../components/RunButton";
+import { PlayerBar, PlayerControls, useConcallSpeech } from "../components/ConcallPlayer";
 import { MethodologyNote, ScreenerLoading, Signed } from "../components/ScreenerTable";
 
 // Concall Summary (2026-11-08, "can we build concall summary page? more on highlights, reading between lines, +ve and -ve impacts" -> "start with only holdings").
@@ -169,9 +170,12 @@ export default function ConcallSummary() {
   const shown = rows.filter((r) => (tone === "all" || r.tone === tone) && (!q || `${r.symbol} ${r.name ?? ""} ${r.headline}`.toLowerCase().includes(q.toLowerCase())));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
   const toggle = (s: string) => setOpen((o) => { const n = new Set(o); n.has(s) ? n.delete(s) : n.add(s); return n; });
+  const speech = useConcallSpeech();
+  const playing = speech.cur?.symbol;
+  useEffect(() => { if (playing) document.getElementById(`cc-${playing}`)?.scrollIntoView({ block: "center", behavior: "smooth" }); }, [playing]);
 
   return (
-    <div>
+    <div className={speech.cur ? "pb-24" : ""}>
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">📞 Concall Summary</h1>
         <span className="text-slate-500 text-sm">your holdings · highlights, positives and negatives, and what sits between the lines</span>
@@ -203,11 +207,17 @@ export default function ConcallSummary() {
             <button onClick={() => setOpen(open.size ? new Set() : new Set(shown.map((r) => r.symbol)))} className={`${chip(false)} ml-1`}>{open.size ? "Collapse all" : "Expand all"}</button>
             <span className="text-xs text-slate-400 ml-1">{shown.length} of {held.length} holdings summarised</span>
           </div>
+          <PlayerControls s={speech} count={shown.length} onAll={() => speech.play(shown)} />
           <div className="rounded-lg border border-slate-200 bg-white divide-y divide-slate-100">
             {shown.map((r) => (
-              <div key={r.symbol}>
+              <div key={r.symbol} id={`cc-${r.symbol}`} className={playing === r.symbol ? "bg-indigo-50/70 ring-1 ring-indigo-300" : ""}>
                 <button onClick={() => toggle(r.symbol)} className="w-full text-left px-4 py-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 hover:bg-slate-50">
                   <span className="text-slate-400 text-xs w-3">{open.has(r.symbol) ? "▾" : "▸"}</span>
+                  {speech.supported && (
+                    <span role="button" tabIndex={0} title="Read this one aloud" onClick={(e) => { e.stopPropagation(); speech.play([r]); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); speech.play([r]); } }}
+                      className="text-sm leading-none px-1 py-0.5 rounded hover:bg-indigo-100 cursor-pointer">{playing === r.symbol ? "🔊" : "🔈"}</span>
+                  )}
                   <Link to={`/company/${r.symbol}`} onClick={(e) => e.stopPropagation()} className="font-semibold text-slate-800 hover:underline w-28">{r.symbol}</Link>
                   <span className="text-xs text-slate-500 w-14 text-right">{r.weight != null ? `${r.weight.toFixed(2)}%` : ""}</span>
                   <span className="text-xs text-slate-400 w-16">{r.call_date}</span>
@@ -234,6 +244,7 @@ export default function ConcallSummary() {
           {showPending && <div className="mt-2 flex flex-wrap gap-1.5">{pending.map((r: any) => <span key={r.symbol} className="px-2 py-0.5 rounded-full border border-slate-200 bg-white">{r.symbol} <span className="text-slate-400">{(r.pct_of_portfolio ?? 0).toFixed(1)}%</span></span>)}</div>}
         </div>
       )}
+      <PlayerBar s={speech} label={playing ? (rows.find((r) => r.symbol === playing)?.name ?? playing) : ""} />
     </div>
   );
 }
