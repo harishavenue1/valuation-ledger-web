@@ -12,6 +12,9 @@ interface Rep {
   symbol: string; name: string; as_of: string; verdict: "Clean" | "Watch" | "Concerns" | "Serious"; verdict_note?: string; summary: string; items: Item[]; tv_note?: string; searched?: string[]; gaps?: string[];
   pledge_now?: number | null; pledge_hist?: { label?: string; of_promoter?: number | null; of_company?: number | null }[]; promoter_series?: { q?: string; promoters?: number | null }[] | null;
   nse_matches?: { date: string; subject: string; text: string; file?: string }[]; nse_scanned?: number;
+  receivables_note?: string;
+  receivables?: { company: { basis: string; years: { fy: string; debtor_days: number | null; rec_pct_sales: number | null; receivables: number | null; sales: number | null; sales_growth: number | null; rec_growth: number | null; cfo_to_op: number | null }[] } | null;
+    peers: { symbol: string; fy: string; debtor_days: number | null; rec_pct_sales: number | null; dd_3y_avg: number | null }[]; peer_median_dd: number | null; flags: string[]; concall_lines?: { call: string; p: number | null; t: string }[]; peers_note?: string } | null;
   borrowing_note?: string;
   borrowing?: { basis: string; years: { fy: string; interest: number | null; borrowings: number | null; rate_pct: number | null; interest_cover: number | null; reliable?: boolean }[] } | null;
   rpt_filings?: { date: string; file: string; scanned_pdf?: boolean; loan_rate_lines?: string[]; error?: string }[] | null;
@@ -87,6 +90,43 @@ function BorrowCard({ r }: { r: Rep }) {
   );
 }
 
+function RecCard({ r }: { r: Rep }) {
+  const rc = r.receivables;
+  const ys = rc?.company?.years ?? [];
+  if (!rc || (!ys.length && !r.receivables_note)) return null;
+  const last = ys[ys.length - 1];
+  const med = rc.peer_median_dd;
+  const slow = med != null && last?.debtor_days != null && last.debtor_days > med * 1.3 && last.debtor_days - med > 15;
+  const pc = (v: number | null | undefined) => (v == null ? "n/a" : `${v}%`);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <div className="text-xs font-semibold uppercase tracking-wide text-slate-600 mb-1">Are they struggling to collect? Receivables against revenue, and against peers</div>
+      {r.receivables_note && <p className="text-sm text-slate-800 mb-2">{r.receivables_note}</p>}
+      {!!rc.flags.length && <div className="flex flex-wrap gap-1.5 mb-2">{rc.flags.map((f, i) => <span key={i} className={`text-[11px] px-2 py-0.5 rounded-full border ${/slower|faster than sales|rose three|only/.test(f) ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-emerald-50 text-emerald-700 border-emerald-300"}`}>{f}</span>)}</div>}
+      {ys.length > 0 && (
+        <div className="overflow-x-auto mb-2">
+          <table className="text-xs w-full min-w-[34rem]"><thead className="text-slate-400"><tr><th className="text-left font-normal">Year</th><th className="text-right font-normal" title="Screener's Debtor Days: trade receivables ÷ sales × 365">Debtor days</th><th className="text-right font-normal" title="Debtor days ÷ 365">Receivables % of sales</th><th className="text-right font-normal">Receivables ₹ Cr (derived)</th><th className="text-right font-normal">Sales growth</th><th className="text-right font-normal">Receivables growth</th><th className="text-right font-normal" title="Cash from operations ÷ operating profit; low means profit is not turning into cash">Cash from ops ÷ op. profit</th></tr></thead>
+            <tbody>{ys.map((y) => <tr key={y.fy} className="border-t border-slate-100"><td className="py-0.5">{y.fy}</td><td className="text-right">{y.debtor_days ?? "n/a"}</td><td className="text-right">{pc(y.rec_pct_sales)}</td><td className="text-right">{y.receivables ?? "n/a"}</td><td className="text-right">{pc(y.sales_growth)}</td>
+              <td className={`text-right ${y.rec_growth != null && y.sales_growth != null && y.rec_growth - y.sales_growth > 10 ? "text-amber-700 font-medium" : ""}`}>{pc(y.rec_growth)}</td><td className={`text-right ${y.cfo_to_op != null && y.cfo_to_op < 0.6 ? "text-amber-700 font-medium" : ""}`}>{y.cfo_to_op ?? "n/a"}</td></tr>)}</tbody></table>
+          <div className="text-[11px] text-slate-400 mt-1">Derived from Screener ({rc.company?.basis}); receivables amount = debtor days × sales ÷ 365, so it is approximate.</div>
+        </div>
+      )}
+      {rc.peers.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium text-slate-600 mb-0.5">Against peers (latest year) {med != null && <span className={slow ? "text-amber-700" : "text-slate-500"}>· peer median {med} days vs {last?.debtor_days ?? "n/a"} for this company</span>}</div>
+          <table className="text-xs min-w-[22rem]"><thead className="text-slate-400"><tr><th className="text-left font-normal pr-4">Peer</th><th className="text-right font-normal pr-4">Debtor days</th><th className="text-right font-normal pr-4">3-yr avg</th><th className="text-right font-normal">% of sales</th></tr></thead>
+            <tbody>{rc.peers.map((p) => <tr key={p.symbol} className="border-t border-slate-100"><td className="py-0.5 pr-4">{p.symbol} <span className="text-slate-400">{p.fy}</span></td><td className="text-right pr-4">{p.debtor_days ?? "n/a"}</td><td className="text-right pr-4">{p.dd_3y_avg ?? "n/a"}</td><td className="text-right">{pc(p.rec_pct_sales)}</td></tr>)}</tbody></table>
+          <div className="text-[11px] text-slate-400 mt-1">{rc.peers_note}. Business models differ (retail vs project vs export), so use this as a guide, not a verdict.</div>
+        </div>
+      )}
+      {!!rc.concall_lines?.length && (
+        <div><div className="text-xs font-medium text-slate-600 mb-0.5">What management said about collections on the concalls we hold</div>
+          <ul className="text-xs text-slate-600 space-y-0.5">{rc.concall_lines.slice(0, 4).map((l, i) => <li key={i}>“{l.t}” <span className="text-slate-400">{l.call}{l.p ? ` · p.${l.p}` : ""}</span></li>)}</ul></div>
+      )}
+    </div>
+  );
+}
+
 function Report({ r }: { r: Rep }) {
   const [cat, setCat] = useState("all");
   const cats = useMemo(() => Array.from(new Set(r.items.map((i) => i.category))), [r.items]);
@@ -129,6 +169,7 @@ function Report({ r }: { r: Rep }) {
         </div>
       </div>
 
+      <RecCard r={r} />
       <BorrowCard r={r} />
 
       <div>
