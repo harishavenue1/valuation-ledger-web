@@ -52,7 +52,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
   }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, sort, lowGuide, fy]);
   const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === fy));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
-  const th = "text-right font-semibold px-2 py-2 whitespace-nowrap";
+  const th = "text-right font-semibold px-2 py-2 leading-tight align-bottom";
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
@@ -65,7 +65,8 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         <label className="text-slate-600 ml-2"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />Use the low end of guidance (every column)</label>
               </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm min-w-[64rem]">
+        <table className="w-full text-sm table-fixed min-w-[88rem]">
+          <colgroup><col style={{ width: "13rem" }} /><col style={{ width: "6rem" }} />{Array.from({ length: 4 + COLS.length }).map((_, i) => <col key={i} style={{ width: "5.25rem" }} />)}<col style={{ width: "11rem" }} /></colgroup>
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided sales for the selected year against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
             {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
