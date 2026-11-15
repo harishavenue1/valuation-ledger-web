@@ -166,7 +166,7 @@ def fetch_price_emas(company_id, headers):
 
 
 PE_HISTORY_FETCH_DAYS = 1095   # 3Y — comfortably covers "last FY" too, not just the 2Y stat window
-PE_HISTORY_STAT_DAYS = 730     # 2Y — matches the "PE HISTORY - 2Y" chip row
+PE_HISTORY_STAT_DAYS = 1095    # 3Y (2026-11-15, user: "instead of 2Y lets use 3Y") — matches the "PE History · 3Y" chip row
 
 
 def _ttm_eps_at(target_date, q_dates, q_eps):
@@ -260,6 +260,7 @@ def fetch_pe_history_stats(company_id, headers, last_fy_year, q_eps, q_dates):
         "max": round(max(recent_vals), 1),
         "at_last_fy": round(at_last_fy, 1) if at_last_fy is not None else None,
         "last_fy_year": last_fy_year,
+        "window_years": 3,
     }
 
 

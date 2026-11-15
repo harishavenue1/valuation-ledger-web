@@ -626,7 +626,7 @@ function CagrEstimatorCard({
 
           {stock.pe_history && (
             <div className="mb-3 flex items-center flex-wrap gap-2 text-xs">
-              <span className="text-slate-400">PE History · 2Y</span>
+              <span className="text-slate-400">PE History · 3Y</span>
               {(
                 [
                   ["Min", stock.pe_history.min],

@@ -12,12 +12,10 @@ interface Row {
   fy: string; basis: "user" | "guidance" | "scan"; sales: number; sales_cagr: number | null; opm: number; opm_assumed: boolean; net_profit: number; np_given: boolean; pe: number | null; pe_user: boolean; pe_median_5y: number | null; shares_cr_row?: number | null;
   eps: number | null; source_url?: string | null; ppt_url?: string | null; source_page?: number | null; net_profit_low?: number; implied: number | null; implied_at_median: number | null; abs_return: number | null; price_cagr: number | null; assumptions: string[]; note?: string | null; quotes?: string[]; quote_verified?: boolean; call?: string; source?: string; tone?: string;
 }
-interface PeStats { min2y: number; med2y: number; avg2y: number; max2y: number; med5y: number | null; fy: number | null; fy_label: string }
+interface PeStats { min3y: number; med3y: number; max3y: number }
 interface Co { symbol: string; name: string; weight?: number | null; price: number; price_as_of: string; last_fy: string; last_sales: number; last_np?: number | null; last_opm: number | null; pe_median_5y: number | null; pe_now: number | null; shares_cr?: number | null; pe_stats?: PeStats | null;
   uid?: string; calc?: { oi_pct: number; dep_pct: number; int_pct: number; tax_pct: number; adj: number }; rows: Row[] }
-type PeKey = "peg" | "own" | "min" | "med" | "avg" | "fy" | "max" | "med5" | "cur";
-const PE_OPTS: [PeKey, string][] = [["own", "As entered / 5y median"], ["min", "Min (2Y)"], ["med", "Median (2Y)"], ["avg", "Average (2Y)"], ["fy", "FY26 year-end"], ["max", "Max (2Y)"], ["med5", "5-year median"], ["cur", "Current P/E"]];
-
+type PeKey = "peg" | "min" | "med" | "max" | "cur";
 const fmt = (v: number | null | undefined, d = 0) => (v == null || !isFinite(v) ? "n/a" : v.toLocaleString("en-IN", { maximumFractionDigits: d, minimumFractionDigits: d }));
 const sgn = (v: number | null | undefined, d = 0) => (v == null || !isFinite(v) ? "n/a" : `${v >= 0 ? "+" : ""}${fmt(v, d)}%`);
 const col = (v: number | null | undefined) => (v == null ? "text-slate-500" : v >= 0 ? "text-emerald-600" : "text-red-500");
@@ -25,11 +23,11 @@ const col = (v: number | null | undefined) => (v == null ? "text-slate-500" : v 
 // the P/E for one company under the header choice (falls back to the company's own P/E when that statistic does not exist for it)
 function peFor(c: Co, r: Row, key: PeKey): { pe: number | null; fallback: boolean } {
   const ps = c.pe_stats;
-  const pick = { peg: null as number | null, own: r.pe, min: ps?.min2y, med: ps?.med2y, avg: ps?.avg2y, fy: ps?.fy, max: ps?.max2y, med5: ps?.med5y ?? c.pe_median_5y, cur: c.pe_now }[key];
-  return pick != null && pick > 0 ? { pe: pick, fallback: false } : { pe: r.pe, fallback: key !== "own" };
+  const pick = { peg: null as number | null, min: ps?.min3y, med: ps?.med3y, max: ps?.max3y, cur: c.pe_now }[key];
+  return pick != null && pick > 0 ? { pe: pick, fallback: false } : { pe: r.pe, fallback: true };
 }
 
-const COLS: [PeKey, string][] = [["peg", "P/E = EPS growth"], ["min", "Min (2Y)"], ["med", "Median (2Y)"], ["avg", "Avg (2Y)"], ["fy", "FY26 year-end"], ["max", "Max (2Y)"], ["med5", "5-yr median"], ["cur", "Current"], ["own", "Your P/E"]];
+const COLS: [PeKey, string][] = [["peg", "P/E = EPS growth"], ["min", "Min (3Y)"], ["med", "Median (3Y)"], ["max", "Max (3Y)"], ["cur", "Current"]];
 
 function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine"; onRemove?: (uid: string) => void }) {
   const [lowGuide, setLowGuide] = useState(false);
@@ -66,11 +64,11 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
         <label className="text-slate-600 ml-2"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />Use the low end of guidance (every column)</label>
               </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-[13px] table-fixed min-w-[88rem]">
+        <table className="w-full text-[13px] table-fixed min-w-[64rem]">
           <colgroup><col style={{ width: "13rem" }} /><col style={{ width: "6rem" }} />{Array.from({ length: 4 + COLS.length }).map((_, i) => <col key={i} style={{ width: "5.25rem" }} />)}<col style={{ width: "11rem" }} /></colgroup>
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided sales for the selected year against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
-            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
+            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
             {rows.map(({ c, r, cells, epsGrowth }) => {
@@ -83,7 +81,7 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
                   <td className="text-right px-2 py-0 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
                   <td className={`text-right px-2 py-0 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
                   {cells.map((x) => (
-                    <td key={x.k} className={`text-right px-2 py-0 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
+                    <td key={x.k} className={`text-right px-2 py-0 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : ""}`}>
                       {x.missing ? <span className="text-slate-300">n/a</span> : (
                         <span className={`font-medium ${col(x.up)}`} title={`₹${fmt(x.price)} at ${fmt(x.pe, 1)}x P/E`}>{sgn(x.up)}</span>
                       )}
@@ -134,7 +132,7 @@ function coFromStock(st: Stock, e: Entry): Co | null {
   return {
     uid: e.id, symbol: st.ticker, name: st.name, weight: null, price: st.current_price, price_as_of: new Date().toISOString().slice(0, 10), last_fy: yrs[li], last_sales: ls, last_np: npLast, last_opm: st.opm_pct[li] ?? null,
     pe_median_5y: null, pe_now: st.pe_ratio, shares_cr: shares,
-    pe_stats: ph ? { min2y: ph.min, med2y: ph.median, avg2y: ph.avg, max2y: ph.max, med5y: null, fy: ph.at_last_fy, fy_label: String(ph.last_fy_year) } : null,
+    pe_stats: ph ? { min3y: ph.min, med3y: ph.median, max3y: ph.max } : null,
     rows: [{ fy: `Mar ${e.fy}`, basis: "user", sales, sales_cagr: (Math.pow(sales / ls, 1 / n) - 1) * 100, opm, opm_assumed: e.opm == null, net_profit: np, np_given: e.np != null, pe: ph?.median ?? st.pe_ratio, pe_user: false, pe_median_5y: null, shares_cr_row: shares, eps: null, implied: null, implied_at_median: null, abs_return: null, price_cagr: null,
       assumptions: [], source_url: st.base_url ?? `https://www.screener.in/company/${st.ticker}/` }],
   };
@@ -173,7 +171,7 @@ function MyTab({ stocks }: { stocks: Record<string, Stock> }) {
         {hit && (
           <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-x-4 gap-y-0.5">
             <span><b className="text-slate-700">{hit.name}</b> · ₹{fmt(hit.current_price)} · P/E now {fmt(hit.pe_ratio, 1)}</span>
-            {ph ? <span>P/E history (2Y): min {fmt(ph.min, 1)} · median {fmt(ph.median, 1)} · avg {fmt(ph.avg, 1)} · FY{ph.last_fy_year} {fmt(ph.at_last_fy, 1)} · max {fmt(ph.max, 1)}</span> : <span>No P/E history stored for this company.</span>}
+            {ph ? <span>P/E history ({(ph as { window_years?: number }).window_years ?? 2}Y{(ph as { window_years?: number }).window_years === 3 ? "" : ", old window until this company is next refreshed"}): min {fmt(ph.min, 1)} · median {fmt(ph.median, 1)} · max {fmt(ph.max, 1)}</span> : <span>No P/E history stored for this company.</span>}
           </div>
         )}
         <div className="text-[11px] text-slate-400 mt-2">Sales growth is applied to the last full year; leave OPM and net profit blank to hold last year's margin and rebuild profit from last year's depreciation, interest, other income and tax. Rows are saved in this browser.</div>
@@ -197,7 +195,7 @@ export default function GuidanceValuation() {
       <div className="flex items-center gap-2 mb-3">{bundle.momentum_screeners.guidanceValuation?.as_of && <span className="text-xs text-slate-400">updated {bundle.momentum_screeners.guidanceValuation.as_of}</span>}</div>
       <MethodologyNote>
         <p className="mb-2"><b>How a row is built.</b> Sales come from what management guided for FY27 (a sales figure, or a growth rate applied to the last full year; a range uses its midpoint). Operating margin is the guided one when management gave it, otherwise last year's is held (marked *). Net profit is guided operating profit less depreciation, interest, other income and tax held at last year's share of sales (or your own net profit where you entered it). EPS uses today's share count.</p>
-        <p className="mb-2"><b>One column per P/E.</b> Each column prices that EPS at a P/E from the company's own history (2-year min, median, average, max, its FY26 year-end level, the 5-year median, today's) and shows the upside against today's price. The Min column is the downside case: positive there means upside remains even at the lowest recent multiple. A ✓ on the basis means the guidance quote was found word for word in the concall transcript; hover for it.</p>
+        <p className="mb-2"><b>One column per P/E.</b> Each column prices that EPS at a P/E from the company's own history (3-year min, median, max and today's) and shows the upside against today's price. The Min column is the downside case: positive there means upside remains even at the lowest recent multiple. A ✓ on the basis means the guidance quote was found word for word in the concall transcript; hover for it.</p>
         <p><b>Limits.</b> The P/E moves the answer more than the guidance does, which is why every option is shown. Guidance is management's, often optimistic, and most margins here are last year's held; this is a reading aid, not a recommendation.</p>
       </MethodologyNote>
       <div className="flex gap-1 border-b border-slate-200 mb-3">{tabBtn("held", `Held (${held.length})`)}{tabBtn("scan", `Not held · Nifty 750 scan (${scan.length})`)}{tabBtn("mine", "My inputs")}</div>
