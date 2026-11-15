@@ -31,83 +31,79 @@ function peFor(c: Co, r: Row, key: PeKey): { pe: number | null; fallback: boolea
   return pick != null && pick > 0 ? { pe: pick, fallback: false } : { pe: r.pe, fallback: key !== "own" };
 }
 
-function derive(c: Co, r: Row, pe: number | null, peLow: number | null, lowGuide: boolean) {
-  const shares = r.shares_cr_row ?? c.shares_cr ?? null;
-  const eps = shares ? r.net_profit / shares : null;
-  const price = eps != null && pe ? eps * pe : null;
-  // margin of safety: what the stock is still worth against today's price when the LOWER P/E chosen in the header is applied (optionally on the low end of guidance)
-  const epsLow = shares ? (lowGuide ? (r.net_profit_low ?? r.net_profit) : r.net_profit) / shares : null;
-  const floor = epsLow != null && peLow ? epsLow * peLow : null;
-  const mos = floor != null && c.price ? (floor / c.price - 1) * 100 : null;
-  const end = new Date(Number(r.fy.slice(-4)), 2, 31), days = Math.max(1, Math.round((end.getTime() - Date.now()) / 86400000));
-  const up = price != null && c.price ? (price / c.price - 1) * 100 : null;
-  const cagr = price != null && price > 0 && c.price ? (Math.pow(price / c.price, 365.25 / days) - 1) * 100 : null;
-  return { eps, price, up, mos, floor, cagr, days };
-}
+const COLS: [PeKey, string][] = [["min", "Min (2Y)"], ["med", "Median (2Y)"], ["avg", "Avg (2Y)"], ["fy", "FY26 year-end"], ["max", "Max (2Y)"], ["med5", "5-yr median"], ["cur", "Current"], ["own", "Your P/E"]];
 
 function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
-  const [key, setKey] = useState<PeKey>("own");
-  const [lowKey, setLowKey] = useState<PeKey>("min");
-  const [lowGuide, setLowGuide] = useState(false);
   const [own, setOwn] = useState<Record<string, number>>(load);
-  const [sort, setSort] = useState<"weight" | "upside" | "mos">(tab === "held" ? "weight" : "upside");
+  const [lowGuide, setLowGuide] = useState(false);
+  const [sort, setSort] = useState<string>(tab === "held" ? "weight" : "min");
   const setPe = (sym: string, v: number | null) => setOwn((p) => { const n = { ...p }; if (v == null) delete n[sym]; else n[sym] = v; save(n); return n; });
   const rows = useMemo(() => cos.filter((c) => c.rows.some((x) => x.fy === "Mar 2027")).map((c) => {  // FY27 only for now
-    const r = c.rows.find((x) => x.fy === "Mar 2027")!, base = peFor(c, r, key), pe = own[c.symbol] ?? base.pe;
-    const low = peFor(c, r, lowKey);
-    return { c, r, pe, peLow: low.pe, lowFallback: low.fallback, fallback: base.fallback && own[c.symbol] == null, edited: own[c.symbol] != null, d: derive(c, r, pe, low.pe, lowGuide) };
-  }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : sort === "mos" ? (b.d.mos ?? -1e9) - (a.d.mos ?? -1e9) : (b.d.up ?? -1e9) - (a.d.up ?? -1e9)), [cos, key, own, sort]);
+    const r = c.rows.find((x) => x.fy === "Mar 2027")!;
+    const shares = r.shares_cr_row ?? c.shares_cr ?? null;
+    const np = lowGuide ? (r.net_profit_low ?? r.net_profit) : r.net_profit;
+    const eps = shares ? np / shares : null;
+    const cells = COLS.map(([k]) => {
+      let pe: number | null; let missing = false;
+      if (k === "own") { pe = own[c.symbol] ?? (r.basis === "user" ? r.pe : null); missing = pe == null; }
+      else { const x = peFor(c, r, k); pe = x.fallback ? null : x.pe; missing = pe == null; }
+      const price = eps != null && pe ? eps * pe : null;
+      return { k, pe, missing, price, up: price != null && c.price ? (price / c.price - 1) * 100 : null };
+    });
+    const end = new Date(2027, 2, 31), days = Math.max(1, Math.round((end.getTime() - Date.now()) / 86400000));
+    return { c, r, eps, cells, days, edited: own[c.symbol] != null };
+  }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, own, sort, lowGuide]);
   const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === "Mar 2027"));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
   const th = "text-right font-semibold px-2 py-2 whitespace-nowrap";
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-1.5 mb-2 text-xs">
-        <span className="text-slate-500">Sort:</span>
+      <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+        <span className="text-slate-500">Sort by:</span>
         {tab === "held" && <button onClick={() => setSort("weight")} className={chip(sort === "weight")}>Portfolio weight</button>}
-        <button onClick={() => setSort("upside")} className={chip(sort === "upside")}>Upside</button>
-        <button onClick={() => setSort("mos")} className={chip(sort === "mos")}>Margin of safety</button>
-        {Object.keys(own).length > 0 && <button onClick={() => { setOwn({}); save({}); }} className="ml-2 underline text-slate-500">Clear my P/E edits ({Object.keys(own).length})</button>}
+        <select value={sort === "weight" ? "" : sort} onChange={(e) => e.target.value && setSort(e.target.value)} className="border border-slate-300 rounded px-1.5 py-0.5 bg-white">
+          <option value="">Upside at…</option>{COLS.map(([k, l]) => <option key={k} value={k}>Upside at {l}</option>)}</select>
+        <label className="text-slate-600 ml-2"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />Use the low end of guidance (every column)</label>
+        {Object.keys(own).length > 0 && <button onClick={() => { setOwn({}); save({}); }} className="underline text-slate-500">Clear my P/E edits ({Object.keys(own).length})</button>}
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm min-w-[60rem]">
+        <table className="w-full text-sm min-w-[96rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
-            <th className="text-left font-semibold px-3 py-2">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th}>EPS ₹</th>
-            <th className="px-2 py-1.5 bg-amber-50 text-right" title="Choose the P/E for every row. Type in a cell to override one company.">
-              <div className="font-semibold text-amber-800 mb-0.5">P/E for all rows</div>
-              <select value={key} onChange={(e) => setKey(e.target.value as PeKey)} className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-white text-slate-700 font-normal">{PE_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-            </th>
-            <th className={th}>Implied price</th><th className={th}>Upside</th><th className="px-2 py-1.5 bg-sky-50 text-right" title="Margin of safety: the upside that is left when this LOWER P/E is applied to the guided earnings. Positive means the stock still shows upside even if the multiple falls to that level.">
-              <div className="font-semibold text-sky-800 mb-0.5">Margin of safety at lower P/E</div>
-              <select value={lowKey} onChange={(e) => setLowKey(e.target.value as PeKey)} className="border border-sky-300 rounded px-1 py-0.5 text-xs bg-white text-slate-700 font-normal">{PE_OPTS.filter(([k]) => k !== "cur").map(([k, l]) => <option key={k} value={k}>{k === "own" ? "The P/E in the row" : l}</option>)}</select>
-              <label className="block text-[10px] text-slate-500 font-normal mt-0.5"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />on low end of guidance</label>
-            </th>
-            <th className={th} title="Annualised over the days to the end of that financial year">CAGR</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
+            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th}>EPS ₹</th>
+            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}><div>{l}</div><div className="text-[10px] font-normal text-slate-400">price · upside · P/E</div></th>)}
+            <th className={th} title="Annualised upside at the 2-year median P/E over the days to 31 March 2027">CAGR @median</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
-            {rows.map(({ c, r, pe, peLow, lowFallback, fallback, edited, d }) => (
-              <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50">
-                <td className="px-3 py-1.5"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)} · P/E now {fmt(c.pe_now, 0)}</div></td>
-                <td className="text-right px-2 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
-                <td className="text-right px-2 tabular-nums">{fmt(r.sales)}</td>
-                <td className="text-right px-2 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
-                <td className="text-right px-2 tabular-nums">{fmt(r.net_profit)}</td>
-                <td className="text-right px-2 tabular-nums">{fmt(d.eps, 1)}</td>
-                <td className="text-right px-2 bg-amber-50/60 whitespace-nowrap">
-                  <input type="number" step={0.5} value={Number((pe ?? 0).toFixed(1)) || ""} onChange={(e) => { const n = parseFloat(e.target.value); setPe(c.symbol, isNaN(n) ? null : n); }} className={`w-16 text-right tabular-nums border rounded px-1 py-0.5 text-sm bg-white ${edited ? "border-indigo-400" : "border-slate-300"}`} />
-                  {fallback && <span className="text-[10px] text-slate-400 ml-1" title="This statistic is not available for the company, so its own P/E is used">n/a→own</span>}
-                </td>
-                <td className="text-right px-2 tabular-nums font-semibold">₹{fmt(d.price)}</td>
-                <td className={`text-right px-2 tabular-nums ${col(d.up)}`}>{sgn(d.up)}</td>
-                <td className={`text-right px-2 tabular-nums font-medium ${col(d.mos)}`}>{sgn(d.mos)}<div className="text-[10px] text-slate-400 font-normal">₹{fmt(d.floor)} at {fmt(peLow, 1)}x{lowFallback ? " (own)" : ""}</div></td>
-                <td className={`text-right px-2 tabular-nums ${col(d.cagr)}`}>{sgn(d.cagr)}<span className="text-[10px] text-slate-400 ml-1">{d.days}d</span></td>
-                <td className="px-3 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
-              </tr>
-            ))}
+            {rows.map(({ c, r, eps, cells, days, edited }) => {
+              const med = cells.find((x) => x.k === "med");
+              const cagr = med?.price && med.price > 0 && c.price ? (Math.pow(med.price / c.price, 365.25 / days) - 1) * 100 : null;
+              return (
+                <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-top">
+                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)}</div></td>
+                  <td className="text-right px-2 py-1.5 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.sales)}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(lowGuide ? r.net_profit_low ?? r.net_profit : r.net_profit)}</td>
+                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(eps, 1)}</td>
+                  {cells.map((x) => (
+                    <td key={x.k} className={`text-right px-2 py-1.5 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
+                      {x.k === "own" ? (
+                        <div><input type="number" step={0.5} value={x.pe != null ? Number(x.pe.toFixed(1)) : ""} placeholder="P/E" onChange={(e) => { const n = parseFloat(e.target.value); setPe(c.symbol, isNaN(n) ? null : n); }} className={`w-14 text-right border rounded px-1 py-0.5 text-xs bg-white ${edited ? "border-indigo-400" : "border-slate-300"}`} />
+                          {x.price != null && <><div className="font-semibold">₹{fmt(x.price)}</div><div className={`text-xs ${col(x.up)}`}>{sgn(x.up)}</div></>}</div>
+                      ) : x.missing ? <span className="text-slate-300">n/a</span> : (
+                        <div><div className="font-semibold">₹{fmt(x.price)}</div><div className={`text-xs font-medium ${col(x.up)}`}>{sgn(x.up)}</div><div className="text-[10px] text-slate-400">{fmt(x.pe, 1)}x</div></div>
+                      )}
+                    </td>
+                  ))}
+                  <td className={`text-right px-2 py-1.5 tabular-nums ${col(cagr)}`}>{sgn(cagr)}<div className="text-[10px] text-slate-400">{days}d</div></td>
+                  <td className="px-3 py-1.5 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
-      <div className="text-[11px] text-slate-400 mt-2">* operating margin not guided, last year's held · Margin of safety = the upside left when the lower P/E chosen in its header is applied (tick the box to use the low end of the guided range as well); positive means the stock still shows upside at that lower multiple · "n/a→own" = that P/E statistic does not exist for the company, so its own P/E is used. P/E edits are saved in this browser.</div>
+      <div className="text-[11px] text-slate-400 mt-2">Each P/E column shows the price (EPS × that P/E), the upside against today's price and the P/E itself; "n/a" means the company has no history for that statistic. The blue Min column shows the downside case: if upside is still positive there, the stock holds up even at its own lowest recent multiple. * operating margin not guided, last year's held. "Your P/E" is yours to type per company (saved in this browser). Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
     </div>
   );
 }
