@@ -227,6 +227,9 @@ export default function App() {
               <NavLink to="/chartist-rs-scanner" className={({ isActive }) => navClass(isActive)}>
                 🔭 Chartist RS
               </NavLink>
+              <NavLink to="/guidance-valuation" className={({ isActive }) => navClass(isActive)}>
+                🎯 Guidance Value
+              </NavLink>
               <NavGroup
                 label="💼 Portfolio"
                 items={[
@@ -260,7 +263,6 @@ export default function App() {
                   { to: "/company-edge", label: "🧬 Company Edge" },
                   { to: "/concall-summary", label: "📞 Concall Summary" },
                   { to: "/governance", label: "🛡️ Governance Check" },
-                  { to: "/guidance-valuation", label: "🎯 Guidance Valuation" },
                   { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
