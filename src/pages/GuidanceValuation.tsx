@@ -31,14 +31,14 @@ function peFor(c: Co, r: Row, key: PeKey): { pe: number | null; fallback: boolea
   return pick != null && pick > 0 ? { pe: pick, fallback: false } : { pe: r.pe, fallback: key !== "own" };
 }
 
-function derive(c: Co, r: Row, pe: number | null) {
+function derive(c: Co, r: Row, pe: number | null, peLow: number | null, lowGuide: boolean) {
   const shares = r.shares_cr_row ?? c.shares_cr ?? null;
-  // lower limit: low end of the guided range x the stock's own 2-year minimum P/E (the chosen P/E when no history exists)
-  const peLow = c.pe_stats?.min2y ?? pe;
-  const floor = shares && peLow ? ((r.net_profit_low ?? r.net_profit) / shares) * peLow : null;
-  const mos = floor != null && floor > 0 && c.price ? (1 - c.price / floor) * 100 : null;
   const eps = shares ? r.net_profit / shares : null;
   const price = eps != null && pe ? eps * pe : null;
+  // margin of safety: what the stock is still worth against today's price when the LOWER P/E chosen in the header is applied (optionally on the low end of guidance)
+  const epsLow = shares ? (lowGuide ? (r.net_profit_low ?? r.net_profit) : r.net_profit) / shares : null;
+  const floor = epsLow != null && peLow ? epsLow * peLow : null;
+  const mos = floor != null && c.price ? (floor / c.price - 1) * 100 : null;
   const end = new Date(Number(r.fy.slice(-4)), 2, 31), days = Math.max(1, Math.round((end.getTime() - Date.now()) / 86400000));
   const up = price != null && c.price ? (price / c.price - 1) * 100 : null;
   const cagr = price != null && price > 0 && c.price ? (Math.pow(price / c.price, 365.25 / days) - 1) * 100 : null;
@@ -47,12 +47,15 @@ function derive(c: Co, r: Row, pe: number | null) {
 
 function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
   const [key, setKey] = useState<PeKey>("own");
+  const [lowKey, setLowKey] = useState<PeKey>("min");
+  const [lowGuide, setLowGuide] = useState(false);
   const [own, setOwn] = useState<Record<string, number>>(load);
   const [sort, setSort] = useState<"weight" | "upside" | "mos">(tab === "held" ? "weight" : "upside");
   const setPe = (sym: string, v: number | null) => setOwn((p) => { const n = { ...p }; if (v == null) delete n[sym]; else n[sym] = v; save(n); return n; });
   const rows = useMemo(() => cos.filter((c) => c.rows.some((x) => x.fy === "Mar 2027")).map((c) => {  // FY27 only for now
     const r = c.rows.find((x) => x.fy === "Mar 2027")!, base = peFor(c, r, key), pe = own[c.symbol] ?? base.pe;
-    return { c, r, pe, fallback: base.fallback && own[c.symbol] == null, edited: own[c.symbol] != null, d: derive(c, r, pe) };
+    const low = peFor(c, r, lowKey);
+    return { c, r, pe, peLow: low.pe, lowFallback: low.fallback, fallback: base.fallback && own[c.symbol] == null, edited: own[c.symbol] != null, d: derive(c, r, pe, low.pe, lowGuide) };
   }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : sort === "mos" ? (b.d.mos ?? -1e9) - (a.d.mos ?? -1e9) : (b.d.up ?? -1e9) - (a.d.up ?? -1e9)), [cos, key, own, sort]);
   const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === "Mar 2027"));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
@@ -74,9 +77,14 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
               <div className="font-semibold text-amber-800 mb-0.5">P/E for all rows</div>
               <select value={key} onChange={(e) => setKey(e.target.value as PeKey)} className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-white text-slate-700 font-normal">{PE_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             </th>
-            <th className={th}>Implied price</th><th className={th}>Upside</th><th className={th} title="1 − today's price ÷ the lower-limit value: low end of management's guided range (or the single figure) × the stock's own 2-year minimum P/E. Positive means today's price is below even that conservative value.">Margin of safety (lower limit)</th><th className={th} title="Annualised over the days to the end of that financial year">CAGR</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
+            <th className={th}>Implied price</th><th className={th}>Upside</th><th className="px-2 py-1.5 bg-sky-50 text-right" title="Margin of safety: the upside that is left when this LOWER P/E is applied to the guided earnings. Positive means the stock still shows upside even if the multiple falls to that level.">
+              <div className="font-semibold text-sky-800 mb-0.5">Margin of safety at lower P/E</div>
+              <select value={lowKey} onChange={(e) => setLowKey(e.target.value as PeKey)} className="border border-sky-300 rounded px-1 py-0.5 text-xs bg-white text-slate-700 font-normal">{PE_OPTS.filter(([k]) => k !== "cur").map(([k, l]) => <option key={k} value={k}>{k === "own" ? "The P/E in the row" : l}</option>)}</select>
+              <label className="block text-[10px] text-slate-500 font-normal mt-0.5"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />on low end of guidance</label>
+            </th>
+            <th className={th} title="Annualised over the days to the end of that financial year">CAGR</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
-            {rows.map(({ c, r, pe, fallback, edited, d }) => (
+            {rows.map(({ c, r, pe, peLow, lowFallback, fallback, edited, d }) => (
               <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50">
                 <td className="px-3 py-1.5"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)} · P/E now {fmt(c.pe_now, 0)}</div></td>
                 <td className="text-right px-2 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
@@ -90,7 +98,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                 </td>
                 <td className="text-right px-2 tabular-nums font-semibold">₹{fmt(d.price)}</td>
                 <td className={`text-right px-2 tabular-nums ${col(d.up)}`}>{sgn(d.up)}</td>
-                <td className={`text-right px-2 tabular-nums font-medium ${col(d.mos)}`}>{sgn(d.mos)}<div className="text-[10px] text-slate-400 font-normal">floor ₹{fmt(d.floor)}</div></td>
+                <td className={`text-right px-2 tabular-nums font-medium ${col(d.mos)}`}>{sgn(d.mos)}<div className="text-[10px] text-slate-400 font-normal">₹{fmt(d.floor)} at {fmt(peLow, 1)}x{lowFallback ? " (own)" : ""}</div></td>
                 <td className={`text-right px-2 tabular-nums ${col(d.cagr)}`}>{sgn(d.cagr)}<span className="text-[10px] text-slate-400 ml-1">{d.days}d</span></td>
                 <td className="px-3 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
               </tr>
@@ -99,7 +107,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         </table>
       </div>
       {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
-      <div className="text-[11px] text-slate-400 mt-2">* operating margin not guided, last year's held · Margin of safety = 1 − today's price ÷ lower-limit value, where the lower limit is the low end of management's guided range (or the single figure given) at the stock's own 2-year minimum P/E; upside, by contrast, uses the P/E chosen in the header · "n/a→own" = that P/E statistic does not exist for the company, so its own P/E is used. P/E edits are saved in this browser.</div>
+      <div className="text-[11px] text-slate-400 mt-2">* operating margin not guided, last year's held · Margin of safety = the upside left when the lower P/E chosen in its header is applied (tick the box to use the low end of the guided range as well); positive means the stock still shows upside at that lower multiple · "n/a→own" = that P/E statistic does not exist for the company, so its own P/E is used. P/E edits are saved in this browser.</div>
     </div>
   );
 }
