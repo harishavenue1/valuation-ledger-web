@@ -9,7 +9,7 @@ import { MethodologyNote, ScreenerLoading } from "../components/ScreenerTable";
 
 interface Row {
   fy: string; basis: "user" | "guidance" | "scan"; sales: number; sales_cagr: number | null; opm: number; opm_assumed: boolean; net_profit: number; np_given: boolean; pe: number | null; pe_user: boolean; pe_median_5y: number | null; shares_cr_row?: number | null;
-  eps: number | null; implied: number | null; implied_at_median: number | null; abs_return: number | null; price_cagr: number | null; assumptions: string[]; note?: string | null; quotes?: string[]; quote_verified?: boolean; call?: string; source?: string; tone?: string;
+  eps: number | null; net_profit_low?: number; implied: number | null; implied_at_median: number | null; abs_return: number | null; price_cagr: number | null; assumptions: string[]; note?: string | null; quotes?: string[]; quote_verified?: boolean; call?: string; source?: string; tone?: string;
 }
 interface PeStats { min2y: number; med2y: number; avg2y: number; max2y: number; med5y: number | null; fy: number | null; fy_label: string }
 interface Co { symbol: string; name: string; weight?: number | null; price: number; price_as_of: string; last_fy: string; last_sales: number; last_opm: number | null; pe_median_5y: number | null; pe_now: number | null; shares_cr?: number | null; pe_stats?: PeStats | null;
@@ -33,13 +33,16 @@ function peFor(c: Co, r: Row, key: PeKey): { pe: number | null; fallback: boolea
 
 function derive(c: Co, r: Row, pe: number | null) {
   const shares = r.shares_cr_row ?? c.shares_cr ?? null;
+  // lower limit: low end of the guided range x the stock's own 2-year minimum P/E (the chosen P/E when no history exists)
+  const peLow = c.pe_stats?.min2y ?? pe;
+  const floor = shares && peLow ? ((r.net_profit_low ?? r.net_profit) / shares) * peLow : null;
+  const mos = floor != null && floor > 0 && c.price ? (1 - c.price / floor) * 100 : null;
   const eps = shares ? r.net_profit / shares : null;
   const price = eps != null && pe ? eps * pe : null;
   const end = new Date(Number(r.fy.slice(-4)), 2, 31), days = Math.max(1, Math.round((end.getTime() - Date.now()) / 86400000));
   const up = price != null && c.price ? (price / c.price - 1) * 100 : null;
-  const mos = price != null && price > 0 && c.price ? (1 - c.price / price) * 100 : null;
   const cagr = price != null && price > 0 && c.price ? (Math.pow(price / c.price, 365.25 / days) - 1) * 100 : null;
-  return { eps, price, up, mos, cagr, days };
+  return { eps, price, up, mos, floor, cagr, days };
 }
 
 function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
@@ -71,7 +74,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
               <div className="font-semibold text-amber-800 mb-0.5">P/E for all rows</div>
               <select value={key} onChange={(e) => setKey(e.target.value as PeKey)} className="border border-amber-300 rounded px-1 py-0.5 text-xs bg-white text-slate-700 font-normal">{PE_OPTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
             </th>
-            <th className={th}>Implied price</th><th className={th}>Upside</th><th className={th} title="1 − today's price ÷ implied price">Margin of safety</th><th className={th} title="Annualised over the days to the end of that financial year">CAGR</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
+            <th className={th}>Implied price</th><th className={th}>Upside</th><th className={th} title="1 − today's price ÷ the lower-limit value: low end of management's guided range (or the single figure) × the stock's own 2-year minimum P/E. Positive means today's price is below even that conservative value.">Margin of safety (lower limit)</th><th className={th} title="Annualised over the days to the end of that financial year">CAGR</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
             {rows.map(({ c, r, pe, fallback, edited, d }) => (
               <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50">
@@ -87,7 +90,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                 </td>
                 <td className="text-right px-2 tabular-nums font-semibold">₹{fmt(d.price)}</td>
                 <td className={`text-right px-2 tabular-nums ${col(d.up)}`}>{sgn(d.up)}</td>
-                <td className={`text-right px-2 tabular-nums font-medium ${col(d.mos)}`}>{sgn(d.mos)}</td>
+                <td className={`text-right px-2 tabular-nums font-medium ${col(d.mos)}`}>{sgn(d.mos)}<div className="text-[10px] text-slate-400 font-normal">floor ₹{fmt(d.floor)}</div></td>
                 <td className={`text-right px-2 tabular-nums ${col(d.cagr)}`}>{sgn(d.cagr)}<span className="text-[10px] text-slate-400 ml-1">{d.days}d</span></td>
                 <td className="px-3 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
               </tr>
@@ -96,7 +99,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         </table>
       </div>
       {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
-      <div className="text-[11px] text-slate-400 mt-2">* operating margin not guided, last year's held · Margin of safety = 1 − today's price ÷ implied price · "n/a→own" = that P/E statistic does not exist for the company, so its own P/E is used. P/E edits are saved in this browser.</div>
+      <div className="text-[11px] text-slate-400 mt-2">* operating margin not guided, last year's held · Margin of safety = 1 − today's price ÷ lower-limit value, where the lower limit is the low end of management's guided range (or the single figure given) at the stock's own 2-year minimum P/E; upside, by contrast, uses the P/E chosen in the header · "n/a→own" = that P/E statistic does not exist for the company, so its own P/E is used. P/E edits are saved in this browser.</div>
     </div>
   );
 }
