@@ -53,6 +53,8 @@ interface Row {
   pe: Record<string, number | null>;
   saved: boolean;
   stale: string | null;
+  approx: boolean;
+  why: string | null;
 }
 
 function sortValue(row: Row, col: SortCol): number | string | null {
@@ -114,9 +116,21 @@ function Section({
         const yi = fy - lastYr - 1;
         const m = yi >= 0 && yi < model.length ? model[yi] : null;
         const dr = m ? state.drivers[yi] : null;
-        const eps = m?.eps ?? null;
-        const prevEps = yi <= 0 ? (stock.eps[stock.eps.length - 1] ?? null) : (model[yi - 1]?.eps ?? null);
+        let eps = m?.eps ?? null;
+        let prevEps = yi <= 0 ? (stock.eps[stock.eps.length - 1] ?? null) : (model[yi - 1]?.eps ?? null);
+        let approx = false;
+        // No operating margin reported (banks, NBFCs): hold last year's net margin, so EPS grows with revenue.
+        const lastEps = stock.eps[stock.eps.length - 1] ?? null;
+        if (eps === null && m && m.revenue !== null && lastEps !== null && lastEps > 0) {
+          let f = 1;
+          for (let k = 0; k <= yi; k++) f *= 1 + (state.drivers[k]?.revGrowth ?? 0) / 100;
+          const gF = 1 + (state.drivers[yi]?.revGrowth ?? 0) / 100;
+          eps = lastEps * f;
+          prevEps = eps / gF;
+          approx = true;
+        }
         const epsG = eps !== null && prevEps !== null && prevEps > 0 ? (eps / prevEps - 1) * 100 : null;
+        const why = m ? (eps === null ? "No operating margin or EPS on record, so no estimate" : null) : `Latest reported year is ${stock.years[stock.years.length - 1]}; the Bull case only projects 3 years beyond it, so there is no FY${String(fy).slice(-2)} estimate`;
         const revG = dr?.revGrowth ?? null;
         const price = stock.current_price;
         const ph = stock.pe_history;
@@ -132,6 +146,8 @@ function Section({
           rev: m?.revenue ?? null, revG, opm: m?.opm_pct ?? null, eps, epsG, up, pe: pes,
           saved: !!scenarios?.[ticker]?.bull?.drivers,
           stale: stalenessReason(stock),
+          approx,
+          why,
         };
       }),
     [stocks, scenarios, guidance, fy]
@@ -207,15 +223,15 @@ function Section({
                     </a>
                   </td>
                   <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
-                    {row.rev !== null ? <>{fmt(row.rev)} <span className={pctCol(row.revG)}>{fmtSigned(row.revG, 0)}</span></> : <span className="text-slate-400">—</span>}
+                    {row.rev !== null ? <>{fmt(row.rev)} <span className={pctCol(row.revG)}>{fmtSigned(row.revG, 0)}</span></> : <span className="text-slate-400" title={row.why ?? undefined}>—</span>}
                   </td>
-                  <td className="px-2 py-1 text-center tabular-nums">{row.opm !== null ? `${fmt(row.opm, 0)}%` : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-2 py-1 text-center tabular-nums">{row.opm !== null ? `${fmt(row.opm, 0)}%` : <span className="text-slate-400" title={row.approx ? "Not reported for banks/NBFCs" : (row.why ?? undefined)}>—</span>}</td>
                   <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
-                    {row.eps !== null ? <>₹{fmt(row.eps, 1)} <span className={pctCol(row.epsG)}>{fmtSigned(row.epsG, 0)}</span></> : <span className="text-slate-400">—</span>}
+                    {row.eps !== null ? <span title={row.approx ? "No operating margin reported (bank/NBFC): last year's EPS grown at the revenue growth rate" : undefined}>₹{fmt(row.eps, 1)} <span className={pctCol(row.epsG)}>{fmtSigned(row.epsG, 0)}</span>{row.approx && <span className="text-amber-600">†</span>}</span> : <span className="text-slate-400" title={row.why ?? undefined}>—</span>}
                   </td>
                   {PE_COLS.map(([k]) => (
                     <td key={k} className={`px-2 py-1 text-center tabular-nums whitespace-nowrap ${tintTd(k)}`}
-                      title={row.up[k] !== null && row.eps !== null && row.pe[k] ? `₹${fmt(row.eps * (row.pe[k] as number))} at ${fmt(row.pe[k], 1)}x P/E` : "n/a"}>
+                      title={row.up[k] !== null && row.eps !== null && row.pe[k] ? `₹${fmt(row.eps * (row.pe[k] as number))} at ${fmt(row.pe[k], 1)}x P/E` : (row.why ?? (row.pe[k] ? "n/a" : k === "peg" ? "No positive EPS growth, so no P/E to apply" : "No P/E history for this statistic (earnings were negative or too short a record)"))}>
                       {row.up[k] !== null ? <PctCell value={row.up[k]} /> : <span className="text-slate-300">n/a</span>}
                       {row.up[k] !== null && k !== "peg" && k !== "pe_cur" && (row.stock.pe_history?.window_years ?? 2) < 3 && <span className="text-slate-400 text-[10px]">*</span>}
                     </td>
