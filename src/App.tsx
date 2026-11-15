@@ -13,6 +13,7 @@ const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
 const Governance = lazy(() => import("./pages/Governance"));
+const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
 const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
 const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
 const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
@@ -259,6 +260,7 @@ export default function App() {
                   { to: "/company-edge", label: "🧬 Company Edge" },
                   { to: "/concall-summary", label: "📞 Concall Summary" },
                   { to: "/governance", label: "🛡️ Governance Check" },
+                  { to: "/guidance-valuation", label: "🎯 Guidance Valuation" },
                   { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
                   { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
                   // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
@@ -321,6 +323,7 @@ export default function App() {
             <Route path="/fno-flow" element={<FnoFlow />} />
             <Route path="/concall-summary" element={<ConcallSummary />} />
             <Route path="/governance" element={<Governance />} />
+            <Route path="/guidance-valuation" element={<GuidanceValuation />} />
             <Route path="/technical-summary" element={<TechnicalSummary />} />
             <Route path="/all-technicals" element={<AllTechnicals />} />
             <Route path="/all-fundamentals" element={<AllFundamentals />} />

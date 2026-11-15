@@ -118,6 +118,9 @@ const LOCAL_ONLY_SCREENERS: Record<string, { skill: string; reason: string }> = 
     skill: "GovernanceCheck",
     reason: "each report is researched by Claude on the web for one company at a time, then the skill checks every source link and pushes. Ask Claude: governance check on <company>",
   },
+  // 2026-11-15 — Guidance Valuation: guidance is read from concalls by Claude in a Claude Code session, then the skill computes and pushes
+  guidanceValuation: { skill: "GuidanceValuation", reason: "guidance is read from concall transcripts by Claude in a Claude Code session; ask Claude to add or refresh companies" },
+  guidanceScan750: { skill: "GuidanceValuation", reason: "the Nifty 750 scan runs locally and Claude reviews the hits; ask Claude: run the Guidance scan on Nifty 750" },
   smeMomentum: {
     skill: "SmeMomentum",
     reason: "nseindia.com's SME data feed times out from Vercel — refresh by asking Claude to run the SmeMomentum skill, or running its script directly on your Mac",
