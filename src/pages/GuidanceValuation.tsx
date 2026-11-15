@@ -66,13 +66,13 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         {Object.keys(own).length > 0 && <button onClick={() => { setOwn({}); save({}); }} className="underline text-slate-500">Clear my P/E edits ({Object.keys(own).length})</button>}
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm min-w-[92rem]">
+        <table className="w-full text-sm min-w-[56rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
-            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th}>EPS ₹</th>
-            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}><div>{l}</div><div className="text-[10px] font-normal text-slate-400">price · upside · P/E</div></th>)}
+            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th}>OPM</th><th className={th}>Net profit</th>
+            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
-            {rows.map(({ c, r, eps, cells, edited }) => {
+            {rows.map(({ c, r, cells, edited }) => {
               return (
                 <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-top">
                   <td className="px-3 py-1.5 sticky left-0 bg-white z-10"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)}</div></td>
@@ -80,14 +80,15 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                   <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.sales)}</td>
                   <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
                   <td className="text-right px-2 py-1.5 tabular-nums">{fmt(lowGuide ? r.net_profit_low ?? r.net_profit : r.net_profit)}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(eps, 1)}</td>
                   {cells.map((x) => (
                     <td key={x.k} className={`text-right px-2 py-1.5 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
                       {x.k === "own" ? (
-                        <div><input type="number" step={0.5} value={x.pe != null ? Number(x.pe.toFixed(1)) : ""} placeholder="P/E" onChange={(e) => { const n = parseFloat(e.target.value); setPe(c.symbol, isNaN(n) ? null : n); }} className={`w-14 text-right border rounded px-1 py-0.5 text-xs bg-white ${edited ? "border-indigo-400" : "border-slate-300"}`} />
-                          {x.price != null && <><div className="font-semibold">₹{fmt(x.price)}</div><div className={`text-xs ${col(x.up)}`}>{sgn(x.up)}</div></>}</div>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <input type="number" step={0.5} value={x.pe != null ? Number(x.pe.toFixed(1)) : ""} placeholder="P/E" onChange={(e) => { const n = parseFloat(e.target.value); setPe(c.symbol, isNaN(n) ? null : n); }} className={`w-14 text-right border rounded px-1 py-0.5 text-xs bg-white ${edited ? "border-indigo-400" : "border-slate-300"}`} />
+                          <span className={`w-14 font-medium ${col(x.up)}`} title={x.price != null ? `₹${fmt(x.price)} at ${fmt(x.pe, 1)}x` : undefined}>{x.price != null ? sgn(x.up) : ""}</span>
+                        </div>
                       ) : x.missing ? <span className="text-slate-300">n/a</span> : (
-                        <div><div className="font-semibold">₹{fmt(x.price)}</div><div className={`text-xs font-medium ${col(x.up)}`}>{sgn(x.up)}</div><div className="text-[10px] text-slate-400">{fmt(x.pe, 1)}x</div></div>
+                        <span className={`font-medium ${col(x.up)}`} title={`₹${fmt(x.price)} at ${fmt(x.pe, 1)}x P/E`}>{sgn(x.up)}</span>
                       )}
                     </td>
                   ))}
@@ -99,7 +100,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         </table>
       </div>
       {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
-      <div className="text-[11px] text-slate-400 mt-2">Each P/E column shows the price (EPS × that P/E), the upside against today's price and the P/E itself; "n/a" means the company has no history for that statistic. The blue Min column shows the downside case: if upside is still positive there, the stock holds up even at its own lowest recent multiple. * operating margin not guided, last year's held. "Your P/E" is yours to type per company (saved in this browser). Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
+      <div className="text-[11px] text-slate-400 mt-2">Each P/E column is the upside against today's price if the guided FY27 EPS is priced at that P/E (hover a figure for the price and the P/E; "n/a" = no history for that statistic). The blue Min column is the downside case: positive there means upside remains even at the lowest recent multiple. Click a company for its quarterly, annual and CAGR-estimator page. * operating margin not guided, last year's held. "Your P/E" is yours to type per company (saved in this browser). Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
     </div>
   );
 }
