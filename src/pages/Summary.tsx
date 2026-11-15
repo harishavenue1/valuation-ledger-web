@@ -29,7 +29,7 @@ function stalenessReason(stock: Stock): string | null {
   return null;
 }
 
-// Upside to the Base-case EPS at the stock's own 3-year Min / Median / Max P/E (same idea as the Guidance Value page).
+// Upside to the Bull-case EPS at the stock's own 3-year Min / Median / Max P/E (same idea as the Guidance Value page).
 const PE_COLS: [string, string][] = [
   ["pe_min", "Min (3Y)"],
   ["pe_med", "Median (3Y)"],
@@ -226,8 +226,8 @@ function Section({
         for (const c of GRID_CASES) {
           caseHeadline[c] = headlineCagr(stock, getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, c));
         }
-        // Base-case EPS for the year the headline uses (explicit pick, else first year with a P/E filled, else next year).
-        const baseState = getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, "base");
+        // Bull-case EPS for the year the headline uses (explicit pick, else first year with a P/E filled, else next year).
+        const baseState = getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, "bull");
         const baseModel = computeModel(stock, baseState);
         const lastYr = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
         let yi = baseState.chosenYear ?? baseState.drivers.findIndex((d) => d.pe);
@@ -304,7 +304,7 @@ function Section({
                 <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
                 <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
                 <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Base-case EPS x a P/E equal to last quarter's YoY EPS growth (66 if growth is over 100%), vs today's price. Not annualised.">
+                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Bull-case EPS x a P/E equal to last quarter's YoY EPS growth (66 if growth is over 100%), vs today's price. Not annualised.">
                   <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
                     P/E = Qtr EPS Gr {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
@@ -358,7 +358,7 @@ function Section({
                     </a>
                   </td>
                   <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
-                  <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Base-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
+                  <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Bull-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
                     <PctCell value={row.upside} />
                   </td>
                   <td className="px-2 py-2 text-center">
@@ -374,7 +374,7 @@ function Section({
                   {PE_COLS.map(([key]) => {
                     const stat = row.stock.pe_history ? (key === "pe_min" ? row.stock.pe_history.min : key === "pe_med" ? row.stock.pe_history.median : row.stock.pe_history.max) : null;
                     const tip = row.peEps !== null && stat !== null
-                      ? `FY${row.peYear} Base-case EPS ₹${fmt(row.peEps, 1)} x P/E ${fmt(stat, 1)}x = ₹${fmt(row.peEps * stat)}${row.peWin !== null && row.peWin < 3 ? ` (P/E range is the ${row.peWin}-year one until this stock's next full refresh)` : ""}`
+                      ? `FY${row.peYear} Bull-case EPS ₹${fmt(row.peEps, 1)} x P/E ${fmt(stat, 1)}x = ₹${fmt(row.peEps * stat)}${row.peWin !== null && row.peWin < 3 ? ` (P/E range is the ${row.peWin}-year one until this stock's next full refresh)` : ""}`
                       : undefined;
                     return (
                       <td key={key} className="px-2 py-2 text-center whitespace-nowrap" title={tip}>
