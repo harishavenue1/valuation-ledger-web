@@ -9,7 +9,7 @@ import { MethodologyNote, ScreenerLoading } from "../components/ScreenerTable";
 
 interface Row {
   fy: string; basis: "user" | "guidance" | "scan"; sales: number; sales_cagr: number | null; opm: number; opm_assumed: boolean; net_profit: number; np_given: boolean; pe: number | null; pe_user: boolean; pe_median_5y: number | null; shares_cr_row?: number | null;
-  eps: number | null; net_profit_low?: number; implied: number | null; implied_at_median: number | null; abs_return: number | null; price_cagr: number | null; assumptions: string[]; note?: string | null; quotes?: string[]; quote_verified?: boolean; call?: string; source?: string; tone?: string;
+  eps: number | null; source_url?: string | null; ppt_url?: string | null; source_page?: number | null; net_profit_low?: number; implied: number | null; implied_at_median: number | null; abs_return: number | null; price_cagr: number | null; assumptions: string[]; note?: string | null; quotes?: string[]; quote_verified?: boolean; call?: string; source?: string; tone?: string;
 }
 interface PeStats { min2y: number; med2y: number; avg2y: number; max2y: number; med5y: number | null; fy: number | null; fy_label: string }
 interface Co { symbol: string; name: string; weight?: number | null; price: number; price_as_of: string; last_fy: string; last_sales: number; last_np?: number | null; last_opm: number | null; pe_median_5y: number | null; pe_now: number | null; shares_cr?: number | null; pe_stats?: PeStats | null;
@@ -85,7 +85,16 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                       )}
                     </td>
                   ))}
-                  <td className="px-3 py-1 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
+                  <td className="px-3 py-1 text-[11px] whitespace-nowrap">
+                    {r.basis === "user" ? (
+                      <a href={r.source_url ?? "#"} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600 hover:border-slate-400" title="Your own inputs; the link opens the company's Screener page">your input ↗</a>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5">
+                        <a href={r.source_url ? (r.source_page ? `${r.source_url}#page=${r.source_page}` : r.source_url) : "#"} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title={`${r.call ?? ""} concall transcript${r.source_page ? `, page ${r.source_page}` : ""}. ${(r.quotes ?? []).join("  |  ")}`}>concall{r.call ? ` ${r.call.replace("-", " ")}` : ""}{r.quote_verified ? " ✓" : ""} ↗</a>
+                        {r.ppt_url && <a href={r.ppt_url} target="_blank" rel="noreferrer" className="text-slate-500 underline" title="Investor presentation for that call">PPT</a>}
+                      </span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
