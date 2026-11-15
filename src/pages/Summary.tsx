@@ -55,6 +55,8 @@ interface Row {
   pe: number | null;
   mktcap: number | null;
   upside: number | null;
+  gPe: number | null;
+  qEpsG: number | null;
   qtrSalesG: number | null;
   qtrSalesLabel: string | undefined;
   peUp: Record<string, number | null>;
@@ -235,8 +237,13 @@ function Section({
         const ph = stock.pe_history;
         const upAt = (pe: number | undefined) => (peEps !== null && peEps > 0 && pe && stock.current_price ? ((peEps * pe) / stock.current_price - 1) * 100 : null);
         const peUpside: Record<string, number | null> = { pe_min: upAt(ph?.min), pe_med: upAt(ph?.median), pe_max: upAt(ph?.max) };
-        const bullH = caseHeadline["bull"];
-        const upside = bullH && bullH.cagr !== null && stock.current_price ? (bullH.sharePrice / stock.current_price - 1) * 100 : null;
+        // Upside at P/E = last quarter's YoY EPS growth (capped at 66 when growth is over 100%, same rule as the Guidance Value page).
+        const qe = stock.q_eps as (number | null)[] | undefined;
+        const qeLast = qe && qe.length >= 5 ? qe[qe.length - 1] : null;
+        const qeYa = qe && qe.length >= 5 ? qe[qe.length - 5] : null;
+        const qEpsG = qeLast !== null && qeYa !== null && qeYa > 0 ? (qeLast / qeYa - 1) * 100 : null;
+        const gPe = qEpsG !== null && qEpsG > 0 ? (qEpsG > 100 ? 66 : qEpsG) : null;
+        const upside = gPe !== null && peEps !== null && peEps > 0 && stock.current_price ? ((peEps * gPe) / stock.current_price - 1) * 100 : null;
         const qGrowth = stock.q_revenue_growth_pct as (number | null)[] | undefined;
         const qLabels = stock.quarters;
         return {
@@ -246,6 +253,8 @@ function Section({
           pe: stock.pe_ratio,
           mktcap: stock.market_cap_cr,
           upside,
+          gPe,
+          qEpsG,
           qtrSalesG: qGrowth && qGrowth.length ? qGrowth[qGrowth.length - 1] : null,
           qtrSalesLabel: qLabels && qLabels.length ? qLabels[qLabels.length - 1] : undefined,
           peUp: peUpside,
@@ -295,9 +304,9 @@ function Section({
                 <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
                 <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
                 <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Current price vs. the Bull case's target price today (not annualized)">
+                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Base-case EPS x a P/E equal to last quarter's YoY EPS growth (66 if growth is over 100%), vs today's price. Not annualised.">
                   <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
-                    Upside {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
+                    P/E = Qtr EPS Gr {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
                   </button>
                 </th>
                 <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
@@ -341,7 +350,7 @@ function Section({
                   <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap">₹{fmt(row.mktcap)} Cr</td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
                   <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
-                  <td className="px-2 py-2 text-center">
+                  <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Base-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
                     <PctCell value={row.upside} />
                   </td>
                   <td className="px-2 py-2 text-center">
