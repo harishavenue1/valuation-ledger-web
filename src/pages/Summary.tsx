@@ -86,7 +86,10 @@ function sortValue(row: Row, col: SortCol): number | string | null {
     case "ema_ema33w":
       return row.ema.ema33w;
     default:
-      return row.caseHeadline[col]?.cagr ?? null;
+      {
+        const h = row.caseHeadline[col];
+        return h && h.cagr !== null && row.price ? (h.sharePrice / row.price - 1) * 100 : null;
+      }
   }
 }
 
@@ -147,13 +150,14 @@ function TrendSparkline({ stock }: { stock: Stock }) {
   );
 }
 
-function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
-  if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
-  // Only the result is shown; the assumptions behind it are in the hover text.
-  const full = `FY${h.year}: revenue growth ${fmtSigned(h.growth, 1)}, P/E ${fmt(h.pe, 1)}x, target price ₹${fmt(h.sharePrice)} -> ${fmtSigned(h.cagr, 1)} a year`;
+function CaseCell({ h, price }: { h: ReturnType<typeof headlineCagr>; price: number | null }) {
+  if (!h || h.cagr === null || !price) return <span className="text-slate-400 text-xs">fill PE</span>;
+  // Total move from today's price to the case's target price (not annualised), same basis as the Upside column.
+  const up = (h.sharePrice / price - 1) * 100;
+  const full = `FY${h.year}: revenue growth ${fmtSigned(h.growth, 1)}, P/E ${fmt(h.pe, 1)}x, target price ₹${fmt(h.sharePrice)} -> ${fmtSigned(up, 1)} total (${fmtSigned(h.cagr, 1)} a year)`;
   return (
-    <div className={`text-xs font-bold whitespace-nowrap ${h.cagr >= 0 ? "text-emerald-600" : "text-red-600"}`} title={full}>
-      {fmtSigned(h.cagr, 1)}
+    <div className={`text-xs font-bold whitespace-nowrap ${up >= 0 ? "text-emerald-600" : "text-red-600"}`} title={full}>
+      {fmtSigned(up, 1)}
     </div>
   );
 }
@@ -349,7 +353,7 @@ function Section({
                   ))}
                   {GRID_CASES.map((c) => (
                     <td key={c} className="px-2 py-2 text-center">
-                      <CaseCell h={row.caseHeadline[c]} />
+                      <CaseCell h={row.caseHeadline[c]} price={row.price} />
                     </td>
                   ))}
                   <td className="px-2 py-2 text-center">
