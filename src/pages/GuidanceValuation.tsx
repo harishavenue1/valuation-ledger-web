@@ -32,9 +32,11 @@ const COLS: [PeKey, string][] = [["peg", "P/E = EPS growth"], ["min", "Min (2Y)"
 
 function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
   const [lowGuide, setLowGuide] = useState(false);
+  const fys = useMemo(() => Array.from(new Set(cos.flatMap((c) => c.rows.map((x) => x.fy)))).sort(), [cos]);
+  const [fy, setFy] = useState<string>(fys.includes("Mar 2027") ? "Mar 2027" : fys[0] ?? "Mar 2027");
   const [sort, setSort] = useState<string>(tab === "held" ? "weight" : "min");
-  const rows = useMemo(() => cos.filter((c) => c.rows.some((x) => x.fy === "Mar 2027")).map((c) => {  // FY27 only for now
-    const r = c.rows.find((x) => x.fy === "Mar 2027")!;
+  const rows = useMemo(() => cos.filter((c) => c.rows.some((x) => x.fy === fy)).map((c) => {
+    const r = c.rows.find((x) => x.fy === fy)!;
     const shares = r.shares_cr_row ?? c.shares_cr ?? null;
     const np = lowGuide ? (r.net_profit_low ?? r.net_profit) : r.net_profit;
     const eps = shares ? np / shares : null;
@@ -47,14 +49,16 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
       return { k, pe, missing, price, up: price != null && c.price ? (price / c.price - 1) * 100 : null };
     });
     return { c, r, cells, epsGrowth };
-  }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, sort, lowGuide]);
-  const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === "Mar 2027"));
+  }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, sort, lowGuide, fy]);
+  const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === fy));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
   const th = "text-right font-semibold px-2 py-2 whitespace-nowrap";
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
-        <span className="text-slate-500">Sort by:</span>
+        <span className="text-slate-500">Year:</span>
+        {fys.map((f) => <button key={f} onClick={() => setFy(f)} className={chip(fy === f)}>FY{f.slice(-2)}</button>)}
+        <span className="text-slate-500 ml-2">Sort by:</span>
         {tab === "held" && <button onClick={() => setSort("weight")} className={chip(sort === "weight")}>Portfolio weight</button>}
         <select value={sort === "weight" ? "" : sort} onChange={(e) => e.target.value && setSort(e.target.value)} className="border border-slate-300 rounded px-1.5 py-0.5 bg-white">
           <option value="">Upside at…</option>{COLS.map(([k, l]) => <option key={k} value={k}>Upside at {l}</option>)}</select>
@@ -63,7 +67,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm min-w-[64rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
-            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided FY27 sales against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
+            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided sales for the selected year against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
             {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
@@ -72,11 +76,9 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                 <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-middle">
                   <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link></td>
                   <td className="text-right px-2 py-1 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
-                  <td className="text-right px-2 py-1 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
                   <td className="text-right px-2 py-1 tabular-nums">{fmt(r.sales)}</td>
                   <td className={`text-right px-2 py-1 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
                   <td className="text-right px-2 py-1 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
-                  <td className="text-right px-2 py-1 tabular-nums">{fmt(lowGuide ? r.net_profit_low ?? r.net_profit : r.net_profit)}</td>
                   <td className={`text-right px-2 py-1 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
                   {cells.map((x) => (
                     <td key={x.k} className={`text-right px-2 py-1 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
@@ -101,7 +103,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
           </tbody>
         </table>
       </div>
-      {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
+      {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">Not shown (no row for this year): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
       <div className="text-[11px] text-slate-400 mt-2">Each P/E column is the upside against today's price if the guided FY27 EPS is priced at that P/E (hover a figure for the price and the P/E; "n/a" = no history for that statistic). The violet column prices the stock at a P/E equal to its EPS growth % (PEG = 1), capped at 66 when EPS growth is above 100%. The blue Min column is the downside case: positive there means upside remains even at the lowest recent multiple. Click a company for its quarterly, annual and CAGR-estimator page. * operating margin not guided, last year's held. Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
     </div>
   );
