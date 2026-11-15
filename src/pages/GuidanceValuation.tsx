@@ -41,7 +41,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
     const epsGrowth = c.last_np && c.last_np > 0 ? (np / c.last_np - 1) * 100 : null;  // shares held constant, so EPS growth = net profit growth
     const cells = COLS.map(([k]) => {
       let pe: number | null; let missing = false;
-      if (k === "peg") { pe = epsGrowth != null && epsGrowth > 0 ? epsGrowth : null; missing = pe == null; }
+      if (k === "peg") { pe = epsGrowth != null && epsGrowth > 0 ? (epsGrowth > 100 ? 66 : epsGrowth) : null; missing = pe == null; }  // EPS growth above 100%: P/E capped at 66
       else { const x = peFor(c, r, k); pe = x.fallback ? null : x.pe; missing = pe == null; }
       const price = eps != null && pe ? eps * pe : null;
       return { k, pe, missing, price, up: price != null && c.price ? (price / c.price - 1) * 100 : null };
@@ -64,7 +64,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         <table className="w-full text-sm min-w-[64rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided FY27 sales against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
-            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
+            {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
             {rows.map(({ c, r, cells, epsGrowth }) => {
@@ -92,7 +92,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         </table>
       </div>
       {hidden.length > 0 && <div className="text-[11px] text-slate-500 mt-2">FY27 only for now. Not shown (no FY27 row): {hidden.map((c) => `${c.name} (${c.rows.map((x) => "FY" + x.fy.slice(-4)).join(", ")})`).join(", ")}.</div>}
-      <div className="text-[11px] text-slate-400 mt-2">Each P/E column is the upside against today's price if the guided FY27 EPS is priced at that P/E (hover a figure for the price and the P/E; "n/a" = no history for that statistic). The violet column prices the stock at a P/E equal to its EPS growth % (PEG = 1). The blue Min column is the downside case: positive there means upside remains even at the lowest recent multiple. Click a company for its quarterly, annual and CAGR-estimator page. * operating margin not guided, last year's held. Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
+      <div className="text-[11px] text-slate-400 mt-2">Each P/E column is the upside against today's price if the guided FY27 EPS is priced at that P/E (hover a figure for the price and the P/E; "n/a" = no history for that statistic). The violet column prices the stock at a P/E equal to its EPS growth % (PEG = 1), capped at 66 when EPS growth is above 100%. The blue Min column is the downside case: positive there means upside remains even at the lowest recent multiple. Click a company for its quarterly, annual and CAGR-estimator page. * operating margin not guided, last year's held. Guidance is management's, often optimistic; a reading aid, not a recommendation.</div>
     </div>
   );
 }
