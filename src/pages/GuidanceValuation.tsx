@@ -66,7 +66,7 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
         <label className="text-slate-600 ml-2"><input type="checkbox" checked={lowGuide} onChange={(e) => setLowGuide(e.target.checked)} className="mr-1 align-middle" />Use the low end of guidance (every column)</label>
               </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm table-fixed min-w-[88rem]">
+        <table className="w-full text-[13px] table-fixed min-w-[88rem]">
           <colgroup><col style={{ width: "13rem" }} /><col style={{ width: "6rem" }} />{Array.from({ length: 4 + COLS.length }).map((_, i) => <col key={i} style={{ width: "5.25rem" }} />)}<col style={{ width: "11rem" }} /></colgroup>
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided sales for the selected year against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
@@ -75,26 +75,26 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
           <tbody>
             {rows.map(({ c, r, cells, epsGrowth }) => {
               return (
-                <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-middle">
-                  <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link>{onRemove && c.uid && <button onClick={() => onRemove(c.uid!)} className="ml-2 text-slate-300 hover:text-red-500" title="Remove this row">✕</button>}</td>
-                  <td className="text-right px-2 py-1 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
-                  <td className="text-right px-2 py-1 tabular-nums">{fmt(r.sales)}</td>
-                  <td className={`text-right px-2 py-1 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
-                  <td className="text-right px-2 py-1 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
-                  <td className={`text-right px-2 py-1 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
+                <tr key={c.symbol} className="h-9 border-t border-slate-100 hover:bg-slate-50 align-middle">
+                  <td className="px-3 py-0 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link>{onRemove && c.uid && <button onClick={() => onRemove(c.uid!)} className="ml-2 text-slate-300 hover:text-red-500" title="Remove this row">✕</button>}</td>
+                  <td className="text-right px-2 py-0 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
+                  <td className="text-right px-2 py-0 tabular-nums">{fmt(r.sales)}</td>
+                  <td className={`text-right px-2 py-0 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
+                  <td className="text-right px-2 py-0 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
+                  <td className={`text-right px-2 py-0 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
                   {cells.map((x) => (
-                    <td key={x.k} className={`text-right px-2 py-1 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
+                    <td key={x.k} className={`text-right px-2 py-0 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
                       {x.missing ? <span className="text-slate-300">n/a</span> : (
                         <span className={`font-medium ${col(x.up)}`} title={`₹${fmt(x.price)} at ${fmt(x.pe, 1)}x P/E`}>{sgn(x.up)}</span>
                       )}
                     </td>
                   ))}
-                  <td className="px-3 py-1 text-[11px] whitespace-nowrap">
+                  <td className="px-3 py-0 text-[12px] leading-none whitespace-nowrap">
                     {r.basis === "user" ? (
-                      <a href={r.source_url ?? "#"} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600 hover:border-slate-400" title="Your own inputs; the link opens the company's Screener page">your input ↗</a>
+                      <a href={r.source_url ?? "#"} target="_blank" rel="noreferrer" className="px-2 py-[3px] rounded-full border border-slate-300 bg-slate-50 text-slate-600 hover:border-slate-400" title="Your own inputs; the link opens the company's Screener page">your input ↗</a>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5">
-                        <a href={r.source_url ? (r.source_page ? `${r.source_url}#page=${r.source_page}` : r.source_url) : "#"} target="_blank" rel="noreferrer" className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title={`${r.call ?? ""} concall transcript${r.source_page ? `, page ${r.source_page}` : ""}. ${(r.quotes ?? []).join("  |  ")}`}>concall{r.call ? ` ${r.call.replace("-", " ")}` : ""}{r.quote_verified ? " ✓" : ""} ↗</a>
+                      <span className="inline-flex items-center gap-1.5 leading-none">
+                        <a href={r.source_url ? (r.source_page ? `${r.source_url}#page=${r.source_page}` : r.source_url) : "#"} target="_blank" rel="noreferrer" className="px-2 py-[3px] rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" title={`${r.call ?? ""} concall transcript${r.source_page ? `, page ${r.source_page}` : ""}. ${(r.quotes ?? []).join("  |  ")}`}>concall{r.call ? ` ${r.call.replace("-", " ")}` : ""}{r.quote_verified ? " ✓" : ""} ↗</a>
                         {r.ppt_url && <a href={r.ppt_url} target="_blank" rel="noreferrer" className="text-slate-500 underline" title="Investor presentation for that call">PPT</a>}
                       </span>
                     )}
@@ -155,7 +155,7 @@ function MyTab({ stocks }: { stocks: Record<string, Stock> }) {
   };
   const remove = (id: string) => { const n = list.filter((x) => x.id !== id); setList(n); saveMine(n); };
   const cos = useMemo(() => list.map((e) => (stocks[e.ticker] ? coFromStock(stocks[e.ticker], e) : null)).filter((c): c is Co => c != null), [list, stocks]);
-  const inp = "border border-slate-300 rounded px-2 py-1 text-sm bg-white";
+  const inp = "border border-slate-300 rounded px-2 py-0 text-sm bg-white";
   return (
     <div>
       <div className="rounded-lg border border-slate-200 bg-white p-3 mb-3">
@@ -190,7 +190,7 @@ export default function GuidanceValuation() {
   const held = ((bundle.momentum_screeners.guidanceValuation?.rows ?? []) as Co[]);
   const scan = ((bundle.momentum_screeners.guidanceScan750?.rows ?? []) as Co[]);
   const [tab, setTab] = useState<"held" | "scan" | "mine">("held");
-  const tabBtn = (t: "held" | "scan" | "mine", label: string) => <button onClick={() => setTab(t)} className={`px-3 py-1 rounded-t border-b-2 text-sm ${tab === t ? "border-indigo-600 text-indigo-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{label}</button>;
+  const tabBtn = (t: "held" | "scan" | "mine", label: string) => <button onClick={() => setTab(t)} className={`px-3 py-0 rounded-t border-b-2 text-sm ${tab === t ? "border-indigo-600 text-indigo-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{label}</button>;
   return (
     <div>
       <div className="flex items-center gap-2 mb-1"><h1 className="text-xl font-semibold">🎯 Guidance Valuation</h1><span className="text-slate-500 text-sm">management guidance → earnings → implied price → upside from today's price</span></div>
