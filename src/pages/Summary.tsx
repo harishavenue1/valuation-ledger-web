@@ -6,16 +6,11 @@ import { bulkAddCompanies } from "../lib/bulkAdd";
 import { WatchlistStar } from "../components/ScreenerTable";
 import { useWatchlist } from "../lib/useWatchlist";
 import {
-  CASE_COLOR,
-  CASE_LABEL,
-  GRID_CASES,
   Stock,
-  fiscalQuarterLabel,
   fmt,
   fmtSigned,
   computeModel,
   getCaseState,
-  headlineCagr,
 } from "../lib/model";
 
 const STALE_DAYS = 7;
@@ -29,159 +24,64 @@ function stalenessReason(stock: Stock): string | null {
   return null;
 }
 
-// Upside to the Bull-case EPS at the stock's own 3-year Min / Median / Max P/E (same idea as the Guidance Value page).
+// Same layout as the Guidance Value page, but the revenue growth, margin and EPS come from the Bull case on each company's own page
+// (the user's saved Bull scenario, or the app default of 25% revenue growth when none is saved), not from management guidance.
 const PE_COLS: [string, string][] = [
+  ["peg", "P/E = EPS growth"],
   ["pe_min", "Min (3Y)"],
   ["pe_med", "Median (3Y)"],
   ["pe_max", "Max (3Y)"],
+  ["pe_cur", "Current"],
 ];
 
-// Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Trend, Own, Remove
-// Base/Bull/Bear widened 150->210 — at 150 the "+20.0% | 20.0x |
-// -73.4%" line was truncating with an ellipsis (2026-08-23
-// screenshot). Other columns bumped up too so the table fills more
-// of the page's shell (App.tsx's <main>, max-w-[2000px] as of
-// 2026-09-21) generously instead of leaving a wide empty gutter,
-// rather than widening only the 3 cutoff columns.
-// 2026-11-15 ("single row and equidistant column width"): every column the same width, one line per row.
-const COL_WIDTHS = Array(15).fill(132) as number[];
+// Company, Mkt Cap, Price, Revenue | growth, OPM, EPS | growth, 5 P/E upside columns, Basis, Own, Remove
+const COL_WIDTHS = Array(14).fill(132) as number[];
 
-type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "pe_min" | "pe_med" | "pe_max" | "eps" | "base" | "bull" | "bear";
+type SortCol = "name" | "mktcap" | "price" | "rev" | "opm" | "eps" | "peg" | "pe_min" | "pe_med" | "pe_max" | "pe_cur";
 
 interface Row {
   ticker: string;
   stock: Stock;
   price: number | null;
-  pe: number | null;
   mktcap: number | null;
-  upside: number | null;
-  gPe: number | null;
-  qEpsG: number | null;
-  qtrSalesG: number | null;
-  qtrSalesLabel: string | undefined;
-  peUp: Record<string, number | null>;
-  peEps: number | null;
-  peYear: number | null;
-  peWin: number | null;
-  caseHeadline: Record<string, ReturnType<typeof headlineCagr>>;
+  rev: number | null;
+  revG: number | null;
+  opm: number | null;
+  eps: number | null;
+  epsG: number | null;
+  up: Record<string, number | null>;
+  pe: Record<string, number | null>;
+  saved: boolean;
   stale: string | null;
 }
 
 function sortValue(row: Row, col: SortCol): number | string | null {
   switch (col) {
-    case "name":
-      return row.stock.name.toLowerCase();
-    case "mktcap":
-      return row.mktcap;
-    case "price":
-      return row.price;
-    case "pe":
-      return row.pe;
-    case "upside":
-      return row.upside;
-    case "qtr_sales_g":
-      return row.qtrSalesG;
-    case "eps":
-      return row.peEps;
-    case "pe_min":
-    case "pe_med":
-    case "pe_max":
-      return row.peUp[col];
-    default:
-      {
-        const h = row.caseHeadline[col];
-        return h && h.cagr !== null && row.price ? (h.sharePrice / row.price - 1) * 100 : null;
-      }
+    case "name": return row.stock.name.toLowerCase();
+    case "mktcap": return row.mktcap;
+    case "price": return row.price;
+    case "rev": return row.rev;
+    case "opm": return row.opm;
+    case "eps": return row.eps;
+    default: return row.up[col] ?? null;
   }
 }
 
 function PctCell({ value }: { value: number | null }) {
   if (value === null) return <span className="text-slate-400">—</span>;
-  return <span className={value >= 0 ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{fmtSigned(value)}</span>;
+  return <span className={value >= 0 ? "text-emerald-600 font-semibold" : "text-red-600 font-semibold"}>{fmtSigned(value, 0)}</span>;
 }
 
-// Built from the 4 real trailing price points already on `Stock` (33W
-// EMA → 50D EMA → 20D EMA → CMP) — coarse, but every point is real
-// data, not a synthesized shape. Re-added 2026-09-18 after a full
-// revert of the dark-theme redesign accidentally dropped it too — the
-// "not good" feedback was about the dark background, not this column.
-// 2026-09-18 ("what is trend timeframe used on summary, make it 1Y
-// weekly") — previously plotted 4 different EMA values (33W/50D/20D/
-// CMP) as a rough stand-in for a trend line, since no real price
-// history was fetched anywhere. Now uses stock.price_history_52w —
-// the last ~52 real weekly closes (same Screener.in fetch ema33w
-// already made, just no longer discarded after computing the EMA —
-// see api/_screener_fetch.py's fetch_price_emas). Only populated by a
-// FULL refresh ("🔄 Refresh all now" or a fresh company add), same
-// lifecycle as the EMA fields themselves — a company only ever
-// "💹 Refresh prices only"'d, or added before this shipped, falls back
-// to "—" until its next full refresh, rather than silently reverting
-// to the old coarse EMA approximation.
-function TrendSparkline({ stock }: { stock: Stock }) {
-  const closes = stock.price_history_52w;
-  if (!closes || closes.length < 2) return <span className="text-slate-400 text-xs">—</span>;
-
-  const W = 72;
-  const H = 26;
-  const PAD = 3;
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const range = max - min || 1;
-  const step = (W - PAD * 2) / (closes.length - 1);
-  const coords = closes.map((v, i) => {
-    const x = PAD + i * step;
-    const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
-    return [x, y] as [number, number];
-  });
-  const up = closes[closes.length - 1] >= closes[0];
-  const color = up ? "#16a34a" : "#d9894a";
-  const line = coords.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
-  const area = `${PAD},${H - PAD} ${line} ${W - PAD},${H - PAD}`;
-  const title = `1Y weekly: ${fmt(closes[0], 1)} → ${fmt(closes[closes.length - 1], 1)} (${fmtSigned((closes[closes.length - 1] / closes[0] - 1) * 100, 1)})`;
-
-  return (
-    // React's SVGProps<SVGSVGElement> has no `title` attribute (unlike
-    // HTML elements) — a wrapping <span title=...> gives the identical
-    // hover tooltip without changing anything visual.
-    <span title={title}>
-      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`}>
-        <polygon points={area} fill={color} fillOpacity={0.12} stroke="none" />
-        <polyline points={line} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </span>
-  );
-}
-
-function CaseCell({ h, price }: { h: ReturnType<typeof headlineCagr>; price: number | null }) {
-  if (!h || h.cagr === null || !price) return <span className="text-slate-400 text-xs">fill PE</span>;
-  // Total move from today's price to the case's target price (not annualised), same basis as the Upside column.
-  const up = (h.sharePrice / price - 1) * 100;
-  const full = `FY${h.year}: revenue growth ${fmtSigned(h.growth, 1)}, P/E ${fmt(h.pe, 1)}x, target price ₹${fmt(h.sharePrice)} -> ${fmtSigned(up, 1)} total (${fmtSigned(h.cagr, 1)} a year)`;
-  return (
-    <div className={`text-xs font-bold whitespace-nowrap ${up >= 0 ? "text-emerald-600" : "text-red-600"}`} title={full}>
-      {fmtSigned(up, 1)}
-    </div>
-  );
-}
+const pctCol = (v: number | null) => (v === null ? "text-slate-400" : v >= 0 ? "text-emerald-600" : "text-red-600");
 
 function SortableHeader({
-  label,
-  col,
-  sortCol,
-  sortDir,
-  onClick,
-  width,
+  label, col, sortCol, sortDir, onClick, title, cls = "",
 }: {
-  label: string;
-  col: SortCol;
-  sortCol: SortCol | null;
-  sortDir: "asc" | "desc";
-  onClick: (col: SortCol) => void;
-  width?: number;
+  label: string; col: SortCol; sortCol: SortCol | null; sortDir: "asc" | "desc"; onClick: (col: SortCol) => void; title?: string; cls?: string;
 }) {
   const active = sortCol === col;
   return (
-    <th className="text-center px-2 py-2 whitespace-nowrap" style={width ? { width } : undefined}>
+    <th className={`text-center px-2 py-2 whitespace-nowrap ${cls}`} title={title}>
       <button onClick={() => onClick(col)} className={`hover:text-slate-800 ${active ? "text-slate-800" : ""}`}>
         {label} {active ? (sortDir === "desc" ? "▼" : "▲") : ""}
       </button>
@@ -190,23 +90,10 @@ function SortableHeader({
 }
 
 function Section({
-  title,
-  emoji,
-  stocks,
-  emptyMsg,
-  scenarios,
-  guidance,
-  onOwnedToggle,
-  onRemove,
+  title, emoji, stocks, emptyMsg, scenarios, guidance, fy, onOwnedToggle, onRemove,
 }: {
-  title: string;
-  emoji: string;
-  stocks: [string, Stock][];
-  emptyMsg: string;
-  scenarios: any;
-  guidance: any;
-  onOwnedToggle: (t: string, owned: boolean) => void;
-  onRemove: (t: string) => void;
+  title: string; emoji: string; stocks: [string, Stock][]; emptyMsg: string; scenarios: any; guidance: any; fy: number;
+  onOwnedToggle: (t: string, owned: boolean) => void; onRemove: (t: string) => void;
 }) {
   const navigate = useNavigate();
   const watchlist = useWatchlist();
@@ -215,59 +102,39 @@ function Section({
 
   function clickHeader(col: SortCol) {
     if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    else {
-      setSortCol(col);
-      setSortDir("asc");
-    }
+    else { setSortCol(col); setSortDir("desc"); }
   }
 
   const rows: Row[] = useMemo(
     () =>
       stocks.map(([ticker, stock]) => {
-        const caseHeadline: Row["caseHeadline"] = {};
-        for (const c of GRID_CASES) {
-          caseHeadline[c] = headlineCagr(stock, getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, c));
-        }
-        // Bull-case EPS for the year the headline uses (explicit pick, else first year with a P/E filled, else next year).
-        const baseState = getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, "bull");
-        const baseModel = computeModel(stock, baseState);
+        const state = getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, "bull");
+        const model = computeModel(stock, state);
         const lastYr = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
-        let yi = baseState.chosenYear ?? baseState.drivers.findIndex((d) => d.pe);
-        if (yi === null || yi < 0) yi = 0;
-        const peEps = baseModel[yi]?.eps ?? null;
-        const peYear = lastYr + yi + 1;
+        const yi = fy - lastYr - 1;
+        const m = yi >= 0 && yi < model.length ? model[yi] : null;
+        const dr = m ? state.drivers[yi] : null;
+        const eps = m?.eps ?? null;
+        const prevEps = yi <= 0 ? (stock.eps[stock.eps.length - 1] ?? null) : (model[yi - 1]?.eps ?? null);
+        const epsG = eps !== null && prevEps !== null && prevEps > 0 ? (eps / prevEps - 1) * 100 : null;
+        const revG = dr?.revGrowth ?? null;
+        const price = stock.current_price;
         const ph = stock.pe_history;
-        const upAt = (pe: number | undefined) => (peEps !== null && peEps > 0 && pe && stock.current_price ? ((peEps * pe) / stock.current_price - 1) * 100 : null);
-        const peUpside: Record<string, number | null> = { pe_min: upAt(ph?.min), pe_med: upAt(ph?.median), pe_max: upAt(ph?.max) };
-        // Upside at P/E = last quarter's YoY EPS growth (capped at 66 when growth is over 100%, same rule as the Guidance Value page).
-        const qe = stock.q_eps as (number | null)[] | undefined;
-        const qeLast = qe && qe.length >= 5 ? qe[qe.length - 1] : null;
-        const qeYa = qe && qe.length >= 5 ? qe[qe.length - 5] : null;
-        const qEpsG = qeLast !== null && qeYa !== null && qeYa > 0 ? (qeLast / qeYa - 1) * 100 : null;
-        const gPe = qEpsG !== null && qEpsG > 0 ? (qEpsG > 100 ? 66 : qEpsG) : null;
-        const upside = gPe !== null && peEps !== null && peEps > 0 && stock.current_price ? ((peEps * gPe) / stock.current_price - 1) * 100 : null;
-        const qGrowth = stock.q_revenue_growth_pct as (number | null)[] | undefined;
-        const qLabels = stock.quarters;
+        const pegPe = epsG !== null && epsG > 0 ? (epsG > 100 ? 66 : epsG) : null;
+        const pes: Record<string, number | null> = { peg: pegPe, pe_min: ph?.min ?? null, pe_med: ph?.median ?? null, pe_max: ph?.max ?? null, pe_cur: stock.pe_ratio ?? null };
+        const up: Record<string, number | null> = {};
+        for (const [k] of PE_COLS) {
+          const pe = pes[k];
+          up[k] = eps !== null && eps > 0 && pe && pe > 0 && price ? ((eps * pe) / price - 1) * 100 : null;
+        }
         return {
-          ticker,
-          stock,
-          price: stock.current_price,
-          pe: stock.pe_ratio,
-          mktcap: stock.market_cap_cr,
-          upside,
-          gPe,
-          qEpsG,
-          qtrSalesG: qGrowth && qGrowth.length ? qGrowth[qGrowth.length - 1] : null,
-          qtrSalesLabel: qLabels && qLabels.length ? qLabels[qLabels.length - 1] : undefined,
-          peUp: peUpside,
-          peEps,
-          peYear,
-          peWin: stock.pe_history ? stock.pe_history.window_years ?? 2 : null,
-          caseHeadline,
+          ticker, stock, price, mktcap: stock.market_cap_cr,
+          rev: m?.revenue ?? null, revG, opm: m?.opm_pct ?? null, eps, epsG, up, pe: pes,
+          saved: !!scenarios?.[ticker]?.bull?.drivers,
           stale: stalenessReason(stock),
         };
       }),
-    [stocks, scenarios, guidance]
+    [stocks, scenarios, guidance, fy]
   );
 
   const sortedRows = useMemo(() => {
@@ -283,6 +150,15 @@ function Section({
     return [...present, ...missing];
   }, [rows, sortCol, sortDir]);
 
+  const H = { sortCol, sortDir, onClick: clickHeader };
+  const tint = (k: string) => (k === "pe_min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "pe_cur" ? "bg-slate-100" : "");
+  const tintTd = (k: string) => (k === "pe_min" ? "bg-sky-50/50" : k === "peg" ? "bg-violet-50/50" : "");
+  const peTitle: Record<string, string> = {
+    peg: "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1); capped at 66 when growth is over 100%. Not available when EPS growth is zero or negative.",
+    pe_min: "Upside at the stock's own 3-year minimum P/E. Positive means upside remains even at the lowest recent multiple.",
+    pe_cur: "Upside at today's P/E (trailing).",
+  };
+
   return (
     <div className="mb-8">
       <h2 className="text-sm font-medium text-slate-700 mb-2">
@@ -291,127 +167,73 @@ function Section({
       {stocks.length === 0 ? (
         <div className="text-slate-500 text-sm py-6 text-center border border-slate-200 rounded">{emptyMsg}</div>
       ) : (
-        // table-layout: fixed + an explicit width on every header cell —
-        // without this, "Stocks I Own" and "Tracking" (two independent
-        // tables) each auto-size their own columns off their own data,
-        // so corresponding columns don't line up in width between the
-        // two sections even though they're meant to read as one
-        // continuous grid. Same fix as the Detail page's Annual Results
-        // table.
         <div className="overflow-x-auto rounded border border-slate-200">
-          <table className="text-sm" style={{ tableLayout: "fixed", width: COL_WIDTHS.reduce((a, b) => a + b, 0) }}>
+          <table className="text-[13px]" style={{ tableLayout: "fixed", width: COL_WIDTHS.reduce((a, b) => a + b, 0) }}>
+            <colgroup>{COL_WIDTHS.map((w, i) => <col key={i} style={{ width: w }} />)}</colgroup>
             <thead className="bg-slate-50 text-slate-500 text-xs">
               <tr>
-                <SortableHeader label="Company" col="name" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[0]} />
-                <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
-                <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
-                <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
-                <SortableHeader label="EPS (Bull)" col="eps" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
-                <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Bull-case EPS x a P/E equal to last quarter's YoY EPS growth (66 if growth is over 100%), vs today's price. Not annualised.">
-                  <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
-                    P/E = Qtr EPS Gr {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
-                  </button>
-                </th>
-                <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
-                {PE_COLS.map(([key, label], i) => (
-                  <SortableHeader key={key} label={label} col={key as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
-                ))}
-                {GRID_CASES.filter((c) => c !== "bear").map((c, i) => (
-                  <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[9 + i] }}>
-                    <button onClick={() => clickHeader(c as SortCol)} className="hover:opacity-80">
-                      {CASE_LABEL[c].replace(" Case", "")} {sortCol === c ? (sortDir === "desc" ? "▼" : "▲") : ""}
-                    </button>
-                  </th>
-                ))}
-                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[12] }}>Trend</th>
-                <th className="text-center px-2 py-2 text-[11px]" style={{ width: COL_WIDTHS[13] }}>Own</th>
-                <th className="px-2 py-2" style={{ width: COL_WIDTHS[14] }}></th>
+                <SortableHeader label="Company" col="name" {...H} />
+                <SortableHeader label="Mkt Cap" col="mktcap" {...H} />
+                <SortableHeader label="Price" col="price" {...H} />
+                <SortableHeader label="Revenue ₹ Cr | growth" col="rev" {...H} title="Bull-case revenue for the selected year and its growth, from the company page (your saved Bull case, or the default)" />
+                <SortableHeader label="OPM" col="opm" {...H} />
+                <SortableHeader label="EPS ₹ | growth" col="eps" {...H} title="Bull-case EPS for the selected year and its growth against the year before" />
+                {PE_COLS.map(([k, l]) => <SortableHeader key={k} label={l} col={k as SortCol} {...H} cls={tint(k)} title={peTitle[k]} />)}
+                <th className="text-center px-2 py-2">Basis</th>
+                <th className="text-center px-2 py-2 text-[11px]">Own</th>
+                <th className="px-2 py-2"></th>
               </tr>
             </thead>
             <tbody>
               {sortedRows.map((row) => (
-                <tr key={row.ticker} className="border-t border-slate-200 hover:bg-slate-50">
-                  {/* Company column is a fixed 200px (COL_WIDTHS[0]), so
-                      names wrap to however many lines they need — 1 for
-                      short ones, 3 for long ones — and since row height
-                      follows its tallest cell, that made row heights
-                      vary company to company (2026-08-23, "some show in
-                      2 lines, some in 3 lines"). min-h-[64px] reserves
-                      room for the worst case (3 lines) on every row so
-                      they're all the same static height, and line-
-                      clamp-3 caps any name longer than that instead of
-                      growing the row further. */}
-                  <td className="px-2 py-2">
+                <tr key={row.ticker} className="h-9 border-t border-slate-200 hover:bg-slate-50">
+                  <td className="px-2 py-1">
                     <div className="flex items-center gap-1 whitespace-nowrap overflow-hidden" title={`${row.stock.name} (${row.ticker})${row.stale ? " - " + row.stale : ""}`}>
                       <WatchlistStar active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
-                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left truncate min-w-0">
+                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium text-indigo-700 hover:underline text-left truncate min-w-0">
                         {row.stock.name}
                       </button>
                       {row.stale && <span className="text-amber-600 text-[10px] shrink-0">⚠️</span>}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap">
+                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     <a href={`https://www.screener.in/company/${encodeURIComponent(row.ticker)}/consolidated/`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-indigo-600" title={`Open ${row.ticker} on Screener.in`}>
                       ₹{fmt(row.mktcap)} Cr
                     </a>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums">
+                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
                     <a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(row.ticker)}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-indigo-600" title={`Open ${row.ticker} chart on TradingView`}>
-                      ₹{fmt(row.price)}
+                      ₹{fmt(row.price)} ↗
                     </a>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
-                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap" title={row.peEps !== null ? `FY${row.peYear} Bull-case EPS` : undefined}>
-                    {row.peEps !== null ? `₹${fmt(row.peEps, 1)}` : <span className="text-slate-400">—</span>}
+                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
+                    {row.rev !== null ? <>{fmt(row.rev)} <span className={pctCol(row.revG)}>{fmtSigned(row.revG, 0)}</span></> : <span className="text-slate-400">—</span>}
                   </td>
-                  <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Bull-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
-                    <PctCell value={row.upside} />
+                  <td className="px-2 py-1 text-center tabular-nums">{row.opm !== null ? `${fmt(row.opm, 0)}%` : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
+                    {row.eps !== null ? <>₹{fmt(row.eps, 1)} <span className={pctCol(row.epsG)}>{fmtSigned(row.epsG, 0)}</span></> : <span className="text-slate-400">—</span>}
                   </td>
-                  <td className="px-2 py-2 text-center">
-                    {row.qtrSalesLabel && row.qtrSalesG !== null ? (
-                      <div className="flex items-center justify-center gap-1 whitespace-nowrap">
-                        <span className="text-[10px] font-semibold text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</span>
-                        <PctCell value={row.qtrSalesG} />
-                      </div>
-                    ) : (
-                      <span className="text-slate-400">—</span>
-                    )}
-                  </td>
-                  {PE_COLS.map(([key]) => {
-                    const stat = row.stock.pe_history ? (key === "pe_min" ? row.stock.pe_history.min : key === "pe_med" ? row.stock.pe_history.median : row.stock.pe_history.max) : null;
-                    const tip = row.peEps !== null && stat !== null
-                      ? `FY${row.peYear} Bull-case EPS ₹${fmt(row.peEps, 1)} x P/E ${fmt(stat, 1)}x = ₹${fmt(row.peEps * stat)}${row.peWin !== null && row.peWin < 3 ? ` (P/E range is the ${row.peWin}-year one until this stock's next full refresh)` : ""}`
-                      : undefined;
-                    return (
-                      <td key={key} className="px-2 py-2 text-center whitespace-nowrap" title={tip}>
-                        <PctCell value={row.peUp[key]} />
-                        {row.peUp[key] !== null && row.peWin !== null && row.peWin < 3 && <span className="text-slate-400 text-[10px]">*</span>}
-                      </td>
-                    );
-                  })}
-                  {GRID_CASES.filter((c) => c !== "bear").map((c) => (
-                    <td key={c} className="px-2 py-2 text-center">
-                      <CaseCell h={row.caseHeadline[c]} price={row.price} />
+                  {PE_COLS.map(([k]) => (
+                    <td key={k} className={`px-2 py-1 text-center tabular-nums whitespace-nowrap ${tintTd(k)}`}
+                      title={row.up[k] !== null && row.eps !== null && row.pe[k] ? `₹${fmt(row.eps * (row.pe[k] as number))} at ${fmt(row.pe[k], 1)}x P/E` : "n/a"}>
+                      {row.up[k] !== null ? <PctCell value={row.up[k]} /> : <span className="text-slate-300">n/a</span>}
+                      {row.up[k] !== null && k !== "peg" && k !== "pe_cur" && (row.stock.pe_history?.window_years ?? 2) < 3 && <span className="text-slate-400 text-[10px]">*</span>}
                     </td>
                   ))}
-                  <td className="px-2 py-2 text-center">
-                    <div className="flex justify-center">
-                      <TrendSparkline stock={row.stock} />
-                    </div>
+                  <td className="px-2 py-1 text-center whitespace-nowrap">
+                    <button onClick={() => navigate(`/company/${row.ticker}`)}
+                      className={`px-2 py-[3px] rounded-full border text-[12px] ${row.saved ? "border-indigo-300 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-slate-50 text-slate-600"} hover:border-slate-400`}
+                      title={row.saved ? "Your saved Bull case on the company page. Click to edit." : "Default Bull case (25% revenue growth) because none is saved. Click to set your own on the company page."}>
+                      {row.saved ? "your bull" : "default bull"} ↗
+                    </button>
                   </td>
-                  <td className="px-2 py-2 text-center">
-                    <button
-                      onClick={() => onOwnedToggle(row.ticker, !row.stock.owned)}
-                      title="Click to mark as owned/not owned"
-                      className="text-base"
-                    >
+                  <td className="px-2 py-1 text-center">
+                    <button onClick={() => onOwnedToggle(row.ticker, !row.stock.owned)} title="Click to mark as owned/not owned" className="text-base">
                       {row.stock.owned ? "✅" : "⬜"}
                     </button>
                   </td>
-                  <td className="px-2 py-2 text-center">
-                    <button onClick={() => onRemove(row.ticker)} title={`Remove ${row.stock.name} from tracking`}>
-                      🗑️
-                    </button>
+                  <td className="px-2 py-1 text-center">
+                    <button onClick={() => onRemove(row.ticker)} title={`Remove ${row.stock.name} from tracking`}>🗑️</button>
                   </td>
                 </tr>
               ))}
@@ -427,6 +249,7 @@ export default function Summary() {
   const { bundle, setBundle } = useData();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
+  const [fy, setFy] = useState(2027);
   const [ticker, setTicker] = useState("");
   const [addBusy, setAddBusy] = useState(false);
   const [addStatus, setAddStatus] = useState<{ kind: "error" | "info"; text: string } | null>(null);
@@ -572,6 +395,13 @@ export default function Summary() {
         </div>
       ) : (
         <>
+          <div className="flex flex-wrap items-center gap-2 mb-3 text-xs">
+            <span className="text-slate-500">Year:</span>
+            {[2027, 2028].map((y) => (
+              <button key={y} onClick={() => setFy(y)} className={`px-2 py-0.5 rounded-full border ${fy === y ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>FY{String(y).slice(-2)}</button>
+            ))}
+            <span className="text-slate-400">Revenue growth, margin and EPS come from each company's Bull case (your saved one, or the default 25% growth). Each P/E column is the upside to today's price if that EPS is priced at that P/E.</span>
+          </div>
           <Section
             title="Stocks I Own"
             emoji="📦"
@@ -579,6 +409,7 @@ export default function Summary() {
             emptyMsg={query ? `No owned stocks matching "${query}".` : "No owned stocks yet — check the Own box on a company below to move it here."}
             scenarios={bundle.scenarios}
             guidance={bundle.guidance}
+            fy={fy}
             onOwnedToggle={toggleOwned}
             onRemove={remove}
           />
@@ -589,6 +420,7 @@ export default function Summary() {
             emptyMsg={query ? `Nothing tracked matching "${query}".` : "Nothing being tracked right now."}
             scenarios={bundle.scenarios}
             guidance={bundle.guidance}
+            fy={fy}
             onOwnedToggle={toggleOwned}
             onRemove={remove}
           />
