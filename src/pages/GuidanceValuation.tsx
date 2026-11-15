@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import type { Stock } from "../lib/model";
 import { useData, useScreeners } from "../App";
 import { MethodologyNote, ScreenerLoading } from "../components/ScreenerTable";
 
@@ -13,7 +14,7 @@ interface Row {
 }
 interface PeStats { min2y: number; med2y: number; avg2y: number; max2y: number; med5y: number | null; fy: number | null; fy_label: string }
 interface Co { symbol: string; name: string; weight?: number | null; price: number; price_as_of: string; last_fy: string; last_sales: number; last_np?: number | null; last_opm: number | null; pe_median_5y: number | null; pe_now: number | null; shares_cr?: number | null; pe_stats?: PeStats | null;
-  calc?: { oi_pct: number; dep_pct: number; int_pct: number; tax_pct: number; adj: number }; rows: Row[] }
+  uid?: string; calc?: { oi_pct: number; dep_pct: number; int_pct: number; tax_pct: number; adj: number }; rows: Row[] }
 type PeKey = "peg" | "own" | "min" | "med" | "avg" | "fy" | "max" | "med5" | "cur";
 const PE_OPTS: [PeKey, string][] = [["own", "As entered / 5y median"], ["min", "Min (2Y)"], ["med", "Median (2Y)"], ["avg", "Average (2Y)"], ["fy", "FY26 year-end"], ["max", "Max (2Y)"], ["med5", "5-year median"], ["cur", "Current P/E"]];
 
@@ -30,7 +31,7 @@ function peFor(c: Co, r: Row, key: PeKey): { pe: number | null; fallback: boolea
 
 const COLS: [PeKey, string][] = [["peg", "P/E = EPS growth"], ["min", "Min (2Y)"], ["med", "Median (2Y)"], ["avg", "Avg (2Y)"], ["fy", "FY26 year-end"], ["max", "Max (2Y)"], ["med5", "5-yr median"], ["cur", "Current"], ["own", "Your P/E"]];
 
-function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
+function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine"; onRemove?: (uid: string) => void }) {
   const [lowGuide, setLowGuide] = useState(false);
   const fys = useMemo(() => Array.from(new Set(cos.flatMap((c) => c.rows.map((x) => x.fy)))).sort(), [cos]);
   const [fy, setFy] = useState<string>(fys.includes("Mar 2027") ? "Mar 2027" : fys[0] ?? "Mar 2027");
@@ -75,7 +76,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
             {rows.map(({ c, r, cells, epsGrowth }) => {
               return (
                 <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-middle">
-                  <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link></td>
+                  <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link>{onRemove && c.uid && <button onClick={() => onRemove(c.uid!)} className="ml-2 text-slate-300 hover:text-red-500" title="Remove this row">✕</button>}</td>
                   <td className="text-right px-2 py-1 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
                   <td className="text-right px-2 py-1 tabular-nums">{fmt(r.sales)}</td>
                   <td className={`text-right px-2 py-1 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
@@ -110,13 +111,86 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
   );
 }
 
+// "My inputs": the user picks a company already in the app, a year and a sales / margin / profit view; the P/E history, price, share count and last-year cost ratios come from the app's own stock record
+interface Entry { id: string; ticker: string; fy: number; mode: "cr" | "growth"; sales?: number; opm?: number; np?: number }
+function loadMine(): Entry[] { try { return JSON.parse(localStorage.getItem("gv_mine") || "[]"); } catch { return []; } }
+function saveMine(e: Entry[]) { try { localStorage.setItem("gv_mine", JSON.stringify(e)); } catch { /* storage unavailable */ } }
+
+function coFromStock(st: Stock, e: Entry): Co | null {
+  const yrs = st.years ?? [];
+  let li = -1;
+  for (let i = yrs.length - 1; i >= 0; i--) if (/^Mar \d{4}$/.test(yrs[i]) && st.revenue[i] != null) { li = i; break; }
+  if (li < 0 || st.current_price == null || e.sales == null) return null;
+  const lastFy = Number(yrs[li].slice(-4)), n = e.fy - lastFy, ls = st.revenue[li] as number;
+  if (n <= 0 || !ls) return null;
+  const sales = e.mode === "cr" ? e.sales : ls * Math.pow(1 + e.sales / 100, n);
+  const pctOf = (a: (number | null)[]) => (a[li] != null ? ((a[li] as number) / ls) * 100 : 0);
+  const opm = e.opm ?? (st.opm_pct[li] ?? 0);
+  const tx = st.tax_pct[li] != null && (st.tax_pct[li] as number) >= 10 && (st.tax_pct[li] as number) <= 40 ? (st.tax_pct[li] as number) : 25.2;
+  const np = e.np ?? ((sales * (opm + pctOf(st.other_income) - pctOf(st.depreciation) - pctOf(st.interest))) / 100) * (1 - tx / 100);
+  const npLast = st.net_profit[li] as number | null;
+  const shares = st.shares_cr?.[li] ?? (npLast && st.eps[li] ? npLast / (st.eps[li] as number) : null);
+  const ph = st.pe_history;
+  return {
+    uid: e.id, symbol: st.ticker, name: st.name, weight: null, price: st.current_price, price_as_of: new Date().toISOString().slice(0, 10), last_fy: yrs[li], last_sales: ls, last_np: npLast, last_opm: st.opm_pct[li] ?? null,
+    pe_median_5y: null, pe_now: st.pe_ratio, shares_cr: shares,
+    pe_stats: ph ? { min2y: ph.min, med2y: ph.median, avg2y: ph.avg, max2y: ph.max, med5y: null, fy: ph.at_last_fy, fy_label: String(ph.last_fy_year) } : null,
+    rows: [{ fy: `Mar ${e.fy}`, basis: "user", sales, sales_cagr: (Math.pow(sales / ls, 1 / n) - 1) * 100, opm, opm_assumed: e.opm == null, net_profit: np, np_given: e.np != null, pe: ph?.median ?? st.pe_ratio, pe_user: false, pe_median_5y: null, shares_cr_row: shares, eps: null, implied: null, implied_at_median: null, abs_return: null, price_cagr: null,
+      assumptions: [], source_url: st.base_url ?? `https://www.screener.in/company/${st.ticker}/` }],
+  };
+}
+
+function MyTab({ stocks }: { stocks: Record<string, Stock> }) {
+  const [list, setList] = useState<Entry[]>(loadMine);
+  const [q, setQ] = useState(""); const [fy, setFy] = useState(2027); const [mode, setMode] = useState<"cr" | "growth">("growth");
+  const [sales, setSales] = useState(""); const [opm, setOpm] = useState(""); const [np, setNp] = useState("");
+  const names = useMemo(() => Object.values(stocks).sort((a, b) => a.name.localeCompare(b.name)), [stocks]);
+  const hit = useMemo(() => { const t = q.trim().toLowerCase(); return t ? names.find((x) => x.ticker.toLowerCase() === t || x.name.toLowerCase() === t) ?? null : null; }, [q, names]);
+  const ph = hit?.pe_history;
+  const num = (v: string) => (v.trim() === "" || isNaN(Number(v)) ? undefined : Number(v));
+  const add = () => {
+    if (!hit || num(sales) == null) return;
+    const e: Entry = { id: `${hit.ticker}-${fy}-${Date.now()}`, ticker: hit.ticker, fy, mode, sales: num(sales), opm: num(opm), np: num(np) };
+    const n = [...list, e]; setList(n); saveMine(n); setSales(""); setOpm(""); setNp("");
+  };
+  const remove = (id: string) => { const n = list.filter((x) => x.id !== id); setList(n); saveMine(n); };
+  const cos = useMemo(() => list.map((e) => (stocks[e.ticker] ? coFromStock(stocks[e.ticker], e) : null)).filter((c): c is Co => c != null), [list, stocks]);
+  const inp = "border border-slate-300 rounded px-2 py-1 text-sm bg-white";
+  return (
+    <div>
+      <div className="rounded-lg border border-slate-200 bg-white p-3 mb-3">
+        <div className="flex flex-wrap items-end gap-3 text-xs">
+          <label className="text-slate-500">Company<input list="gv-co" value={q} onChange={(e) => setQ(e.target.value)} placeholder="name or ticker" className={`${inp} block w-56 mt-0.5`} /></label>
+          <datalist id="gv-co">{names.map((x) => <option key={x.ticker} value={x.ticker}>{x.name}</option>)}</datalist>
+          <label className="text-slate-500">FY<select value={fy} onChange={(e) => setFy(Number(e.target.value))} className={`${inp} block mt-0.5`}>{[2027, 2028, 2029, 2030].map((y) => <option key={y} value={y}>FY{String(y).slice(-2)}</option>)}</select></label>
+          <label className="text-slate-500"><select value={mode} onChange={(e) => setMode(e.target.value as "cr" | "growth")} className="border-0 bg-transparent text-xs text-slate-500 p-0"><option value="growth">Sales growth %</option><option value="cr">Sales ₹ Cr</option></select>
+            <input value={sales} onChange={(e) => setSales(e.target.value)} placeholder={mode === "growth" ? "e.g. 25" : "e.g. 1800"} className={`${inp} block w-28 mt-0.5`} /></label>
+          <label className="text-slate-500">OPM % <span className="text-slate-300">(optional)</span><input value={opm} onChange={(e) => setOpm(e.target.value)} placeholder="last year's" className={`${inp} block w-24 mt-0.5`} /></label>
+          <label className="text-slate-500">Net profit ₹ Cr <span className="text-slate-300">(optional)</span><input value={np} onChange={(e) => setNp(e.target.value)} placeholder="estimated" className={`${inp} block w-28 mt-0.5`} /></label>
+          <button onClick={add} disabled={!hit || num(sales) == null} className="px-3 py-1.5 rounded bg-indigo-600 text-white text-sm disabled:opacity-40">Add row</button>
+        </div>
+        {q.trim() && !hit && <div className="text-xs text-amber-700 mt-2">No company called “{q.trim()}” in this app yet. Add it from the Companies page first, and it will appear in this list.</div>}
+        {hit && (
+          <div className="text-xs text-slate-500 mt-2 flex flex-wrap gap-x-4 gap-y-0.5">
+            <span><b className="text-slate-700">{hit.name}</b> · ₹{fmt(hit.current_price)} · P/E now {fmt(hit.pe_ratio, 1)}</span>
+            {ph ? <span>P/E history (2Y): min {fmt(ph.min, 1)} · median {fmt(ph.median, 1)} · avg {fmt(ph.avg, 1)} · FY{ph.last_fy_year} {fmt(ph.at_last_fy, 1)} · max {fmt(ph.max, 1)}</span> : <span>No P/E history stored for this company.</span>}
+          </div>
+        )}
+        <div className="text-[11px] text-slate-400 mt-2">Sales growth is applied to the last full year; leave OPM and net profit blank to hold last year's margin and rebuild profit from last year's depreciation, interest, other income and tax. Rows are saved in this browser.</div>
+      </div>
+      {cos.length ? <Tbl cos={cos} tab="mine" onRemove={remove} /> : <div className="text-sm text-slate-500">No rows yet. Pick a company above, choose the year, enter the sales view and press Add row.</div>}
+    </div>
+  );
+}
+
+
 export default function GuidanceValuation() {
   const { bundle } = useData();
   const { ready } = useScreeners(["guidanceValuation", "guidanceScan750"]);
   const held = ((bundle.momentum_screeners.guidanceValuation?.rows ?? []) as Co[]);
   const scan = ((bundle.momentum_screeners.guidanceScan750?.rows ?? []) as Co[]);
-  const [tab, setTab] = useState<"held" | "scan">("held");
-  const tabBtn = (t: "held" | "scan", label: string) => <button onClick={() => setTab(t)} className={`px-3 py-1 rounded-t border-b-2 text-sm ${tab === t ? "border-indigo-600 text-indigo-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{label}</button>;
+  const [tab, setTab] = useState<"held" | "scan" | "mine">("held");
+  const tabBtn = (t: "held" | "scan" | "mine", label: string) => <button onClick={() => setTab(t)} className={`px-3 py-1 rounded-t border-b-2 text-sm ${tab === t ? "border-indigo-600 text-indigo-700 font-medium" : "border-transparent text-slate-500 hover:text-slate-700"}`}>{label}</button>;
   return (
     <div>
       <div className="flex items-center gap-2 mb-1"><h1 className="text-xl font-semibold">🎯 Guidance Valuation</h1><span className="text-slate-500 text-sm">management guidance → earnings → implied price → upside from today's price</span></div>
@@ -126,8 +200,8 @@ export default function GuidanceValuation() {
         <p className="mb-2"><b>One column per P/E.</b> Each column prices that EPS at a P/E from the company's own history (2-year min, median, average, max, its FY26 year-end level, the 5-year median, today's) and shows the upside against today's price. The Min column is the downside case: positive there means upside remains even at the lowest recent multiple. A ✓ on the basis means the guidance quote was found word for word in the concall transcript; hover for it.</p>
         <p><b>Limits.</b> The P/E moves the answer more than the guidance does, which is why every option is shown. Guidance is management's, often optimistic, and most margins here are last year's held; this is a reading aid, not a recommendation.</p>
       </MethodologyNote>
-      <div className="flex gap-1 border-b border-slate-200 mb-3">{tabBtn("held", `Held (${held.length})`)}{tabBtn("scan", `Not held · Nifty 750 scan (${scan.length})`)}</div>
-      {!ready ? <ScreenerLoading label="Guidance Valuation" /> : tab === "held" ? (held.length ? <Tbl cos={held} tab="held" /> : <div className="text-sm text-slate-500">No rows yet.</div>) : scan.length ? <Tbl cos={scan} tab="scan" /> : (
+      <div className="flex gap-1 border-b border-slate-200 mb-3">{tabBtn("held", `Held (${held.length})`)}{tabBtn("scan", `Not held · Nifty 750 scan (${scan.length})`)}{tabBtn("mine", "My inputs")}</div>
+      {tab === "mine" ? <MyTab stocks={bundle.stocks} /> : !ready ? <ScreenerLoading label="Guidance Valuation" /> : tab === "held" ? (held.length ? <Tbl cos={held} tab="held" /> : <div className="text-sm text-slate-500">No rows yet.</div>) : scan.length ? <Tbl cos={scan} tab="scan" /> : (
         <div className="rounded-lg border border-dashed border-slate-300 bg-white p-4 text-sm text-slate-700">The Nifty 750 scan has not been run yet. It reads the latest concall of each Nifty 750 company you do not hold, keeps those where management gave a FY27 revenue figure with a confident tone (and any margin), and adds them here. Ask Claude Code: “run the Guidance scan on Nifty 750”.</div>
       )}
     </div>
