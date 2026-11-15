@@ -50,8 +50,7 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
       const price = eps != null && pe ? eps * pe : null;
       return { k, pe, missing, price, up: price != null && c.price ? (price / c.price - 1) * 100 : null };
     });
-    const end = new Date(2027, 2, 31), days = Math.max(1, Math.round((end.getTime() - Date.now()) / 86400000));
-    return { c, r, eps, cells, days, edited: own[c.symbol] != null };
+    return { c, r, eps, cells, edited: own[c.symbol] != null };
   }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, own, sort, lowGuide]);
   const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === "Mar 2027"));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
@@ -67,15 +66,13 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
         {Object.keys(own).length > 0 && <button onClick={() => { setOwn({}); save({}); }} className="underline text-slate-500">Clear my P/E edits ({Object.keys(own).length})</button>}
       </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full text-sm min-w-[96rem]">
+        <table className="w-full text-sm min-w-[92rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
             <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th}>EPS ₹</th>
             {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}><div>{l}</div><div className="text-[10px] font-normal text-slate-400">price · upside · P/E</div></th>)}
-            <th className={th} title="Annualised upside at the 2-year median P/E over the days to 31 March 2027">CAGR @median</th><th className="text-left font-semibold px-3">Basis</th></tr></thead>
+            <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
-            {rows.map(({ c, r, eps, cells, days, edited }) => {
-              const med = cells.find((x) => x.k === "med");
-              const cagr = med?.price && med.price > 0 && c.price ? (Math.pow(med.price / c.price, 365.25 / days) - 1) * 100 : null;
+            {rows.map(({ c, r, eps, cells, edited }) => {
               return (
                 <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-top">
                   <td className="px-3 py-1.5 sticky left-0 bg-white z-10"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)}</div></td>
@@ -94,7 +91,6 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
                       )}
                     </td>
                   ))}
-                  <td className={`text-right px-2 py-1.5 tabular-nums ${col(cagr)}`}>{sgn(cagr)}<div className="text-[10px] text-slate-400">{days}d</div></td>
                   <td className="px-3 py-1.5 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
                 </tr>
               );
@@ -120,9 +116,9 @@ export default function GuidanceValuation() {
       <div className="flex items-center gap-2 mb-1"><h1 className="text-xl font-semibold">🎯 Guidance Valuation</h1><span className="text-slate-500 text-sm">management guidance → earnings → implied price → upside from today's price</span></div>
       <div className="flex items-center gap-2 mb-3">{bundle.momentum_screeners.guidanceValuation?.as_of && <span className="text-xs text-slate-400">updated {bundle.momentum_screeners.guidanceValuation.as_of}</span>}</div>
       <MethodologyNote>
-        <p className="mb-2"><b>How a row is built.</b> Sales come from what management guided for the year (a sales figure, or a growth rate applied to the last full year; a range uses its midpoint). Operating margin is the guided one when management gave it, otherwise last year's is held and marked “held”. Net profit is guided operating profit less depreciation, interest, other income and tax held at last year's share of sales (or your own net profit where you entered it). EPS uses today's share count, and implied price is EPS × the company's 5-year median P/E (or the P/E you entered).</p>
-        <p className="mb-2"><b>CAGR</b> is annualised over the real number of days to the end of that financial year (the Duration column), so a short horizon gives a large CAGR from a small upside. A ✓ means the guidance quote was found word for word in the concall transcript; click a row to read it.</p>
-        <p><b>Limits.</b> A median P/E can be far from today's multiple (high-growth names look expensive against their own history), so the “upside” is as much a statement about P/E as about guidance. Guidance is management's, often optimistic; this is a reading aid, not a recommendation.</p>
+        <p className="mb-2"><b>How a row is built.</b> Sales come from what management guided for FY27 (a sales figure, or a growth rate applied to the last full year; a range uses its midpoint). Operating margin is the guided one when management gave it, otherwise last year's is held (marked *). Net profit is guided operating profit less depreciation, interest, other income and tax held at last year's share of sales (or your own net profit where you entered it). EPS uses today's share count.</p>
+        <p className="mb-2"><b>One column per P/E.</b> Each column prices that EPS at a P/E from the company's own history (2-year min, median, average, max, its FY26 year-end level, the 5-year median, today's) and shows the upside against today's price. The Min column is the downside case: positive there means upside remains even at the lowest recent multiple. A ✓ on the basis means the guidance quote was found word for word in the concall transcript; hover for it.</p>
+        <p><b>Limits.</b> The P/E moves the answer more than the guidance does, which is why every option is shown. Guidance is management's, often optimistic, and most margins here are last year's held; this is a reading aid, not a recommendation.</p>
       </MethodologyNote>
       <div className="flex gap-1 border-b border-slate-200 mb-3">{tabBtn("held", `Held (${held.length})`)}{tabBtn("scan", `Not held · Nifty 750 scan (${scan.length})`)}</div>
       {!ready ? <ScreenerLoading label="Guidance Valuation" /> : tab === "held" ? (held.length ? <Tbl cos={held} tab="held" /> : <div className="text-sm text-slate-500">No rows yet.</div>) : scan.length ? <Tbl cos={scan} tab="scan" /> : (
