@@ -47,7 +47,7 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
       const price = eps != null && pe ? eps * pe : null;
       return { k, pe, missing, price, up: price != null && c.price ? (price / c.price - 1) * 100 : null };
     });
-    return { c, r, cells, epsGrowth };
+    return { c, r, cells, epsGrowth, eps };
   }).sort((a, b) => sort === "weight" ? (b.c.weight ?? 0) - (a.c.weight ?? 0) : (b.cells.find((x) => x.k === sort)?.up ?? -1e9) - (a.cells.find((x) => x.k === sort)?.up ?? -1e9)), [cos, sort, lowGuide, fy]);
   const hidden = cos.filter((c) => !c.rows.some((x) => x.fy === fy));
   const chip = (on: boolean) => `px-2 py-0.5 rounded-full border text-xs ${on ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`;
@@ -65,21 +65,20 @@ function Tbl({ cos, tab, onRemove }: { cos: Co[]; tab: "held" | "scan" | "mine";
               </div>
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-[13px] table-fixed min-w-[64rem]">
-          <colgroup><col style={{ width: "13rem" }} /><col style={{ width: "6rem" }} />{Array.from({ length: 4 + COLS.length }).map((_, i) => <col key={i} style={{ width: "5.25rem" }} />)}<col style={{ width: "11rem" }} /></colgroup>
+          <colgroup><col style={{ width: "13rem" }} /><col style={{ width: "6rem" }} /><col style={{ width: "9.5rem" }} /><col style={{ width: "5.25rem" }} /><col style={{ width: "9.5rem" }} />{COLS.map(([k]) => <col key={k} style={{ width: "5.25rem" }} />)}<col style={{ width: "11rem" }} /></colgroup>
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
-            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided sales for the selected year against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
+            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th} title="Sales for the selected year in ₹ Cr, and growth against the last full year">Revenue ₹ Cr | growth</th><th className={th}>OPM</th><th className={th} title="EPS in ₹ for the selected year, and growth against last year's at today's share count (so equal to net-profit growth)">EPS ₹ | growth</th>
             {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
-            {rows.map(({ c, r, cells, epsGrowth }) => {
+            {rows.map(({ c, r, cells, epsGrowth, eps }) => {
               return (
                 <tr key={c.symbol} className="h-9 border-t border-slate-100 hover:bg-slate-50 align-middle">
                   <td className="px-3 py-0 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link>{onRemove && c.uid && <button onClick={() => onRemove(c.uid!)} className="ml-2 text-slate-300 hover:text-red-500" title="Remove this row">✕</button>}</td>
                   <td className="text-right px-2 py-0 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
-                  <td className="text-right px-2 py-0 tabular-nums">{fmt(r.sales)}</td>
-                  <td className={`text-right px-2 py-0 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
+                  <td className="text-right px-2 py-0 tabular-nums whitespace-nowrap">{fmt(r.sales)} <span className={col(r.sales_cagr)}>{sgn(r.sales_cagr)}</span></td>
                   <td className="text-right px-2 py-0 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
-                  <td className={`text-right px-2 py-0 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
+                  <td className="text-right px-2 py-0 tabular-nums whitespace-nowrap">{eps != null ? `₹${fmt(eps, 1)}` : "n/a"} <span className={col(epsGrowth)}>{sgn(epsGrowth)}</span></td>
                   {cells.map((x) => (
                     <td key={x.k} className={`text-right px-2 py-0 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : ""}`}>
                       {x.missing ? <span className="text-slate-300">n/a</span> : (
