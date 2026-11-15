@@ -347,8 +347,16 @@ function Section({
                       {row.stale && <span className="text-amber-600 text-[10px] shrink-0">⚠️</span>}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap">₹{fmt(row.mktcap)} Cr</td>
-                  <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
+                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap">
+                    <a href={`https://www.screener.in/company/${encodeURIComponent(row.ticker)}/consolidated/`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-indigo-600" title={`Open ${row.ticker} on Screener.in`}>
+                      ₹{fmt(row.mktcap)} Cr
+                    </a>
+                  </td>
+                  <td className="px-2 py-2 text-center tabular-nums">
+                    <a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(row.ticker)}`} target="_blank" rel="noopener noreferrer" className="hover:underline hover:text-indigo-600" title={`Open ${row.ticker} chart on TradingView`}>
+                      ₹{fmt(row.price)}
+                    </a>
+                  </td>
                   <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
                   <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Base-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
                     <PctCell value={row.upside} />
