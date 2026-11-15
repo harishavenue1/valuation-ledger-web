@@ -46,7 +46,8 @@ const EMA_COLS: [string, string][] = [
 // of the page's shell (App.tsx's <main>, max-w-[2000px] as of
 // 2026-09-21) generously instead of leaving a wide empty gutter,
 // rather than widening only the 3 cutoff columns.
-const COL_WIDTHS = [220, 100, 90, 75, 90, 100, 80, 80, 80, 210, 210, 210, 90, 60, 50];
+// 2026-11-15 ("single row and equidistant column width"): every column the same width, one line per row.
+const COL_WIDTHS = Array(15).fill(132) as number[];
 
 type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
 
@@ -149,21 +150,11 @@ function TrendSparkline({ stock }: { stock: Stock }) {
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
   if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
   const detail = `${fmtSigned(h.growth, 1)} | ${fmt(h.pe, 1)}x`;
+  const full = `FY${h.year}: ${detail} | ${fmtSigned(h.cagr, 1)}`;
   return (
-    <div className="overflow-hidden">
-      <div className="text-[10px] font-semibold text-slate-500">FY{h.year}</div>
-      {/* whitespace-nowrap text longer than the column's fixed width
-          bleeds into the neighboring cell instead of wrapping or
-          shrinking (table-layout: fixed doesn't grow the column to
-          fit) — different rows' growth/PE digit counts produce
-          different text lengths, so the bleed varied row to row,
-          which is what looked like inconsistent row/column widths.
-          truncate (overflow-hidden + text-ellipsis) caps it at the
-          real column width instead; title carries the full text. */}
-      <div className="text-xs truncate" title={`${detail} | ${fmtSigned(h.cagr, 1)}`}>
-        <span className="text-slate-500">{detail}</span> |{" "}
-        <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
-      </div>
+    <div className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis" title={full}>
+      <span className="text-slate-500">{detail}</span> |{" "}
+      <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
     </div>
   );
 }
@@ -327,24 +318,16 @@ function Section({
                       they're all the same static height, and line-
                       clamp-3 caps any name longer than that instead of
                       growing the row further. */}
-                  <td className="px-3 py-2">
-                    {/* justify-center vertically centers the name/ticker
-                        block within the reserved 64px, instead of it
-                        sitting pinned to the top with dead space below
-                        for short 1-line names (2026-08-23, "indent
-                        company name to mid of cell"). */}
-                    <div className="min-h-[64px] flex flex-col justify-center">
-                      <div>
-                        <WatchlistStar active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
-                        <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left line-clamp-3">
-                          {row.stock.name}
-                        </button>
-                      </div>
-                      <div className="text-slate-500 text-xs">{row.ticker}</div>
-                      {row.stale && <div className="text-amber-600 text-[10px]">⚠️ {row.stale}</div>}
+                  <td className="px-2 py-2">
+                    <div className="flex items-center gap-1 whitespace-nowrap overflow-hidden" title={`${row.stock.name} (${row.ticker})${row.stale ? " - " + row.stale : ""}`}>
+                      <WatchlistStar active={watchlist.set.has(row.ticker)} onToggle={watchlist.toggle} symbol={row.ticker} />
+                      <button onClick={() => navigate(`/company/${row.ticker}`)} className="font-medium hover:underline text-left truncate min-w-0">
+                        {row.stock.name}
+                      </button>
+                      {row.stale && <span className="text-amber-600 text-[10px] shrink-0">⚠️</span>}
                     </div>
                   </td>
-                  <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.mktcap)} Cr</td>
+                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap">₹{fmt(row.mktcap)} Cr</td>
                   <td className="px-2 py-2 text-center tabular-nums">₹{fmt(row.price)}</td>
                   <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
                   <td className="px-2 py-2 text-center">
@@ -352,8 +335,8 @@ function Section({
                   </td>
                   <td className="px-2 py-2 text-center">
                     {row.qtrSalesLabel && row.qtrSalesG !== null ? (
-                      <div>
-                        <div className="text-[10px] font-semibold text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</div>
+                      <div className="flex items-center justify-center gap-1 whitespace-nowrap">
+                        <span className="text-[10px] font-semibold text-slate-500">{fiscalQuarterLabel(row.qtrSalesLabel)}</span>
                         <PctCell value={row.qtrSalesG} />
                       </div>
                     ) : (
