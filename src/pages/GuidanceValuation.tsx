@@ -63,28 +63,29 @@ function Tbl({ cos, tab }: { cos: Co[]; tab: "held" | "scan" }) {
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-sm min-w-[64rem]">
           <thead className="text-xs text-slate-500 bg-slate-50"><tr>
-            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided FY27 sales against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
+            <th className="text-left font-semibold px-3 py-2 sticky left-0 bg-slate-50 z-10">Company</th><th className={th}>Price</th><th className={th}>Year</th><th className={th}>Sales ₹ Cr</th><th className={th} title="Guided FY27 sales against the last full year">Rev growth</th><th className={th}>OPM</th><th className={th}>Net profit</th><th className={th} title="FY27 EPS against last year's, at today's share count (so equal to net-profit growth)">EPS growth</th>
             {COLS.map(([k, l]) => <th key={k} className={`${th} ${k === "min" ? "bg-sky-50 text-sky-800" : k === "peg" ? "bg-violet-50 text-violet-800" : k === "cur" ? "bg-slate-100" : k === "own" ? "bg-amber-50 text-amber-800" : ""}`} title={k === "peg" ? "Upside if the stock is priced at a P/E equal to its EPS growth % (PEG = 1): 50% EPS growth means a P/E of 50. If EPS growth is above 100% the P/E is capped at 66. Not available when EPS growth is zero or negative." : k === "min" ? "Price and upside if the multiple falls to the stock's own 2-year minimum. Positive means upside remains even then." : undefined}>{l}</th>)}
             <th className="text-left font-semibold px-3">Basis</th></tr></thead>
           <tbody>
             {rows.map(({ c, r, cells, epsGrowth }) => {
               return (
-                <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-top">
-                  <td className="px-3 py-1.5 sticky left-0 bg-white z-10"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link><div className="text-[11px] text-slate-400">{c.symbol}{c.weight != null ? ` · ${c.weight.toFixed(1)}%` : ""} · ₹{fmt(c.price)}</div></td>
-                  <td className="text-right px-2 py-1.5 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.sales)}</td>
-                  <td className={`text-right px-2 py-1.5 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
-                  <td className="text-right px-2 py-1.5 tabular-nums">{fmt(lowGuide ? r.net_profit_low ?? r.net_profit : r.net_profit)}</td>
-                  <td className={`text-right px-2 py-1.5 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
+                <tr key={c.symbol} className="border-t border-slate-100 hover:bg-slate-50 align-middle">
+                  <td className="px-3 py-1 sticky left-0 bg-white z-10 whitespace-nowrap"><Link to={`/company/${c.symbol}`} className="font-medium text-indigo-700 hover:underline">{c.name}</Link></td>
+                  <td className="text-right px-2 py-1 tabular-nums whitespace-nowrap"><a href={`https://www.tradingview.com/chart/?symbol=NSE%3A${encodeURIComponent(c.symbol)}`} target="_blank" rel="noreferrer" className="text-slate-700 hover:text-indigo-700 hover:underline" title="Open the chart on TradingView">₹{fmt(c.price)} ↗</a></td>
+                  <td className="text-right px-2 py-1 whitespace-nowrap">FY{r.fy.slice(-4)}</td>
+                  <td className="text-right px-2 py-1 tabular-nums">{fmt(r.sales)}</td>
+                  <td className={`text-right px-2 py-1 tabular-nums ${col(r.sales_cagr)}`}>{sgn(r.sales_cagr)}</td>
+                  <td className="text-right px-2 py-1 tabular-nums">{fmt(r.opm, 0)}%{r.opm_assumed && <span className="text-amber-600" title="Margin not guided: last year's held"> *</span>}</td>
+                  <td className="text-right px-2 py-1 tabular-nums">{fmt(lowGuide ? r.net_profit_low ?? r.net_profit : r.net_profit)}</td>
+                  <td className={`text-right px-2 py-1 tabular-nums ${col(epsGrowth)}`}>{sgn(epsGrowth)}</td>
                   {cells.map((x) => (
-                    <td key={x.k} className={`text-right px-2 py-1.5 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
+                    <td key={x.k} className={`text-right px-2 py-1 tabular-nums ${x.k === "min" ? "bg-sky-50/50" : x.k === "peg" ? "bg-violet-50/50" : x.k === "own" ? "bg-amber-50/50" : ""}`}>
                       {x.missing ? <span className="text-slate-300">n/a</span> : (
                         <span className={`font-medium ${col(x.up)}`} title={`₹${fmt(x.price)} at ${fmt(x.pe, 1)}x P/E`}>{sgn(x.up)}</span>
                       )}
                     </td>
                   ))}
-                  <td className="px-3 py-1.5 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
+                  <td className="px-3 py-1 text-[11px] whitespace-nowrap">{r.basis === "user" ? <span className="px-1.5 py-0.5 rounded-full border border-slate-300 bg-slate-50 text-slate-600">your input</span> : <span className="px-1.5 py-0.5 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-700" title={(r.quotes ?? []).join("  |  ")}>mgmt guidance{r.quote_verified ? " ✓" : ""}</span>}</td>
                 </tr>
               );
             })}
