@@ -83,7 +83,7 @@ export interface Stock {
   ema33w?: number | null;
   price_history_52w?: number[]; // last ~52 weekly closes, ascending (oldest first) — same fetch as ema33w, see api/_screener_fetch.py's fetch_price_emas
   rsi_weekly?: number | null;
-  pe_history?: { min: number; median: number; avg: number; max: number; at_last_fy: number | null; last_fy_year: number } | null;
+  pe_history?: { min: number; median: number; avg: number; max: number; at_last_fy: number | null; last_fy_year: number; window_years?: number } | null;
   years: string[];
   revenue: (number | null)[];
   revenue_growth_pct: (number | null)[];

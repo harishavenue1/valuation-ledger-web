@@ -13,6 +13,7 @@ import {
   fiscalQuarterLabel,
   fmt,
   fmtSigned,
+  computeModel,
   getCaseState,
   headlineCagr,
 } from "../lib/model";
@@ -28,15 +29,11 @@ function stalenessReason(stock: Stock): string | null {
   return null;
 }
 
-function emaPct(price: number | null, ema: number | null | undefined): number | null {
-  if (price === null || ema === null || ema === undefined || ema === 0) return null;
-  return ((price - ema) / ema) * 100;
-}
-
-const EMA_COLS: [string, string][] = [
-  ["ema20d", "20D"],
-  ["ema50d", "50D"],
-  ["ema33w", "33W"],
+// Upside to the Base-case EPS at the stock's own 3-year Min / Median / Max P/E (same idea as the Guidance Value page).
+const PE_COLS: [string, string][] = [
+  ["pe_min", "Min (3Y)"],
+  ["pe_med", "Median (3Y)"],
+  ["pe_max", "Max (3Y)"],
 ];
 
 // Column, MktCap, Price, P/E, Upside, QtrSalesGr%, 20D, 50D, 33W, Base, Bull, Bear, Trend, Own, Remove
@@ -49,7 +46,7 @@ const EMA_COLS: [string, string][] = [
 // 2026-11-15 ("single row and equidistant column width"): every column the same width, one line per row.
 const COL_WIDTHS = Array(15).fill(132) as number[];
 
-type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "ema_ema20d" | "ema_ema50d" | "ema_ema33w" | "base" | "bull" | "bear";
+type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "pe_min" | "pe_med" | "pe_max" | "base" | "bull" | "bear";
 
 interface Row {
   ticker: string;
@@ -60,7 +57,10 @@ interface Row {
   upside: number | null;
   qtrSalesG: number | null;
   qtrSalesLabel: string | undefined;
-  ema: Record<string, number | null>;
+  peUp: Record<string, number | null>;
+  peEps: number | null;
+  peYear: number | null;
+  peWin: number | null;
   caseHeadline: Record<string, ReturnType<typeof headlineCagr>>;
   stale: string | null;
 }
@@ -79,12 +79,10 @@ function sortValue(row: Row, col: SortCol): number | string | null {
       return row.upside;
     case "qtr_sales_g":
       return row.qtrSalesG;
-    case "ema_ema20d":
-      return row.ema.ema20d;
-    case "ema_ema50d":
-      return row.ema.ema50d;
-    case "ema_ema33w":
-      return row.ema.ema33w;
+    case "pe_min":
+    case "pe_med":
+    case "pe_max":
+      return row.peUp[col];
     default:
       {
         const h = row.caseHeadline[col];
@@ -226,6 +224,17 @@ function Section({
         for (const c of GRID_CASES) {
           caseHeadline[c] = headlineCagr(stock, getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, c));
         }
+        // Base-case EPS for the year the headline uses (explicit pick, else first year with a P/E filled, else next year).
+        const baseState = getCaseState(scenarios, stock, guidance[ticker] ?? null, ticker, "base");
+        const baseModel = computeModel(stock, baseState);
+        const lastYr = parseInt(stock.years[stock.years.length - 1].split(" ")[1], 10);
+        let yi = baseState.chosenYear ?? baseState.drivers.findIndex((d) => d.pe);
+        if (yi === null || yi < 0) yi = 0;
+        const peEps = baseModel[yi]?.eps ?? null;
+        const peYear = lastYr + yi + 1;
+        const ph = stock.pe_history;
+        const upAt = (pe: number | undefined) => (peEps !== null && peEps > 0 && pe && stock.current_price ? ((peEps * pe) / stock.current_price - 1) * 100 : null);
+        const peUpside: Record<string, number | null> = { pe_min: upAt(ph?.min), pe_med: upAt(ph?.median), pe_max: upAt(ph?.max) };
         const bullH = caseHeadline["bull"];
         const upside = bullH && bullH.cagr !== null && stock.current_price ? (bullH.sharePrice / stock.current_price - 1) * 100 : null;
         const qGrowth = stock.q_revenue_growth_pct as (number | null)[] | undefined;
@@ -239,11 +248,10 @@ function Section({
           upside,
           qtrSalesG: qGrowth && qGrowth.length ? qGrowth[qGrowth.length - 1] : null,
           qtrSalesLabel: qLabels && qLabels.length ? qLabels[qLabels.length - 1] : undefined,
-          ema: {
-            ema20d: emaPct(stock.current_price, stock.ema20d),
-            ema50d: emaPct(stock.current_price, stock.ema50d),
-            ema33w: emaPct(stock.current_price, stock.ema33w),
-          },
+          peUp: peUpside,
+          peEps,
+          peYear,
+          peWin: stock.pe_history ? stock.pe_history.window_years ?? 2 : null,
           caseHeadline,
           stale: stalenessReason(stock),
         };
@@ -293,8 +301,8 @@ function Section({
                   </button>
                 </th>
                 <SortableHeader label="Qtr Sales Gr%" col="qtr_sales_g" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[5]} />
-                {EMA_COLS.map(([key, label], i) => (
-                  <SortableHeader key={key} label={label} col={`ema_${key}` as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
+                {PE_COLS.map(([key, label], i) => (
+                  <SortableHeader key={key} label={label} col={key as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
                 ))}
                 {GRID_CASES.map((c, i) => (
                   <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[9 + i] }}>
@@ -346,11 +354,18 @@ function Section({
                       <span className="text-slate-400">—</span>
                     )}
                   </td>
-                  {EMA_COLS.map(([key]) => (
-                    <td key={key} className="px-2 py-2 text-center">
-                      <PctCell value={row.ema[key]} />
-                    </td>
-                  ))}
+                  {PE_COLS.map(([key]) => {
+                    const stat = row.stock.pe_history ? (key === "pe_min" ? row.stock.pe_history.min : key === "pe_med" ? row.stock.pe_history.median : row.stock.pe_history.max) : null;
+                    const tip = row.peEps !== null && stat !== null
+                      ? `FY${row.peYear} Base-case EPS ₹${fmt(row.peEps, 1)} x P/E ${fmt(stat, 1)}x = ₹${fmt(row.peEps * stat)}${row.peWin !== null && row.peWin < 3 ? ` (P/E range is the ${row.peWin}-year one until this stock's next full refresh)` : ""}`
+                      : undefined;
+                    return (
+                      <td key={key} className="px-2 py-2 text-center whitespace-nowrap" title={tip}>
+                        <PctCell value={row.peUp[key]} />
+                        {row.peUp[key] !== null && row.peWin !== null && row.peWin < 3 && <span className="text-slate-400 text-[10px]">*</span>}
+                      </td>
+                    );
+                  })}
                   {GRID_CASES.map((c) => (
                     <td key={c} className="px-2 py-2 text-center">
                       <CaseCell h={row.caseHeadline[c]} price={row.price} />
