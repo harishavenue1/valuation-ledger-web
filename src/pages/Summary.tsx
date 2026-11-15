@@ -34,10 +34,10 @@ const PE_COLS: [string, string][] = [
   ["pe_cur", "Current"],
 ];
 
-// Company, Mkt Cap, Price, Revenue | growth, OPM, EPS | growth, 5 P/E upside columns, Basis, Own, Remove
+// Company, Mkt Cap, Price, OPM, EPS, EPS growth, 5 P/E upside columns, Basis, Own, Remove
 const COL_WIDTHS = Array(14).fill(132) as number[];
 
-type SortCol = "name" | "mktcap" | "price" | "rev" | "opm" | "eps" | "peg" | "pe_min" | "pe_med" | "pe_max" | "pe_cur";
+type SortCol = "name" | "mktcap" | "price" | "opm" | "eps" | "epsg" | "peg" | "pe_min" | "pe_med" | "pe_max" | "pe_cur";
 
 interface Row {
   ticker: string;
@@ -62,9 +62,9 @@ function sortValue(row: Row, col: SortCol): number | string | null {
     case "name": return row.stock.name.toLowerCase();
     case "mktcap": return row.mktcap;
     case "price": return row.price;
-    case "rev": return row.rev;
     case "opm": return row.opm;
     case "eps": return row.eps;
+    case "epsg": return row.epsG;
     default: return row.up[col] ?? null;
   }
 }
@@ -191,9 +191,9 @@ function Section({
                 <SortableHeader label="Company" col="name" {...H} />
                 <SortableHeader label="Mkt Cap" col="mktcap" {...H} />
                 <SortableHeader label="Price" col="price" {...H} />
-                <SortableHeader label="Revenue ₹ Cr | growth" col="rev" {...H} title="Bull-case revenue for the selected year and its growth, from the company page (your saved Bull case, or the default)" />
-                <SortableHeader label="OPM" col="opm" {...H} />
-                <SortableHeader label="EPS ₹ | growth" col="eps" {...H} title="Bull-case EPS for the selected year and its growth against the year before" />
+                <SortableHeader label="OPM" col="opm" {...H} title="Bull-case operating margin for the selected year" />
+                <SortableHeader label="EPS ₹" col="eps" {...H} title="Bull-case EPS for the selected year, from the company page (your saved Bull case, or the default)" />
+                <SortableHeader label="EPS growth" col="epsg" {...H} title="Bull-case EPS growth against the year before" />
                 {PE_COLS.map(([k, l]) => <SortableHeader key={k} label={l} col={k as SortCol} {...H} cls={tint(k)} title={peTitle[k]} />)}
                 <th className="text-center px-2 py-2">Basis</th>
                 <th className="text-center px-2 py-2 text-[11px]">Own</th>
@@ -222,12 +222,12 @@ function Section({
                       ₹{fmt(row.price)} ↗
                     </a>
                   </td>
-                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
-                    {row.rev !== null ? <>{fmt(row.rev)} <span className={pctCol(row.revG)}>{fmtSigned(row.revG, 0)}</span></> : <span className="text-slate-400" title={row.why ?? undefined}>—</span>}
-                  </td>
                   <td className="px-2 py-1 text-center tabular-nums">{row.opm !== null ? `${fmt(row.opm, 0)}%` : <span className="text-slate-400" title={row.approx ? "Not reported for banks/NBFCs" : (row.why ?? undefined)}>—</span>}</td>
+                  <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap" title={row.eps === null ? (row.why ?? undefined) : row.approx ? "No operating margin reported (bank/NBFC): last year's EPS grown at the revenue growth rate" : undefined}>
+                    {row.eps !== null ? <>₹{fmt(row.eps, 1)}{row.approx && <span className="text-amber-600">†</span>}</> : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-2 py-1 text-center tabular-nums whitespace-nowrap">
-                    {row.eps !== null ? <span title={row.approx ? "No operating margin reported (bank/NBFC): last year's EPS grown at the revenue growth rate" : undefined}>₹{fmt(row.eps, 1)} <span className={pctCol(row.epsG)}>{fmtSigned(row.epsG, 0)}</span>{row.approx && <span className="text-amber-600">†</span>}</span> : <span className="text-slate-400" title={row.why ?? undefined}>—</span>}
+                    {row.epsG !== null ? <span className={pctCol(row.epsG)}>{fmtSigned(row.epsG, 0)}</span> : <span className="text-slate-400">—</span>}
                   </td>
                   {PE_COLS.map(([k]) => (
                     <td key={k} className={`px-2 py-1 text-center tabular-nums whitespace-nowrap ${tintTd(k)}`}
