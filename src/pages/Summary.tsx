@@ -46,7 +46,7 @@ const PE_COLS: [string, string][] = [
 // 2026-11-15 ("single row and equidistant column width"): every column the same width, one line per row.
 const COL_WIDTHS = Array(15).fill(132) as number[];
 
-type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "pe_min" | "pe_med" | "pe_max" | "base" | "bull" | "bear";
+type SortCol = "name" | "mktcap" | "price" | "pe" | "upside" | "qtr_sales_g" | "pe_min" | "pe_med" | "pe_max" | "eps" | "base" | "bull" | "bear";
 
 interface Row {
   ticker: string;
@@ -81,6 +81,8 @@ function sortValue(row: Row, col: SortCol): number | string | null {
       return row.upside;
     case "qtr_sales_g":
       return row.qtrSalesG;
+    case "eps":
+      return row.peEps;
     case "pe_min":
     case "pe_med":
     case "pe_max":
@@ -304,6 +306,7 @@ function Section({
                 <SortableHeader label="Mkt Cap" col="mktcap" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[1]} />
                 <SortableHeader label="Price" col="price" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[2]} />
                 <SortableHeader label="P/E" col="pe" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
+                <SortableHeader label="EPS (Bull)" col="eps" sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[3]} />
                 <th className="text-center px-2 py-2" style={{ width: COL_WIDTHS[4] }} title="Bull-case EPS x a P/E equal to last quarter's YoY EPS growth (66 if growth is over 100%), vs today's price. Not annualised.">
                   <button onClick={() => clickHeader("upside")} className={sortCol === "upside" ? "text-slate-800" : "hover:text-slate-800"}>
                     P/E = Qtr EPS Gr {sortCol === "upside" ? (sortDir === "desc" ? "▼" : "▲") : ""}
@@ -313,7 +316,7 @@ function Section({
                 {PE_COLS.map(([key, label], i) => (
                   <SortableHeader key={key} label={label} col={key as SortCol} sortCol={sortCol} sortDir={sortDir} onClick={clickHeader} width={COL_WIDTHS[6 + i]} />
                 ))}
-                {GRID_CASES.map((c, i) => (
+                {GRID_CASES.filter((c) => c !== "bear").map((c, i) => (
                   <th key={c} className="text-center px-2 py-2" style={{ color: CASE_COLOR[c], width: COL_WIDTHS[9 + i] }}>
                     <button onClick={() => clickHeader(c as SortCol)} className="hover:opacity-80">
                       {CASE_LABEL[c].replace(" Case", "")} {sortCol === c ? (sortDir === "desc" ? "▼" : "▲") : ""}
@@ -358,6 +361,9 @@ function Section({
                     </a>
                   </td>
                   <td className="px-2 py-2 text-center tabular-nums">{fmt(row.pe, 1)}x</td>
+                  <td className="px-2 py-2 text-center tabular-nums whitespace-nowrap" title={row.peEps !== null ? `FY${row.peYear} Bull-case EPS` : undefined}>
+                    {row.peEps !== null ? `₹${fmt(row.peEps, 1)}` : <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-2 py-2 text-center whitespace-nowrap" title={row.gPe !== null && row.peEps !== null ? `Last-quarter EPS growth ${fmt(row.qEpsG, 1)}% -> P/E ${fmt(row.gPe, 1)}x${row.qEpsG !== null && row.qEpsG > 100 ? " (capped at 66)" : ""}; FY${row.peYear} Bull-case EPS ₹${fmt(row.peEps, 1)} -> ₹${fmt(row.peEps * row.gPe)}` : "No positive EPS growth in the last quarter, so no P/E to apply"}>
                     <PctCell value={row.upside} />
                   </td>
@@ -383,7 +389,7 @@ function Section({
                       </td>
                     );
                   })}
-                  {GRID_CASES.map((c) => (
+                  {GRID_CASES.filter((c) => c !== "bear").map((c) => (
                     <td key={c} className="px-2 py-2 text-center">
                       <CaseCell h={row.caseHeadline[c]} price={row.price} />
                     </td>
