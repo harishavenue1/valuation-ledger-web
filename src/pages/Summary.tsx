@@ -149,12 +149,11 @@ function TrendSparkline({ stock }: { stock: Stock }) {
 
 function CaseCell({ h }: { h: ReturnType<typeof headlineCagr> }) {
   if (!h || h.cagr === null) return <span className="text-slate-400 text-xs">fill PE</span>;
-  const detail = `${fmtSigned(h.growth, 1)} | ${fmt(h.pe, 1)}x`;
-  const full = `FY${h.year}: ${detail} | ${fmtSigned(h.cagr, 1)}`;
+  // Only the result is shown; the assumptions behind it are in the hover text.
+  const full = `FY${h.year}: revenue growth ${fmtSigned(h.growth, 1)}, P/E ${fmt(h.pe, 1)}x, target price ₹${fmt(h.sharePrice)} -> ${fmtSigned(h.cagr, 1)} a year`;
   return (
-    <div className="text-[11px] whitespace-nowrap overflow-hidden text-ellipsis" title={full}>
-      <span className="text-slate-500">{detail}</span> |{" "}
-      <span className={h.cagr >= 0 ? "text-emerald-600 font-bold" : "text-red-600 font-bold"}>{fmtSigned(h.cagr, 1)}</span>
+    <div className={`text-xs font-bold whitespace-nowrap ${h.cagr >= 0 ? "text-emerald-600" : "text-red-600"}`} title={full}>
+      {fmtSigned(h.cagr, 1)}
     </div>
   );
 }
