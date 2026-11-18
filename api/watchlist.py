@@ -21,7 +21,8 @@ POST {"action": "journal", "tickers": [], "journal": {...}} (single user, last w
 
 Kite -> journal sync (2026-10-25, "record entries on pulling the PF update skill ... alert me to comment on the buy/sell
 reason"): the PortfolioAllocation skill POSTs {"action": "journal_sync", "tickers": [], "holdings": [{"symbol","qty","avg","ltp"}],
-"as_of", "portfolio_value", "trades": {SYM: {"buy_price","sell_price"}}} after every PF update. The server diffs the holdings against
+"as_of", "portfolio_value", "trades": {SYM: {"buy_price","sell_price"}}, "tradebook": {SYM: {"buy": [[date, qty, price]], "sell": [...]}}} after every PF update
+(the tradebook is the latest Kite Console export the user drops in ~/Documents/zerodha: it supplies the real trade date and fill price; without a match the entry is dated the last trading day and flagged dateApprox). The server diffs the holdings against
 its own last snapshot (`journal_snap` meta; the first call only stores a baseline) and drops a PENDING buy/sell placeholder per
 change into a separate `journal_inbox` meta — it never edits the journal document itself, so a page open on another device cannot
 overwrite it. The page merges the inbox on load / focus, asks for the reason, and acks the ids ({"action": "journal_ack", "ids": [...]}).
@@ -48,6 +49,39 @@ def _num(v):
     return float(v) if isinstance(v, (int, float)) and v == v else None
 
 
+def _last_trading_day(iso):
+    """A trade can't be dated on a weekend: Saturday/Sunday -> the Friday before (2026-11-18: 38 of 96 synced entries were weekend-dated, the PF-update date instead of the trade date)."""
+    from datetime import date as _d, timedelta
+
+    d = _d.fromisoformat(iso)
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.isoformat()
+
+
+def _tb_match(tb, sym, side, qty, lo, hi):
+    """Find the real trade(s) in the Kite Console tradebook the PF script sent ({SYM: {"buy": [[date, qty, price], ...], "sell": [...]}}): one to three trade days in [lo, hi]
+    whose quantities add up to `qty`. Returns (date of the last day, weighted average price, ambiguous) or None."""
+    import itertools
+
+    rows = ((tb.get(sym) or {}).get(side)) or []
+    days = {}
+    for d, q, px in rows:
+        if lo <= d <= hi:
+            a = days.setdefault(d, [0.0, 0.0])
+            a[0] += float(q)
+            a[1] += float(q) * float(px)
+    ds = sorted(days)
+    target = round(qty)
+    for n in (1, 2, 3):
+        found = [c for c in itertools.combinations(ds, n) if round(sum(days[d][0] for d in c)) == target]
+        if found:
+            c = found[-1]
+            q = sum(days[d][0] for d in c)
+            return c[-1], round(sum(days[d][1] for d in c) / q, 2), len(found) > 1
+    return None
+
+
 def journal_sync(conn, body, hs):
     """Diff Kite holdings against the last snapshot and queue pending buy/sell placeholders (see the module docstring)."""
     from datetime import date as _date
@@ -55,6 +89,7 @@ def journal_sync(conn, body, hs):
     as_of = body.get("as_of") if isinstance(body.get("as_of"), str) else _date.today().isoformat()
     pv = _num(body.get("portfolio_value")) or 0.0
     trades = body.get("trades") if isinstance(body.get("trades"), dict) else {}
+    tb = body.get("tradebook") if isinstance(body.get("tradebook"), dict) else {}
     holdings = {h["symbol"]: {"qty": float(h["qty"]), "avg": _num(h.get("avg")), "ltp": _num(h.get("ltp"))} for h in hs if h["qty"] > 0}
     doc = get_meta(conn, "journal", {"checklist": None, "entries": [], "sells": []})
     inbox = get_meta(conn, "journal_inbox", [])
@@ -84,7 +119,9 @@ def journal_sync(conn, body, hs):
     except Exception:
         tech = {}
     prev_h = snap.get("holdings") or {}
+    lo_date = snap.get("as_of") or as_of  # trades since the previous sync (inclusive: part of that day may have come after it)
     created, corporate = [], []
+    tb_used = 0
     for sym in sorted(set(holdings) | set(prev_h)):
         new, prev = holdings.get(sym), prev_h.get(sym) or {}
         nq, pq = (new or {}).get("qty", 0.0), prev.get("qty", 0.0) or 0.0
@@ -128,6 +165,23 @@ def journal_sync(conn, body, hs):
             }
             if not _num(t.get("sell_price")):
                 stub["priceApprox"] = True
+        # Date and price: the Console tradebook is the only source with real trade dates (Kite holdings carry none). A trade found in today's positions is today's. Otherwise match the
+        # tradebook by quantity; failing that fall back to the last trading day on or before the sync date and say so (dateApprox), instead of presenting the sync date as the trade date.
+        side_k = "buy" if stub["type"] == "buy" else "sell"
+        todays = _num(t.get("buy_price" if d > 0 else "sell_price"))
+        hit = None if todays else _tb_match(tb, sym, side_k, stub["qty"], lo_date, as_of)
+        if hit:
+            stub["date"], stub["price"], amb = hit
+            stub.pop("priceApprox", None)
+            stub["tradebook"] = True
+            if amb:
+                stub["dateApprox"] = True
+            if stub["type"] == "buy" and pv > 0 and stub["price"] > 0:
+                stub["allocPct"] = round(stub["qty"] * stub["price"] / pv * 100, 2)
+            tb_used += 1
+        elif not todays:
+            stub["date"] = _last_trading_day(as_of)
+            stub["dateApprox"] = True
         if stub["id"] in ids:
             stub["id"] += "x"
         ids.add(stub["id"])
@@ -135,7 +189,7 @@ def journal_sync(conn, body, hs):
         created.append({"symbol": sym, "type": stub["type"], "qty": stub["qty"], "price": stub["price"]})
     set_meta(conn, "journal_inbox", inbox)
     save_snap()
-    return {"ok": True, "baseline": False, "created": len(created), "trades": created, "corporate_actions": corporate, "inbox": len(inbox)}
+    return {"ok": True, "baseline": False, "created": len(created), "trades": created, "corporate_actions": corporate, "inbox": len(inbox), "tradebook_matched": tb_used, "tradebook_rows": sum(len(v.get("buy", [])) + len(v.get("sell", [])) for v in tb.values())}
 
 
 class handler(BaseHTTPRequestHandler):

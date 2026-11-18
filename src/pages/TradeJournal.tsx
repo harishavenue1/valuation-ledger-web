@@ -100,7 +100,7 @@ function QuickComment({ e, x, sale, ema33, checklist, onSaveBuy, onSaveSell, onD
     <div className={`border rounded-lg px-4 py-3 ${buy ? "border-emerald-300" : "border-red-300"}`}>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 mb-2">
         <span className="text-sm font-semibold">{buy ? "🟢 BOUGHT" : "🔴 SOLD"} {it.symbol}</span>
-        <span className="text-xs text-slate-600">{fmtQty(it.qty)} units · {it.date}{buy && e?.allocPct != null ? ` · ${fmt(e.allocPct, 2, "%")} of portfolio` : ""}{buy && e?.rsiW != null ? ` · wkly RSI ${fmt(e.rsiW, 1)}` : ""}{buy && e?.ema200Pct != null ? ` · ${fmtSigned(e.ema200Pct, 1)} vs 200D` : ""}</span>
+        <span className="text-xs text-slate-600">{fmtQty(it.qty)} units · {it.date}{it.dateApprox ? " (date approx)" : ""}{buy && e?.allocPct != null ? ` · ${fmt(e.allocPct, 2, "%")} of portfolio` : ""}{buy && e?.rsiW != null ? ` · wkly RSI ${fmt(e.rsiW, 1)}` : ""}{buy && e?.ema200Pct != null ? ` · ${fmtSigned(e.ema200Pct, 1)} vs 200D` : ""}</span>
         <label className="text-xs text-slate-500 flex items-center gap-1">
           @ ₹<input type="number" step="any" value={px} onChange={(ev) => setPx(ev.target.value)} className="w-24 px-1.5 py-0.5 border border-slate-300 rounded text-xs" />
           {it.priceApprox && <span className="text-amber-700">approx — fix it if you know the fill</span>}

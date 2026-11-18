@@ -38,6 +38,8 @@ export type Entry = {
   pending?: boolean;
   source?: "kite";
   priceApprox?: boolean; // price was inferred (no executed price available) — correct it if you know it
+  dateApprox?: boolean; // no tradebook match: dated the last trading day before the sync, the real day may differ
+  tradebook?: boolean; // date and price come from the Kite Console tradebook
 };
 export type Check = { id: string; text: string; auto?: "ema200" | "rsiw" | "fund" | "alloc" | "stop" };
 export type Sell = {
@@ -53,6 +55,8 @@ export type Sell = {
   pending?: boolean;
   source?: "kite";
   priceApprox?: boolean;
+  dateApprox?: boolean;
+  tradebook?: boolean;
 };
 // what the server queues in `journal_inbox` — a pending Entry (type "buy") or Sell (type "sell")
 export type InboxItem = ((Entry & { type: "buy" }) | (Sell & { type: "sell" }));
