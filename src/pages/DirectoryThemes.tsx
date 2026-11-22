@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useData } from "../App";
+import { useData, useScreeners } from "../App";
 import { Col, GenericTable, MethodologyNote, PriceLink, ScreenerLoading, Signed, fmtNum } from "../components/ScreenerTable";
 import { api } from "../lib/api";
 import { DEFAULT_THEMES } from "../lib/themes";
@@ -98,26 +98,21 @@ export default function DirectoryThemes() {
   const names = Object.keys(themes);
   const selected = names.includes(params.get("theme") ?? "") ? params.get("theme")! : "";
 
+  // The Technical page's table (one read; Directory no longer has its own jobs or the 3.4 MB all-stocks table)
+  const { ready: techReady, error: techError } = useScreeners(["chartistRs"]);
+  const techEntry = bundle.momentum_screeners.chartistRs;
   useEffect(() => {
-    let cancelled = false;
-    api
-      .getBhavTechnicals()
-      .then((res) => {
-        if (cancelled) return;
-        if (!res.ok || !res.rows?.length) {
-          setError("The all-stocks NSE technicals aren't published right now — try again after the evening NSE refresh.");
-          return;
-        }
-        const map: Record<string, Record<string, any>> = {};
-        for (const r of res.rows) map[r.symbol] = { ...r, six_month_pct: r.w_pct_6m };
-        setStocks(map);
-        setAsOf(res.as_of ?? null);
-      })
-      .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!techReady) return;
+    if (!techEntry?.rows?.length) {
+      setError("The NSE technicals aren't published right now — try again after the evening NSE refresh.");
+      return;
+    }
+    const map: Record<string, Record<string, any>> = {};
+    for (const r of techEntry.rows) map[r.symbol] = r;
+    setStocks(map);
+    setAsOf(techEntry.as_of ?? null);
+  }, [techReady, techEntry]);
+  useEffect(() => { if (techError) setError(techError); }, [techError]);
 
   const rowsFor = (name: string) => (themes[name] ?? []).map((s) => stocks?.[s]).filter((r): r is Record<string, any> => !!r);
 

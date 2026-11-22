@@ -58,11 +58,11 @@ function IndexList({ index }: { index: string }) {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
-  const { ready } = useScreeners(["indexDirectory"]);
-  const entry = bundle.momentum_screeners.indexDirectory;
+  const { ready } = useScreeners(["chartistRs"]); // the Technical page's table: index membership and momentum rank ride on it (no separate job)
+  const entry = bundle.momentum_screeners.chartistRs;
   const withMom = index === "Smallcap 250" || index === "Microcap 250";
   const rows = useMemo(() => {
-    const r = (entry?.rows ?? []).filter((x: any) => x.index === index);
+    const r = (entry?.rows ?? []).filter((x: any) => x.index === index).map((x: any) => ({ ...x, sector: x.industry ?? x.sector }));
     // momentum-ranked first for the lists that carry a score (unranked last)
     return withMom ? [...r].sort((a: any, b: any) => (a.mom_rank ?? 1e9) - (b.mom_rank ?? 1e9)) : r;
   }, [entry, index, withMom]);
@@ -117,8 +117,8 @@ function IndexList({ index }: { index: string }) {
         {entry?.as_of && <span className="ml-auto text-slate-400">session {entry.as_of}</span>}
       </div>
       <MethodologyNote>
-        Every constituent of the <b>Nifty {index}</b> index (NSE's own constituent file, refreshed weekly) with its latest technicals from our daily NSE store — so
-        this covers all of them, not only the NSE-750. Returns: Day/1W/1M/3M/1Y are calendar-offset price changes; <b>6M</b> is a 26-weekly-bar change.
+        Every constituent of the <b>Nifty {index}</b> index (NSE's own constituent file, refreshed weekly) with its latest technicals — the same table the Technical page reads, so
+        every member is in the NSE-750. Returns: Day/1W/1M/3M/1Y are calendar-offset price changes; <b>6M</b> is a 26-weekly-bar change.
         % vs 200D/33W EMA use OHLC4; % from ATH/52W High come from the store's split-adjusted highs (ATH reaches back to 2020). Market cap is NSE close ×
         share count (blank where the share count isn't known yet). The strip above is the median stock, and the share of members above their 200D EMA / within
         10% of the all-time high — a quick read on how the whole index is behaving. Updates each trading evening.

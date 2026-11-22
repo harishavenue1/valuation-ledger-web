@@ -67,40 +67,26 @@ export default function SectorDirectory() {
   const { bundle } = useData();
   const navigate = useNavigate();
   const watchlist = useWatchlist();
-  const { ready } = useScreeners(["nseScreener", "nse750Fundamentals", "nse750Technicals"]);
+  const { ready } = useScreeners(["chartistRs"]); // the Technical page's table (one read, no separate jobs)
   const ms = bundle.momentum_screeners;
 
   const rows = useMemo(() => {
-    const base = ms?.nseScreener?.rows ?? [];
-    const fundMap = keyBy(ms?.nse750Fundamentals?.rows);
-    const ntMap = keyBy(ms?.nse750Technicals?.rows);
-    return base.map((b: any) => {
-      const fund = fundMap.get(b.symbol);
-      const nt = ntMap.get(b.symbol);
-      return {
-        symbol: b.symbol,
-        name: b.name,
-        sector: b.sector,
-        price: b.price,
-        // nse750Fundamentals' own pushed field is "marketcap" (no
-        // underscore/suffix — _rdcf_fetch_fundamentals' own dict key,
-        // spread as-is into push_rows), NOT "market_cap_cr" — that name
-        // only exists on reverseDcfScanNse750/turtleWealth's OWN rows,
-        // a different screener. Caught live 2026-09-26: this column
-        // silently showed "—" for all 750 rows in production before
-        // the mismatch was found.
-        market_cap_cr: fund?.marketcap ?? null,
-        day_change_pct: b.change_pct ?? null,
-        pct_1w: nt?.pct_1w ?? null,
-        pct_1m: nt?.pct_1m ?? null,
-        pct_3m: nt?.pct_3m ?? null,
-        pct_6m: nt?.pct_6m ?? null,
-        pct_200d_ema: nt?.pct_200d_ema ?? null,
-        pct_33w_ema: nt?.pct_33w_ema ?? null,
-        pct_from_ath: nt?.ath_price != null ? pctFromPeak(b.price, nt.ath_price) : (nt?.pct_from_ath ?? null),
-        pct_from_52w_high: nt?.high_52w_price != null ? pctFromPeak(b.price, nt.high_52w_price) : (nt?.pct_from_52w_high ?? null),
-      };
-    });
+    return (ms?.chartistRs?.rows ?? []).map((b: any) => ({
+      symbol: b.symbol,
+      name: b.name,
+      sector: b.sector,
+      price: b.price,
+      market_cap_cr: b.market_cap_cr ?? null,
+      day_change_pct: b.change_pct ?? null,
+      pct_1w: b.weekly_pct ?? null,
+      pct_1m: b.monthly_pct ?? null,
+      pct_3m: b.three_month_pct ?? null,
+      pct_6m: b.six_month_pct ?? null,
+      pct_200d_ema: b.pct_200d_ema ?? null,
+      pct_33w_ema: b.pct_33w_ema ?? null,
+      pct_from_ath: b.pct_from_ath ?? null,
+      pct_from_52w_high: b.pct_from_52w_high ?? null,
+    }));
   }, [ms]);
 
   const [searchParams, setSearchParams] = useSearchParams();
@@ -130,8 +116,7 @@ export default function SectorDirectory() {
         <span className="text-slate-500 text-sm">Every NSE750 stock, grouped by its BSE/NSDL sector</span>
       </div>
       <p className="text-xs text-slate-500 mb-3">
-        {bundle.momentum_screeners.nseScreener?.as_of && <>Base data as of {bundle.momentum_screeners.nseScreener.as_of}. </>}
-        {bundle.momentum_screeners.nse750Technicals?.as_of && <>Technicals (Market Cap/1W-6M %/EMA/ATH/52W High) refresh weekly — as of {bundle.momentum_screeners.nse750Technicals.as_of}.</>}
+        {bundle.momentum_screeners.chartistRs?.as_of && <>Data as of the {bundle.momentum_screeners.chartistRs.as_of} NSE close, from the same table the Technical page reads. </>}
       </p>
 
       <MethodologyNote>
@@ -180,7 +165,7 @@ export default function SectorDirectory() {
         navigate={(t) => navigate(`/company/${t}`)}
         watchlist={watchlist}
         initialSector={selectedSector}
-        emptyMessage="No stock data yet — the nseScreener cron hasn't run."
+        emptyMessage="No stock data yet — the evening NSE refresh hasn't run."
       />
     </div>
   );
