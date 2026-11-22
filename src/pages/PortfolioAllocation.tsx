@@ -940,18 +940,6 @@ export default function PortfolioAllocation() {
           return <span className={rsTone(v)} title={`RS 3M ${v}: the 3-month return (${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"}, 13 weekly bars) beats ${v}% of NSE 750 stocks. 80+ is leadership territory; this is the RS the Chartist_RS_Scanner screens on.`}>{v}</span>;
         },
       },
-      ...(["1w", "1m"] as const).map((k): Col => ({
-        key: `rsp_${k}`,
-        label: `RS ${k.toUpperCase()}`,
-        width: 3.6,
-        render: (r) => {
-          const v = r[`rsp_${k}`] as number | null | undefined;
-          if (typeof v !== "number") return <span className="text-slate-300" title="no return in the technicals store for this holding">—</span>;
-          const w = r[`rsw_${k}`] as number | null | undefined;
-          const tone = v >= 80 ? "text-emerald-600 font-bold" : v >= 60 ? "text-emerald-600" : v >= 40 ? "text-slate-700" : v >= 20 ? "text-orange-600" : "text-red-600 font-semibold";
-          return <span className={tone} title={`${k.toUpperCase()} return ${typeof w === "number" ? w.toFixed(1) + "%" : "n/a"} beats ${v}% of NSE 750 stocks over the same weekly bars (50 = the middle of the market, 80+ = leader)`}>{v}</span>;
-        },
-      })),
       {
         key: "rs_1w",
         label: "RS 1W Δ",
