@@ -4,9 +4,7 @@ import { api, ApiError, Bundle } from "./lib/api";
 import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
 import Summary from "./pages/Summary";
-const Companies = lazy(() => import("./pages/Companies"));
 const Detail = lazy(() => import("./pages/Detail"));
-const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
 const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
@@ -23,15 +21,11 @@ import { JournalNavBadge } from "./lib/journal";
 const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
 const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
 const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
-const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
-const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
 const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
 const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const TradeDesk = lazy(() => import("./pages/TradeDesk"));
-const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
-const Guide = lazy(() => import("./pages/Guide"));
 const Settings = lazy(() => import("./pages/Settings"));
 
 // Status of an in-flight/last "Run now" click for a cloud screener
@@ -251,17 +245,6 @@ export default function App() {
                 🧭 Business
                 <BusinessNavBadge />
               </NavLink>
-              <NavGroup
-                label="🧰 Research"
-                items={[
-                  { to: "/companies", label: "Companies" },
-                  { to: "/guidance-tracker", label: "📋 Guidance" },
-                  { to: "/reverse-dcf", label: "🔄 Rev DCF" },
-                  { to: "/reverse-dcf-scan", label: "📋 DCF Scan" },
-                  { to: "/turtle-wealth", label: "🐢 Turtle" },
-                  { to: "/guide", label: "🧭 Guide" },
-                ]}
-              />
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -283,9 +266,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<MarketPulse />} />
             <Route path="/summary" element={<Summary />} />
-            <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
-            <Route path="/guidance-tracker" element={<GuidanceTracker />} />
             <Route path="/momentum-screeners" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
             <Route path="/fno-flow" element={<FnoFlow />} />
@@ -304,15 +285,11 @@ export default function App() {
             <Route path="/business-radar" element={<Business />} />
             <Route path="/strategic-alpha" element={<StrategicAlpha />} />
             <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
-            <Route path="/reverse-dcf" element={<ReverseDCF />} />
-            <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
             <Route path="/mtf-playbook" element={<MTFPlaybook />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/trade-desk" element={<TradeDesk />} />
-            <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
-            <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/summary" replace />} />
           </Routes>
