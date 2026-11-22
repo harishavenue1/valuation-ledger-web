@@ -6,25 +6,15 @@ import Login from "./pages/Login";
 import Summary from "./pages/Summary";
 const Detail = lazy(() => import("./pages/Detail"));
 const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
-const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
 const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
 const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
-const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
-const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
-const FIITrend = lazy(() => import("./pages/FIITrend"));
 const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const Directory = lazy(() => import("./pages/Directory"));
 const Business = lazy(() => import("./pages/Business"));
 import { BusinessNavBadge } from "./lib/businessAlerts";
 import { JournalNavBadge } from "./lib/journal";
-const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
-const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
-const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
-const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
-const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
-const TradeDesk = lazy(() => import("./pages/TradeDesk"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
 const Settings = lazy(() => import("./pages/Settings"));
 
@@ -210,16 +200,6 @@ export default function App() {
               <NavLink to="/guidance-valuation" className={({ isActive }) => navClass(isActive)}>
                 🎯 Guidance Value
               </NavLink>
-              <NavGroup
-                label="💼 Portfolio"
-                items={[
-                  { to: "/portfolio-charts", label: "📈 Charts" },
-                  { to: "/portfolio-performance", label: "📊 Performance" },
-                  { to: "/mtf-calculator", label: "📐 MTF" },
-                  { to: "/mtf-playbook", label: "📘 MTF Playbook" },
-                  { to: "/trade-desk", label: "🛒 Trade Desk" },
-                ]}
-              />
               <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
                 ⭐ Watchlist
               </NavLink>
@@ -230,17 +210,9 @@ export default function App() {
               <NavLink to="/concall-summary" className={({ isActive }) => navClass(isActive)}>
                 📞 Concall Summary
               </NavLink>
-              <NavGroup
-                label="🌍 Market"
-                items={[
-                  { to: "/global-macro", label: "🌍 Macro" },
-                  { to: "/fii-trend", label: "🌊 FII Trend" },
-                  { to: "/fno-flow", label: "📊 F&O Flow" },
-                  { to: "/strategic-alpha", label: "📡 Strategic" },
-                  { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
-                  { to: "/sector-directory", label: "📚 Directory" },
-                ]}
-              />
+              <NavLink to="/sector-directory" className={({ isActive }) => navClass(isActive)}>
+                📚 Directory
+              </NavLink>
               <NavLink to="/business-radar" className={({ isActive }) => navClass(isActive)}>
                 🧭 Business
                 <BusinessNavBadge />
@@ -269,26 +241,15 @@ export default function App() {
             <Route path="/company/:ticker" element={<Detail />} />
             <Route path="/momentum-screeners" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
-            <Route path="/fno-flow" element={<FnoFlow />} />
             <Route path="/concall-summary" element={<ConcallSummary />} />
             <Route path="/guidance-valuation" element={<GuidanceValuation />} />
             <Route path="/technical-summary" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/all-technicals" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
-            <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
-            <Route path="/global-macro" element={<GlobalMacro />} />
             <Route path="/market-pulse" element={<Navigate to="/" replace />} />
-            <Route path="/fii-trend" element={<FIITrend />} />
             <Route path="/sector-directory" element={<Directory />} />
-            <Route path="/portfolio-charts" element={<PortfolioCharts />} />
-            <Route path="/portfolio-charts/:symbol" element={<PortfolioCharts />} />
             <Route path="/business-radar" element={<Business />} />
-            <Route path="/strategic-alpha" element={<StrategicAlpha />} />
-            <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
-            <Route path="/mtf-calculator" element={<MTFCalculator />} />
-            <Route path="/mtf-playbook" element={<MTFPlaybook />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
-            <Route path="/trade-desk" element={<TradeDesk />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="/summary" replace />} />
