@@ -58,6 +58,13 @@ html.tv-dark .bg-white\/90 { background-color: rgba(20, 23, 31, 0.92); }
 html.tv-dark .bg-slate-50 { background-color: #1a1d26; }
 html.tv-dark .bg-slate-50\/60 { background-color: rgba(26, 29, 38, 0.6); }
 html.tv-dark .bg-slate-100 { background-color: #222631; }
+/* Summary / Guidance Value: the violet "P/E = EPS growth" and sky "Min (3Y)" columns. The light tints (violet-50, sky-50) painted flat grey blocks on the dark theme and hid the green / red figures. */
+html.tv-dark .bg-violet-50 { background-color: rgba(139, 92, 246, 0.22); }
+html.tv-dark .bg-sky-50 { background-color: rgba(14, 165, 233, 0.22); }
+html.tv-dark .bg-violet-50\/50 { background-color: rgba(139, 92, 246, 0.08); }
+html.tv-dark .bg-sky-50\/50 { background-color: rgba(14, 165, 233, 0.08); }
+html.tv-dark .text-violet-800 { color: #c4b5fd; }
+html.tv-dark .text-sky-800 { color: #7dd3fc; }
 html.tv-dark .bg-slate-300 { background-color: #3c3d44; }
 html.tv-dark .bg-slate-800 { background-color: #d6d6d6; }
 html.tv-dark .hover\:bg-slate-50:hover { background-color: #222631; }
