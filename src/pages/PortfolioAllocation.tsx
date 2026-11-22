@@ -754,39 +754,6 @@ export default function PortfolioAllocation() {
       { key: "rank", label: "Rank", width: 3 },
       { key: "symbol", label: "Symbol", align: "left", width: 9 },
       {
-        key: "size",
-        label: "Size",
-        width: 3.5,
-        align: "center",
-        render: (r) => {
-          const b = SIZE_BUCKETS.find((x) => x.key === sizeOf(r.pct_of_portfolio))!;
-          return <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${b.badge}`} title={`${b.label}: ${b.rule} of the portfolio (this one is ${fmtNum(r.pct_of_portfolio, 2)}%)`}>{b.short}</span>;
-        },
-      },
-      {
-        // 2026-10-12 ("instead of chart column add a column with A, B, C" — A green, B yellow, C orange): replaces the
-        // 📈 chart-link column. The zone comes from % from ATH with the same fixed buckets as the ATH summary
-        // (A: within 10%, B: 10-25% below, C: more than 25% below); funds/ETFs with no ATH show a dash. The in-app
-        // chart is still reachable from the Charts page and the price column's TradingView link.
-        key: "ath_zone",
-        label: "Zone",
-        width: 3,
-        align: "center",
-        render: (r) => {
-          const z = ZONES.find((x) => x.label === proximityBucketFor(r.pct_from_ath));
-          if (!z || !z.letter) return <span className="text-slate-300">–</span>;
-          return (
-            <span
-              className="inline-block w-5 h-5 leading-5 rounded text-[11px] font-bold text-center"
-              style={{ background: z.badge.bg, color: z.badge.fg }}
-              title={`${z.title} (${typeof r.pct_from_ath === "number" ? r.pct_from_ath.toFixed(1) + "%" : "n/a"} from ATH)`}
-            >
-              {z.letter}
-            </span>
-          );
-        },
-      },
-      {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
         // reads from (see fetch_sector_and_fundamentals's own comment).
@@ -794,20 +761,6 @@ export default function PortfolioAllocation() {
         label: "MCAP",
         width: 4.2,
         render: (r) => (r.market_cap_cr == null ? <span className="text-slate-300">—</span> : `₹${fmtNum(r.market_cap_cr, 0)} Cr`),
-      },
-      {
-        // 2026-09-23 ("make % of Portfolio as per buy price", then "move
-        // buy% to left of current%") — a separate cost-basis allocation
-        // weight (qty × avg buy price ÷ total cost basis), added
-        // alongside the existing current-value % of Portfolio rather
-        // than replacing it, since that field also drives Segment
-        // Summary/Market Cap Distribution/the Sector donut elsewhere on
-        // this page. "—" only if this row had no avg_price.
-        key: "pct_of_portfolio_cost",
-        label: "Buy %",
-        width: 4.7,
-        groupStart: true,
-        render: (r) => (r.pct_of_portfolio_cost == null ? <span className="text-slate-300">—</span> : <span className="tabular-nums">{fmtNum(r.pct_of_portfolio_cost, 1)}%</span>),
       },
       {
         // 2026-09-23 ("% of Portfolio move this after Market Cap column")
