@@ -50,40 +50,8 @@
       "schedule": "10 14 * * *"
     },
     {
-      "path": "/api/momentum_screeners?screener=globalCountryEtfs",
-      "schedule": "37 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=globalCurrencies",
-      "schedule": "38 10 * * *"
-    },
-    {
       "path": "/api/momentum_screeners?screener=ratesFx",
       "schedule": "40 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=businessRadar",
-      "schedule": "30 12 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=fintwit",
-      "schedule": "15 3 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=concallGuidance",
-      "schedule": "10 4 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=concallGuidance",
-      "schedule": "20 4 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=concallGuidance",
-      "schedule": "30 4 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=concallGuidance",
-      "schedule": "40 4 * * 0"
     },
     {
       "path": "/api/momentum_screeners?screener=bhavDaily",
@@ -102,28 +70,8 @@
       "schedule": "30 14 * * 1-5"
     },
     {
-      "path": "/api/momentum_screeners?screener=strategicAlpha",
-      "schedule": "39 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=top100UsStocks",
-      "schedule": "41 10 * * *"
-    },
-    {
       "path": "/api/momentum_screeners?screener=nse750WeeklyMaxSummary",
       "schedule": "45 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=fiiSectorTrend",
-      "schedule": "0 6 3,18 * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=reverseDcfScanNse750",
-      "schedule": "0 11 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=turtleWealth",
-      "schedule": "0 12 * * *"
     },
     {
       "path": "/api/momentum_screeners?screener=technicalBatchWeekly",
@@ -136,10 +84,6 @@
     {
       "path": "/api/momentum_screeners?screener=dbVacuum",
       "schedule": "0 1 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=goldVsBenchmarks",
-      "schedule": "10 1 * * 0"
     }
   ]
 }
