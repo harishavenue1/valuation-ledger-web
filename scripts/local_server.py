@@ -53,6 +53,8 @@ GZIP_TYPES = ("application/json", "text/", "application/javascript", "image/svg+
 # Scheduled jobs (2026-11-22): cron-job.org waits ~30 s, but refresh_price takes ~4.5 min on Render. A GET carrying the cron secret (or the hourly-ping key) is answered 202 at once
 # and the job runs on ONE background worker, one at a time (keeps memory under the 512 MB free plan; the same job already queued/running is not queued twice). ?wait=1 makes it synchronous.
 _jobs, _pending = queue.Queue(), set()
+BATCH_SIZES = {"nse750Fundamentals": 80, "nse750Technicals": 60}  # chunk sizes the cron entries used in vercel.json
+UNIVERSE = 752  # NSE Total Market list size (offsets past the end return nothing)
 
 def _is_cron(headers):
     auth = (headers.get("Authorization") or "").strip()
@@ -122,10 +124,15 @@ class Router(BaseHTTPRequestHandler):
                     self._finish(real, buf); return
             self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
         if self.command == "GET" and _is_cron(self.headers) and "wait=1" not in (urlparse(self.path).query or "") and parts[1:2] and parts[1] in ("refresh_price", "fetch_company", "momentum_screeners"):
-            new = self.path not in _pending
-            if new:
-                _pending.add(self.path); _jobs.put((self.path, self.headers, Router))
-            body = json.dumps({"queued": new, "note": "running in the background" if new else "already queued or running", "waiting": _jobs.qsize()}).encode()
+            qs = urlparse(self.path).query
+            kinds = [k for k in BATCH_SIZES if "screener=" + k in qs]
+            # ?all=1 on a batched screener (nse750Fundamentals / nse750Technicals): queue every chunk in order from this ONE call (Vercel needed 10-13 separate cron entries only because a function could not run long enough).
+            paths = [f"/api/momentum_screeners?screener={k}&offset={o}&limit={BATCH_SIZES[k]}" for k in kinds for o in range(0, UNIVERSE, BATCH_SIZES[k])] if (kinds and "all=1" in qs) else [self.path]
+            fresh = [x for x in paths if x not in _pending]
+            for x in fresh:
+                _pending.add(x); _jobs.put((x, self.headers, Router))
+            new = bool(fresh)
+            body = json.dumps({"queued": new, "chunks": len(fresh), "note": "running in the background" if new else "already queued or running", "waiting": _jobs.qsize()}).encode()
             self.send_response(202); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         self._run_api(parts)
 
