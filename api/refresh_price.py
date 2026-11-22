@@ -49,7 +49,13 @@ def _refresh_from_store(conn, stocks, tickers):
 
     from _bhav import load_frame
 
-    df = load_frame(conn, (date.today() - timedelta(days=21)).isoformat(), symbols=set(tickers))
+    # the Guidance Value page keeps its own price per company (guidanceValuation = held, guidanceScan750 = not held): refresh those from the same file
+    with conn.cursor() as cur:
+        cur.execute("SELECT data->'guidanceValuation', data->'guidanceScan750' FROM meta WHERE key = 'momentum_screeners'")
+        gv = cur.fetchone() or (None, None)
+    gblobs = {"guidanceValuation": gv[0], "guidanceScan750": gv[1]}
+    gsyms = {r.get("symbol") for b in gblobs.values() for r in ((b or {}).get("rows") or []) if r.get("symbol")}
+    df = load_frame(conn, (date.today() - timedelta(days=21)).isoformat(), symbols=set(tickers) | gsyms)
     if df.empty:
         return None
     last = df.sort_values(["symbol", "date"]).groupby("symbol", sort=False).tail(1).set_index("symbol")
@@ -83,7 +89,30 @@ def _refresh_from_store(conn, stocks, tickers):
                 cur, "INSERT INTO stocks (ticker, data, updated_at) VALUES %s ON CONFLICT (ticker) DO UPDATE SET data = EXCLUDED.data, updated_at = now()",
                 updates, template="(%s, %s, now())")
         conn.commit()
-    return {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "source": "nse_store", "as_of": as_of, "total": len(tickers), "ok": ok, "failed": [], "skipped": [], "check": check, "not_in_store": missing}
+    g_ok = 0
+    for key, blob in gblobs.items():
+        if not blob:
+            continue
+        for row in blob.get("rows") or []:
+            sym = row.get("symbol")
+            if sym not in last.index or not float(last.at[sym, "c"]) > 0:
+                continue
+            new, old = float(last.at[sym, "c"]), row.get("price")
+            if old and not 0.75 <= new / old <= 1.33:
+                continue
+            if old and row.get("pe_now"):
+                row["pe_now"] = round(row["pe_now"] * new / old, 1)
+            row["price"], row["price_as_of"] = round(new, 2), str(last.at[sym, "date"].date())
+            g_ok += 1
+        blob["prices_as_of"] = as_of
+    if any(gblobs.values()):
+        import json as _json
+        with conn.cursor() as cur:
+            for key, blob in gblobs.items():
+                if blob:
+                    cur.execute("UPDATE meta SET data = jsonb_set(data, %s, %s::jsonb) WHERE key = 'momentum_screeners'", ("{" + key + "}", _json.dumps(blob)))
+        conn.commit()
+    return {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "source": "nse_store", "as_of": as_of, "total": len(tickers), "ok": ok, "failed": [], "skipped": [], "check": check, "not_in_store": missing, "guidance_rows_updated": g_ok}
 
 CRON_DELAY_SECONDS = 1.5  # gap between tickers on the full-ledger cron sweep — the "slowly" part
 CRON_TIME_BUDGET_SECONDS = 260  # stop with headroom under the 300s function cap
