@@ -61,14 +61,14 @@ def _is_cron(headers):
 def _job_worker():
     while True:
         path, headers, router_cls = _jobs.get()
-        t0 = time.time()
+        t0, c0 = time.time(), time.thread_time()  # thread_time = CPU actually used by this worker (the number Vercel bills as Fluid Active CPU), not the waiting
         try:
             r = object.__new__(router_cls)
             r.path, r.command, r.headers, r.rfile, r.wfile = path, "GET", headers, io.BytesIO(b""), io.BytesIO()
             r.request_version, r.client_address, r.requestline, r.close_connection = "HTTP/1.0", ("cron", 0), "GET " + path, True
             r._run_api(urlparse(path).path.strip("/").split("/"))
             body = r.wfile.getvalue().partition(b"\r\n\r\n")[2][:300].decode("utf-8", "replace")
-            sys.stderr.write(f"JOB done {path} in {time.time() - t0:.0f}s: {body}\n")
+            sys.stderr.write(f"JOB done {path} wall={time.time() - t0:.0f}s cpu={time.thread_time() - c0:.1f}s: {body}\n")
         except Exception as e:
             import traceback; traceback.print_exc(); sys.stderr.write(f"JOB failed {path}: {e}\n")
         finally:
