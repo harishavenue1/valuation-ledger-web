@@ -269,6 +269,10 @@
   {
    "path": "/api/momentum_screeners?screener=bhavDaily",
    "schedule": "30 15 * * 1-5"
+  },
+  {
+   "path": "/api/viraj_screen",
+   "schedule": "55 23 * * 6"
   }
  ]
 }

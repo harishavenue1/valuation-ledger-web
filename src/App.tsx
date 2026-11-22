@@ -7,14 +7,10 @@ import Summary from "./pages/Summary";
 const Companies = lazy(() => import("./pages/Companies"));
 const Detail = lazy(() => import("./pages/Detail"));
 const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
-const VirajScreen = lazy(() => import("./pages/VirajScreen"));
 const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
-const Governance = lazy(() => import("./pages/Governance"));
 const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
-const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
-const FixedAssetChange = lazy(() => import("./pages/FixedAssetChange"));
 const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
 const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
 const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
@@ -31,13 +27,6 @@ const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
 const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
 const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
 const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
-const BlockbusterResults = lazy(() => import("./pages/BlockbusterResults"));
-const BlockbusterGuidance = lazy(() => import("./pages/BlockbusterGuidance"));
-const ResearchDebate = lazy(() => import("./pages/ResearchDebate"));
-const FundRaising = lazy(() => import("./pages/FundRaising"));
-const CapacityNews = lazy(() => import("./pages/CapacityNews"));
-const CompanyEdge = lazy(() => import("./pages/CompanyEdge"));
-const Shareholding = lazy(() => import("./pages/Shareholding"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const TradeDesk = lazy(() => import("./pages/TradeDesk"));
 const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
@@ -244,25 +233,9 @@ export default function App() {
                 📓 Journal
                 <JournalNavBadge />
               </NavLink>
-              <NavGroup
-                label="🔎 Screens"
-                items={[
-                  { to: "/viraj-screen", label: "🎯 Viraj" },
-                  { to: "/all-fundamentals", label: "📚 All Fundamentals" },
-                  { to: "/blockbuster-results", label: "💥 Blockbuster Results" },
-                  { to: "/blockbuster-guidance", label: "📣 Blockbuster Guidances" },
-                  { to: "/research-debate", label: "🗣️ Research Debate" },
-                  { to: "/fund-raising", label: "💰 Fund Raising" },
-                  { to: "/capacity-news", label: "🏭 Capacity & Technology" },
-                  { to: "/company-edge", label: "🧬 Company Edge" },
-                  { to: "/concall-summary", label: "📞 Concall Summary" },
-                  { to: "/governance", label: "🛡️ Governance Check" },
-                  { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
-                  { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
-                  // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
-                  { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
-                ]}
-              />
+              <NavLink to="/concall-summary" className={({ isActive }) => navClass(isActive)}>
+                📞 Concall Summary
+              </NavLink>
               <NavGroup
                 label="🌍 Market"
                 items={[
@@ -313,17 +286,13 @@ export default function App() {
             <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
             <Route path="/guidance-tracker" element={<GuidanceTracker />} />
-            <Route path="/viraj-screen" element={<VirajScreen />} />
             <Route path="/momentum-screeners" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
             <Route path="/fno-flow" element={<FnoFlow />} />
             <Route path="/concall-summary" element={<ConcallSummary />} />
-            <Route path="/governance" element={<Governance />} />
             <Route path="/guidance-valuation" element={<GuidanceValuation />} />
             <Route path="/technical-summary" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/all-technicals" element={<Navigate to="/chartist-rs-scanner" replace />} />
-            <Route path="/all-fundamentals" element={<AllFundamentals />} />
-            <Route path="/fixed-asset-change" element={<FixedAssetChange />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
             <Route path="/global-macro" element={<GlobalMacro />} />
@@ -339,19 +308,13 @@ export default function App() {
             <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
             <Route path="/mtf-calculator" element={<MTFCalculator />} />
             <Route path="/mtf-playbook" element={<MTFPlaybook />} />
-            <Route path="/blockbuster-results" element={<BlockbusterResults />} />
-            <Route path="/blockbuster-guidance" element={<BlockbusterGuidance />} />
-            <Route path="/research-debate" element={<ResearchDebate />} />
-            <Route path="/fund-raising" element={<FundRaising />} />
-            <Route path="/capacity-news" element={<CapacityNews />} />
-            <Route path="/company-edge" element={<CompanyEdge />} />
-            <Route path="/shareholding" element={<Shareholding />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/trade-desk" element={<TradeDesk />} />
             <Route path="/turtle-wealth" element={<TurtleWealth />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/summary" replace />} />
           </Routes>
           </Suspense>
         </main>
