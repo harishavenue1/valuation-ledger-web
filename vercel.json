@@ -2,89 +2,204 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/watchlist_detail.py": { "maxDuration": 60, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/refresh_price.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/fetch_company.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/momentum_screeners.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/viraj_screen.py": { "maxDuration": 300, "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" },
-    "api/*.py": { "excludeFiles": "{public/audio/**,dist/**,node_modules/**}" }
+    "api/watchlist_detail.py": {
+      "maxDuration": 60,
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    },
+    "api/refresh_price.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    },
+    "api/fetch_company.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    },
+    "api/momentum_screeners.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    },
+    "api/viraj_screen.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    },
+    "api/*.py": {
+      "excludeFiles": "{public/audio/**,dist/**,node_modules/**}"
+    }
   },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
   ],
   "crons": [
-    { "path": "/api/refresh_price", "schedule": "15 10 * * *" },
-    { "path": "/api/fetch_company", "schedule": "30 23 * * 6" },
-    { "path": "/api/momentum_screeners?screener=nse750PriceCache", "schedule": "5 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=nse750TechDaily", "schedule": "15 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=benchmarkNse500", "schedule": "18 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=technicalBatchDaily", "schedule": "10 14 * * *" },
-    { "path": "/api/momentum_screeners?screener=globalCountryEtfs", "schedule": "37 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=globalCurrencies", "schedule": "38 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=ratesFx", "schedule": "40 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=businessRadar", "schedule": "30 12 * * *" },
-    { "path": "/api/momentum_screeners?screener=fintwit", "schedule": "15 3 * * *" },
-    { "path": "/api/momentum_screeners?screener=concallGuidance", "schedule": "10 4 * * 0" },
-    { "path": "/api/momentum_screeners?screener=concallGuidance", "schedule": "20 4 * * 0" },
-    { "path": "/api/momentum_screeners?screener=concallGuidance", "schedule": "30 4 * * 0" },
-    { "path": "/api/momentum_screeners?screener=concallGuidance", "schedule": "40 4 * * 0" },
-    { "path": "/api/momentum_screeners?screener=bhavDaily", "schedule": "30 13 * * 1-5" },
-    { "path": "/api/momentum_screeners?screener=bhavDaily", "schedule": "30 15 * * 1-5" },
-    { "path": "/api/momentum_screeners?screener=technicalBatchDaily", "schedule": "10 16 * * 1-5" },
-    { "path": "/api/momentum_screeners?screener=bhavCompare", "schedule": "30 14 * * 1-5" },
-    { "path": "/api/momentum_screeners?screener=strategicAlpha", "schedule": "39 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=top100UsStocks", "schedule": "41 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=nse750WeeklyMaxSummary", "schedule": "45 10 * * *" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80", "schedule": "0 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80", "schedule": "6 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80", "schedule": "12 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80", "schedule": "18 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80", "schedule": "24 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80", "schedule": "30 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80", "schedule": "36 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80", "schedule": "42 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80", "schedule": "48 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80", "schedule": "54 9 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80", "schedule": "0 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80", "schedule": "6 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80", "schedule": "12 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80", "schedule": "18 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80", "schedule": "24 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80", "schedule": "30 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80", "schedule": "36 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80", "schedule": "42 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80", "schedule": "48 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80", "schedule": "54 9 * * 3" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80", "schedule": "0 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80", "schedule": "6 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80", "schedule": "12 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80", "schedule": "18 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80", "schedule": "24 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80", "schedule": "30 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80", "schedule": "36 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80", "schedule": "42 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80", "schedule": "48 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80", "schedule": "54 9 * * 5" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=0&limit=60", "schedule": "4 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=60&limit=60", "schedule": "10 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=120&limit=60", "schedule": "16 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=180&limit=60", "schedule": "22 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=240&limit=60", "schedule": "28 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=300&limit=60", "schedule": "34 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=360&limit=60", "schedule": "40 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=420&limit=60", "schedule": "46 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=480&limit=60", "schedule": "52 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=540&limit=60", "schedule": "58 10 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=600&limit=60", "schedule": "4 11 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=660&limit=60", "schedule": "10 11 * * 0" },
-    { "path": "/api/momentum_screeners?screener=nse750Technicals&offset=720&limit=60", "schedule": "16 11 * * 0" },
-    { "path": "/api/momentum_screeners?screener=fiiSectorTrend", "schedule": "0 6 3,18 * *" },
-    { "path": "/api/momentum_screeners?screener=reverseDcfScanNse750", "schedule": "0 11 * * *" },
-    { "path": "/api/momentum_screeners?screener=turtleWealth", "schedule": "0 12 * * *" },
-    { "path": "/api/momentum_screeners?screener=technicalBatchWeekly", "schedule": "40 23 * * 6" },
-    { "path": "/api/viraj_screen", "schedule": "55 23 * * 6" },
-    { "path": "/api/momentum_screeners?screener=dbVacuum", "schedule": "0 1 * * 0" },
-    { "path": "/api/momentum_screeners?screener=goldVsBenchmarks", "schedule": "10 1 * * 0" }
+    {
+      "path": "/api/refresh_price",
+      "schedule": "15 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750PriceCache",
+      "schedule": "5 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750TechDaily",
+      "schedule": "15 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=benchmarkNse500",
+      "schedule": "18 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=technicalBatchDaily",
+      "schedule": "10 14 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=globalCountryEtfs",
+      "schedule": "37 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=globalCurrencies",
+      "schedule": "38 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=ratesFx",
+      "schedule": "40 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=businessRadar",
+      "schedule": "30 12 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=fintwit",
+      "schedule": "15 3 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=concallGuidance",
+      "schedule": "10 4 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=concallGuidance",
+      "schedule": "20 4 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=concallGuidance",
+      "schedule": "30 4 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=concallGuidance",
+      "schedule": "40 4 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=bhavDaily",
+      "schedule": "30 13 * * 1-5"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=bhavDaily",
+      "schedule": "30 15 * * 1-5"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=technicalBatchDaily",
+      "schedule": "10 16 * * 1-5"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=bhavCompare",
+      "schedule": "30 14 * * 1-5"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=strategicAlpha",
+      "schedule": "39 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=top100UsStocks",
+      "schedule": "41 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750WeeklyMaxSummary",
+      "schedule": "45 10 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=0&limit=60",
+      "schedule": "4 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=60&limit=60",
+      "schedule": "10 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=120&limit=60",
+      "schedule": "16 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=180&limit=60",
+      "schedule": "22 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=240&limit=60",
+      "schedule": "28 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=300&limit=60",
+      "schedule": "34 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=360&limit=60",
+      "schedule": "40 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=420&limit=60",
+      "schedule": "46 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=480&limit=60",
+      "schedule": "52 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=540&limit=60",
+      "schedule": "58 10 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=600&limit=60",
+      "schedule": "4 11 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=660&limit=60",
+      "schedule": "10 11 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=720&limit=60",
+      "schedule": "16 11 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=fiiSectorTrend",
+      "schedule": "0 6 3,18 * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=reverseDcfScanNse750",
+      "schedule": "0 11 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=turtleWealth",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=technicalBatchWeekly",
+      "schedule": "40 23 * * 6"
+    },
+    {
+      "path": "/api/viraj_screen",
+      "schedule": "55 23 * * 6"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=dbVacuum",
+      "schedule": "0 1 * * 0"
+    },
+    {
+      "path": "/api/momentum_screeners?screener=goldVsBenchmarks",
+      "schedule": "10 1 * * 0"
+    }
   ]
 }

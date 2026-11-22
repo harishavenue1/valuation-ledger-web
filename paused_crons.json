@@ -1,0 +1,130 @@
+{
+ "paused_on": "2026-11-22",
+ "reason": "Vercel Hobby Fluid Active CPU pause; restore by moving these entries back into vercel.json crons",
+ "crons": [
+  {
+   "path": "/api/fetch_company",
+   "schedule": "30 23 * * 6"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80",
+   "schedule": "0 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80",
+   "schedule": "6 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80",
+   "schedule": "12 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80",
+   "schedule": "18 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80",
+   "schedule": "24 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80",
+   "schedule": "30 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80",
+   "schedule": "36 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80",
+   "schedule": "42 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80",
+   "schedule": "48 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80",
+   "schedule": "54 9 * * 0"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80",
+   "schedule": "0 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80",
+   "schedule": "6 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80",
+   "schedule": "12 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80",
+   "schedule": "18 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80",
+   "schedule": "24 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80",
+   "schedule": "30 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80",
+   "schedule": "36 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80",
+   "schedule": "42 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80",
+   "schedule": "48 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80",
+   "schedule": "54 9 * * 3"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=0&limit=80",
+   "schedule": "0 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=80&limit=80",
+   "schedule": "6 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=160&limit=80",
+   "schedule": "12 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=240&limit=80",
+   "schedule": "18 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=320&limit=80",
+   "schedule": "24 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=400&limit=80",
+   "schedule": "30 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=480&limit=80",
+   "schedule": "36 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=560&limit=80",
+   "schedule": "42 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=640&limit=80",
+   "schedule": "48 9 * * 5"
+  },
+  {
+   "path": "/api/momentum_screeners?screener=nse750Fundamentals&offset=720&limit=80",
+   "schedule": "54 9 * * 5"
+  }
+ ]
+}
