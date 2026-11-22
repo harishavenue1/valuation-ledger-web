@@ -4,49 +4,13 @@ import { api, ApiError, Bundle } from "./lib/api";
 import { getTheme, setTheme, Theme } from "./lib/theme";
 import Login from "./pages/Login";
 import Summary from "./pages/Summary";
-const Companies = lazy(() => import("./pages/Companies"));
 const Detail = lazy(() => import("./pages/Detail"));
-const GuidanceTracker = lazy(() => import("./pages/GuidanceTracker"));
-const VirajScreen = lazy(() => import("./pages/VirajScreen"));
-const MomentumScreeners = lazy(() => import("./pages/MomentumScreeners"));
-const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
-const FnoFlow = lazy(() => import("./pages/FnoFlow"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
-const Governance = lazy(() => import("./pages/Governance"));
+const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
-const TechnicalSummary = lazy(() => import("./pages/TechnicalSummary"));
-const AllTechnicals = lazy(() => import("./pages/AllTechnicals"));
-const AllFundamentals = lazy(() => import("./pages/AllFundamentals"));
-const FixedAssetChange = lazy(() => import("./pages/FixedAssetChange"));
 const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
-const PortfolioPerformance = lazy(() => import("./pages/PortfolioPerformance"));
-const GlobalMacro = lazy(() => import("./pages/GlobalMacro"));
-const FIITrend = lazy(() => import("./pages/FIITrend"));
-const MarketPulse = lazy(() => import("./pages/MarketPulse"));
-const Directory = lazy(() => import("./pages/Directory"));
-const Business = lazy(() => import("./pages/Business"));
-import { BusinessNavBadge } from "./lib/businessAlerts";
 import { JournalNavBadge } from "./lib/journal";
-const PortfolioCharts = lazy(() => import("./pages/PortfolioCharts"));
-const StrategicAlpha = lazy(() => import("./pages/StrategicAlpha"));
-const Top100UsStocks = lazy(() => import("./pages/Top100UsStocks"));
-const ReverseDCF = lazy(() => import("./pages/ReverseDCF"));
-const ReverseDCFScan = lazy(() => import("./pages/ReverseDCFScan"));
-const MTFCalculator = lazy(() => import("./pages/MTFCalculator"));
-const MTFPlaybook = lazy(() => import("./pages/MTFPlaybook"));
-const BlockbusterResults = lazy(() => import("./pages/BlockbusterResults"));
-const BlockbusterGuidance = lazy(() => import("./pages/BlockbusterGuidance"));
-const ResearchDebate = lazy(() => import("./pages/ResearchDebate"));
-const FundRaising = lazy(() => import("./pages/FundRaising"));
-const CapacityNews = lazy(() => import("./pages/CapacityNews"));
-const CompanyEdge = lazy(() => import("./pages/CompanyEdge"));
-const Shareholding = lazy(() => import("./pages/Shareholding"));
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
-const TradeDesk = lazy(() => import("./pages/TradeDesk"));
-const TurtleWealth = lazy(() => import("./pages/TurtleWealth"));
-const Watchlist = lazy(() => import("./pages/Watchlist"));
-const Guide = lazy(() => import("./pages/Guide"));
-const Settings = lazy(() => import("./pages/Settings"));
 
 // Status of an in-flight/last "Run now" click for a cloud screener
 // (see RunButton.tsx's CloudRunButton). Lives here rather than as
@@ -214,89 +178,25 @@ export default function App() {
                 became 4 dropdown groups plus the few used daily kept as
                 direct links. Every route is unchanged; only the header
                 changed. A group lights up when any page inside it is open. */}
-            <nav className="flex items-center gap-3 text-xs whitespace-nowrap">
-              <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
-                📟 Pulse
-              </NavLink>
+            <nav className="flex items-center gap-4 text-xs whitespace-nowrap">
               <NavLink to="/summary" className={({ isActive }) => navClass(isActive)}>
                 Summary
-              </NavLink>
-              <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
-                💼 Allocation
-              </NavLink>
-              <NavLink to="/chartist-rs-scanner" className={({ isActive }) => navClass(isActive)}>
-                🔭 Chartist RS
               </NavLink>
               <NavLink to="/guidance-valuation" className={({ isActive }) => navClass(isActive)}>
                 🎯 Guidance Value
               </NavLink>
-              <NavGroup
-                label="💼 Portfolio"
-                items={[
-                  { to: "/portfolio-charts", label: "📈 Charts" },
-                  { to: "/portfolio-performance", label: "📊 Performance" },
-                  { to: "/mtf-calculator", label: "📐 MTF" },
-                  { to: "/mtf-playbook", label: "📘 MTF Playbook" },
-                  { to: "/trade-desk", label: "🛒 Trade Desk" },
-                ]}
-              />
-              <NavLink to="/watchlist" className={({ isActive }) => navClass(isActive)}>
-                ⭐ Watchlist
+              <NavLink to="/portfolio-allocation" className={({ isActive }) => navClass(isActive)}>
+                💼 Portfolio
               </NavLink>
               <NavLink to="/trade-journal" className={({ isActive }) => navClass(isActive)}>
                 📓 Journal
                 <JournalNavBadge />
               </NavLink>
-              <NavGroup
-                label="🔎 Screens"
-                items={[
-                  { to: "/viraj-screen", label: "🎯 Viraj" },
-                  { to: "/momentum-screeners", label: "📈 Momentum" },
-                  { to: "/technical-summary", label: "🏆 Technical" },
-                  { to: "/all-technicals", label: "🔬 All Technicals" },
-                  { to: "/all-fundamentals", label: "📚 All Fundamentals" },
-                  { to: "/blockbuster-results", label: "💥 Blockbuster Results" },
-                  { to: "/blockbuster-guidance", label: "📣 Blockbuster Guidances" },
-                  { to: "/research-debate", label: "🗣️ Research Debate" },
-                  { to: "/fund-raising", label: "💰 Fund Raising" },
-                  { to: "/capacity-news", label: "🏭 Capacity & Technology" },
-                  { to: "/company-edge", label: "🧬 Company Edge" },
-                  { to: "/concall-summary", label: "📞 Concall Summary" },
-                  { to: "/governance", label: "🛡️ Governance Check" },
-                  { to: "/shareholding", label: "🔒 Shareholding & Pledges" },
-                  { to: "/fixed-asset-change", label: "🏗️ Fixed Asset Δ" },
-                  // External link, not a route (2026-09-06, a market-breadth dashboard maintained on Chartink)
-                  { to: "https://chartink.com/dashboard/163999", label: "🌬️ Breadth ↗", external: true },
-                ]}
-              />
-              <NavGroup
-                label="🌍 Market"
-                items={[
-                  { to: "/global-macro", label: "🌍 Macro" },
-                  { to: "/fii-trend", label: "🌊 FII Trend" },
-                  { to: "/fno-flow", label: "📊 F&O Flow" },
-                  { to: "/strategic-alpha", label: "📡 Strategic" },
-                  { to: "/top100-us-stocks", label: "🇺🇸 Top100 US" },
-                  { to: "/sector-directory", label: "📚 Directory" },
-                ]}
-              />
-              <NavLink to="/business-radar" className={({ isActive }) => navClass(isActive)}>
-                🧭 Business
-                <BusinessNavBadge />
+              <NavLink to="/concall-summary" className={({ isActive }) => navClass(isActive)}>
+                📞 Concall Summary
               </NavLink>
-              <NavGroup
-                label="🧰 Research"
-                items={[
-                  { to: "/companies", label: "Companies" },
-                  { to: "/guidance-tracker", label: "📋 Guidance" },
-                  { to: "/reverse-dcf", label: "🔄 Rev DCF" },
-                  { to: "/reverse-dcf-scan", label: "📋 DCF Scan" },
-                  { to: "/turtle-wealth", label: "🐢 Turtle" },
-                  { to: "/guide", label: "🧭 Guide" },
-                ]}
-              />
-              <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
-                Settings
+              <NavLink to="/chartist-rs-scanner" className={({ isActive }) => navClass(isActive)}>
+                🔭 Chartist RS
               </NavLink>
             </nav>
             <button
@@ -314,50 +214,15 @@ export default function App() {
           {/* every page except the landing one is its own chunk (2026-10-04): the first load no longer pays for the charting library, the 20+ other pages... */}
           <Suspense fallback={<div className="text-sm text-slate-400 text-center py-16">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<MarketPulse />} />
+            <Route path="/" element={<Navigate to="/summary" replace />} />
             <Route path="/summary" element={<Summary />} />
-            <Route path="/companies" element={<Companies onAdded={(t) => navigate(`/company/${t}`)} />} />
             <Route path="/company/:ticker" element={<Detail />} />
-            <Route path="/guidance-tracker" element={<GuidanceTracker />} />
-            <Route path="/viraj-screen" element={<VirajScreen />} />
-            <Route path="/momentum-screeners" element={<MomentumScreeners />} />
-            <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
-            <Route path="/fno-flow" element={<FnoFlow />} />
-            <Route path="/concall-summary" element={<ConcallSummary />} />
-            <Route path="/governance" element={<Governance />} />
             <Route path="/guidance-valuation" element={<GuidanceValuation />} />
-            <Route path="/technical-summary" element={<TechnicalSummary />} />
-            <Route path="/all-technicals" element={<AllTechnicals />} />
-            <Route path="/all-fundamentals" element={<AllFundamentals />} />
-            <Route path="/fixed-asset-change" element={<FixedAssetChange />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
-            <Route path="/portfolio-performance" element={<PortfolioPerformance />} />
-            <Route path="/global-macro" element={<GlobalMacro />} />
-            <Route path="/market-pulse" element={<Navigate to="/" replace />} />
-            <Route path="/fii-trend" element={<FIITrend />} />
-            <Route path="/sector-directory" element={<Directory />} />
-            <Route path="/portfolio-charts" element={<PortfolioCharts />} />
-            <Route path="/portfolio-charts/:symbol" element={<PortfolioCharts />} />
-            <Route path="/business-radar" element={<Business />} />
-            <Route path="/strategic-alpha" element={<StrategicAlpha />} />
-            <Route path="/top100-us-stocks" element={<Top100UsStocks />} />
-            <Route path="/reverse-dcf" element={<ReverseDCF />} />
-            <Route path="/reverse-dcf-scan" element={<ReverseDCFScan />} />
-            <Route path="/mtf-calculator" element={<MTFCalculator />} />
-            <Route path="/mtf-playbook" element={<MTFPlaybook />} />
-            <Route path="/blockbuster-results" element={<BlockbusterResults />} />
-            <Route path="/blockbuster-guidance" element={<BlockbusterGuidance />} />
-            <Route path="/research-debate" element={<ResearchDebate />} />
-            <Route path="/fund-raising" element={<FundRaising />} />
-            <Route path="/capacity-news" element={<CapacityNews />} />
-            <Route path="/company-edge" element={<CompanyEdge />} />
-            <Route path="/shareholding" element={<Shareholding />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
-            <Route path="/trade-desk" element={<TradeDesk />} />
-            <Route path="/turtle-wealth" element={<TurtleWealth />} />
-            <Route path="/watchlist" element={<Watchlist />} />
-            <Route path="/guide" element={<Guide />} />
-            <Route path="/settings" element={<Settings />} />
+            <Route path="/concall-summary" element={<ConcallSummary />} />
+            <Route path="/chartist-rs-scanner" element={<ChartistScanner />} />
+            <Route path="*" element={<Navigate to="/summary" replace />} />
           </Routes>
           </Suspense>
         </main>
