@@ -18,13 +18,13 @@ const COLS: Col[] = ((): Col[] => {
         { w: 4.6, key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
         { w: 4, key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
         { w: 4.8, key: "rs_4w_ago", label: "RS 4W ago", title: "The 3M RS four weeks ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
-        { w: 4, key: "rs_chg_4w", label: "RS Δ4W", title: "Change in the 3M RS over four weeks (RS 3M minus RS 4W ago)", render: (r) => <Signed v={r.rs_chg_4w} digits={0} /> },
         { w: 4.4, key: "rs_rating", label: "RS comp.", title: "Reference only: the composite RS Rating (0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
         { w: 3.8, key: "change_pct", label: "1D %", title: "Today's close against the previous session", render: (r) => <Signed v={r.change_pct} digits={1} /> },
         { w: 3.8, key: "w_pct_1w", label: "1W %", title: "Close against the last weekly close", render: (r) => <Signed v={r.w_pct_1w} digits={1} /> },
         { w: 3.8, key: "w_pct_1m", label: "1M %", title: "Close against 4 weekly closes back", render: (r) => <Signed v={r.w_pct_1m} digits={1} /> },
         { w: 3.8, key: "pct_3m", label: "3M %", title: "Close against 13 weekly closes back (the window his RS uses)", render: (r) => <Signed v={r.pct_3m} digits={1} /> },
         { w: 4.4, key: "pct_from_ath", label: "vs ATH %", title: "Distance from the all-time high", render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
+        { w: 5.6, key: "pct_from_52w_high", label: "vs 52WH %", title: "Distance from the 52-week high", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
         { w: 4.4, key: "ath_price", label: "ATH ₹", title: "All-time high (split-adjusted)", render: (r) => fmtNum(r.ath_price, 1) },
         {
           w: 6.6,
@@ -75,7 +75,6 @@ const COLS: Col[] = ((): Col[] => {
         { w: 4.6, key: "vol_dry_x", label: "Dry-up ×", title: "Average volume of the last 10 sessions ÷ the 50 before; under 1 means volume is drying up", render: (r) => fmtNum(r.vol_dry_x, 2) },
         { w: 4, key: "theme_rank", label: "Theme", title: "Rank by 3M RS among this scan's names in the same sector, e.g. 1/9 = leader of nine (NSE-750 members only)", render: (r) => (r.theme_n ? `${r.theme_rank}/${r.theme_n}` : "—") },
         { w: 4.4, key: "pct_50d_ema", label: "vs 50D %", title: "Close against the 50-day EMA (his trailing exit)", render: (r) => <Signed v={r.pct_50d_ema} digits={1} /> },
-        { w: 5.6, key: "pct_from_52w_high", label: "vs 52WH %", title: "Distance from the 52-week high", render: (r) => <Signed v={r.pct_from_52w_high} digits={1} /> },
         { w: 5, key: "market_cap_cr", label: "Mcap ₹Cr", render: (r) => fmtNum(r.market_cap_cr, 0) },
         { w: 5.8, key: "turnover_30d_cr", label: "Turnover ₹Cr", title: "Average daily traded value over the last 30 sessions", render: (r) => fmtNum(r.turnover_30d_cr, 1) },
       ];
