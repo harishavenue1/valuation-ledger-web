@@ -31,6 +31,10 @@ def load_env():
         except Exception:
             pass
 load_env()
+# A value pasted into a dashboard often carries a trailing newline (2026-11-22: Render's CRON_SECRET did, so the scheduler's bearer header never matched): trim every setting we read.
+for _k in ("DATABASE_URL", "POSTGRES_URL", "APP_PASSWORD", "CRON_SECRET", "HOURLY_PING_KEY", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "X_BEARER_TOKEN"):
+    if os.environ.get(_k):
+        os.environ[_k] = os.environ[_k].strip()
 
 _mods = {}
 def module_for(name):
