@@ -5,7 +5,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY index.html vite.config.ts tsconfig.json postcss.config.js tailwind.config.js ./
 COPY src ./src
-COPY public ./public
+# (no public/ folder any more: its only content was the audio files)
 RUN npm run build
 
 FROM python:3.12-slim
