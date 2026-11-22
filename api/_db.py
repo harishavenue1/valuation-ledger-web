@@ -42,6 +42,14 @@ CREATE TABLE IF NOT EXISTS meta (
 
 _schema_ready = False
 
+# Bumped on every write made through this module, so a cache of /api/stocks in the same process (stocks.py) is dropped the moment anything it contains changes.
+# Writes from another process (another serverless instance, a script talking to the database directly) are not seen: the cache also expires after 30 s.
+DB_VERSION = [0]
+
+
+def bump():
+    DB_VERSION[0] += 1
+
 
 def get_conn():
     url = os.environ.get("DATABASE_URL") or os.environ.get("POSTGRES_URL")
@@ -83,12 +91,14 @@ def upsert_json(conn, table, key, data):
             (key, psycopg2.extras.Json(data)),
         )
     conn.commit()
+    bump()
 
 
 def delete_json(conn, table, key):
     with conn.cursor() as cur:
         cur.execute(f"DELETE FROM {table} WHERE ticker = %s", (key,))
     conn.commit()
+    bump()
 
 
 def get_meta(conn, key, default=None):
@@ -106,3 +116,4 @@ def set_meta(conn, key, data):
             (key, psycopg2.extras.Json(data)),
         )
     conn.commit()
+    bump()

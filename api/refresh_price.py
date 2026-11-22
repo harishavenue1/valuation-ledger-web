@@ -35,7 +35,7 @@ from urllib.parse import parse_qs, urlparse
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from _cron_auth import is_authed_cron_or_cookie
-from _db import get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
+from _db import bump as _db_bump, get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
 from _screener_fetch import fetch_price_only
 
@@ -89,6 +89,7 @@ def _refresh_from_store(conn, stocks, tickers):
                 cur, "INSERT INTO stocks (ticker, data, updated_at) VALUES %s ON CONFLICT (ticker) DO UPDATE SET data = EXCLUDED.data, updated_at = now()",
                 updates, template="(%s, %s, now())")
         conn.commit()
+        _db_bump()
     g_ok = 0
     for key, blob in gblobs.items():
         if not blob:
@@ -112,6 +113,7 @@ def _refresh_from_store(conn, stocks, tickers):
                 if blob:
                     cur.execute("UPDATE meta SET data = jsonb_set(data, %s, %s::jsonb) WHERE key = 'momentum_screeners'", ("{" + key + "}", _json.dumps(blob)))
         conn.commit()
+        _db_bump()
     return {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "source": "nse_store", "as_of": as_of, "total": len(tickers), "ok": ok, "failed": [], "skipped": [], "check": check, "not_in_store": missing, "guidance_rows_updated": g_ok}
 
 CRON_DELAY_SECONDS = 1.5  # gap between tickers on the full-ledger cron sweep — the "slowly" part

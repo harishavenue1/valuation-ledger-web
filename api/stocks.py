@@ -28,8 +28,41 @@ from urllib.parse import parse_qs, urlparse
 # fail without it.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from _db import get_all_json, get_conn, get_meta
+import gzip
+import json
+import time
+
+from _db import DB_VERSION, get_all_json, get_conn, get_meta
 from _http import require_auth, send_json
+
+# 2026-11-22 (optimization): the stock list went out in full on every page load (~950 KB read from the database each time; the host showed 30 GiB sent in a month).
+# 1. Fields no page reads are cut IN THE QUERY (jsonb minus), so they are not even fetched: ~180 KB of ~655 KB.
+# 2. The finished response is kept for 30 s and dropped as soon as any write goes through _db (DB_VERSION); a write from another process is picked up when the 30 s run out.
+DROP_FIELDS = [
+    "balance_sheet_years", "reserves", "q_operating_profit_growth_pct", "pe_trailing_averages", "cfo", "equity_capital", "cash_conversion_cycle", "inventory_days",
+    "working_capital_days_annual", "days_payable", "roe_series", "roce_series", "cash_conversion_pct", "face_value",
+    "price_history_52w",  # the sparkline that used it is gone from Summary
+]
+CACHE_SECONDS = 30
+_cache = {"v": -1, "t": 0.0, "body": b"", "gz": b""}
+
+
+def _slim_stocks(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT ticker, data - %s::text[] FROM stocks", (DROP_FIELDS,))
+        return {ticker: data for ticker, data in cur.fetchall()}
+
+
+def _send_cached(h, accept_gzip):
+    body, enc = (_cache["gz"], True) if accept_gzip and _cache["gz"] else (_cache["body"], False)
+    h.send_response(200)
+    h.send_header("Content-Type", "application/json")
+    h.send_header("Content-Length", str(len(body)))
+    if enc:
+        h.send_header("Content-Encoding", "gzip")
+    h.send_header("Vary", "Accept-Encoding")
+    h.end_headers()
+    h.wfile.write(body)
 
 
 class handler(BaseHTTPRequestHandler):
@@ -38,6 +71,10 @@ class handler(BaseHTTPRequestHandler):
             return
         query = parse_qs(urlparse(self.path).query)
         screeners_param = (query.get("screeners") or [None])[0]
+        accept_gzip = "gzip" in (self.headers.get("Accept-Encoding") or "")
+        if not screeners_param and _cache["body"] and _cache["v"] == DB_VERSION[0] and time.time() - _cache["t"] < CACHE_SECONDS:
+            _send_cached(self, accept_gzip)  # before opening a database connection: just connecting to the hosted database costs ~1.5 s
+            return
 
         conn = get_conn()
         try:
@@ -58,8 +95,9 @@ class handler(BaseHTTPRequestHandler):
                 send_json(self, 200, {"momentum_screeners": result})
                 return
 
+            v0 = DB_VERSION[0]
             payload = {
-                "stocks": get_all_json(conn, "stocks"),
+                "stocks": _slim_stocks(conn),
                 "scenarios": get_all_json(conn, "scenarios"),
                 "guidance": get_all_json(conn, "guidance"),
                 "guidance_tracker": get_meta(conn, "guidance_tracker", {"quarters": [], "tracked": [], "cells": {}}),
@@ -69,6 +107,11 @@ class handler(BaseHTTPRequestHandler):
                 "watchlist": get_meta(conn, "watchlist", {"tickers": []}),
                 "last_refresh": get_meta(conn, "last_refresh", {}),
             }
-            send_json(self, 200, payload)
+            body = json.dumps(payload).encode("utf-8")
+            _cache.update(v=v0, t=time.time(), body=body, gz=gzip.compress(body, 5) if len(body) > 1024 else b"")
+            _send_cached(self, accept_gzip)
         finally:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
