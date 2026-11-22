@@ -8,7 +8,7 @@ Run: .venv/bin/python scripts/local_server.py    (or scripts/run_local.sh to sta
 Production mode (2026-11-22, Render): when ./dist exists the same server also serves the built web page (single-page-app fallback to index.html), gzips big JSON / text responses (Vercel did that
 for free), answers /healthz without touching the database, and binds HOST (default 127.0.0.1; the Dockerfile sets 0.0.0.0) on PORT (Render sets it).
 """
-import gzip, importlib.util, io, json, mimetypes, os, sys
+import gzip, importlib.util, io, json, mimetypes, os, queue, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
@@ -49,6 +49,32 @@ def module_for(name):
 
 DIST = os.path.join(ROOT, "dist")
 GZIP_TYPES = ("application/json", "text/", "application/javascript", "image/svg+xml")
+
+# Scheduled jobs (2026-11-22): cron-job.org waits ~30 s, but refresh_price takes ~4.5 min on Render. A GET carrying the cron secret (or the hourly-ping key) is answered 202 at once
+# and the job runs on ONE background worker, one at a time (keeps memory under the 512 MB free plan; the same job already queued/running is not queued twice). ?wait=1 makes it synchronous.
+_jobs, _pending = queue.Queue(), set()
+
+def _is_cron(headers):
+    auth = (headers.get("Authorization") or "").strip()
+    return any(k and auth == "Bearer " + k for k in (os.environ.get("CRON_SECRET"), os.environ.get("HOURLY_PING_KEY")))
+
+def _job_worker():
+    while True:
+        path, headers, router_cls = _jobs.get()
+        t0 = time.time()
+        try:
+            r = object.__new__(router_cls)
+            r.path, r.command, r.headers, r.rfile, r.wfile = path, "GET", headers, io.BytesIO(b""), io.BytesIO()
+            r.request_version, r.client_address, r.requestline, r.close_connection = "HTTP/1.0", ("cron", 0), "GET " + path, True
+            r._run_api(urlparse(path).path.strip("/").split("/"))
+            body = r.wfile.getvalue().partition(b"\r\n\r\n")[2][:300].decode("utf-8", "replace")
+            sys.stderr.write(f"JOB done {path} in {time.time() - t0:.0f}s: {body}\n")
+        except Exception as e:
+            import traceback; traceback.print_exc(); sys.stderr.write(f"JOB failed {path}: {e}\n")
+        finally:
+            _pending.discard(path)
+
+threading.Thread(target=_job_worker, daemon=True).start()
 
 class Router(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"  # one request per connection: handlers write their own Content-Length, no keep-alive bookkeeping
@@ -95,6 +121,15 @@ class Router(BaseHTTPRequestHandler):
                 if ok:
                     self._finish(real, buf); return
             self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
+        if self.command == "GET" and _is_cron(self.headers) and "wait=1" not in (urlparse(self.path).query or "") and parts[1:2] and parts[1] in ("refresh_price", "fetch_company", "momentum_screeners"):
+            new = self.path not in _pending
+            if new:
+                _pending.add(self.path); _jobs.put((self.path, self.headers, Router))
+            body = json.dumps({"queued": new, "note": "running in the background" if new else "already queued or running", "waiting": _jobs.qsize()}).encode()
+            self.send_response(202); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+        self._run_api(parts)
+
+    def _run_api(self, parts):
         mod = module_for(parts[1]) if len(parts) >= 2 else None
         h = getattr(mod, "handler", None) if mod else None
         fn = getattr(h, "do_" + self.command, None) if h else None
