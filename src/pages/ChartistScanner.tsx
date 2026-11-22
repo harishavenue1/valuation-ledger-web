@@ -114,7 +114,7 @@ export default function ChartistScanner() {
   const { ready } = useScreeners(["chartistRs", "portfolioAllocation"]);
   const entry = bundle.momentum_screeners.chartistRs;
   // chips (filter the rows in the browser; the scan itself is the same for everyone)
-  const [cStatus, setCStatus] = useState<"all750" | "all" | "setups" | "Breakout" | "Ready">("all750"); // all750 = every NSE-750 stock (the single page); the rest = the RS 80+ scan views
+  const [cStatus, setCStatus] = useState<"all750" | "mine" | "all" | "setups" | "Breakout" | "Ready">("all750"); // all750 = every NSE-750 stock (the single page); the rest = the RS 80+ scan views
   const [cLeg, setCLeg] = useState<"all" | "early" | "earlymid">("all");
   const [cLeaders, setCLeaders] = useState(false);
   const [cDry, setCDry] = useState(false);
@@ -122,7 +122,8 @@ export default function ChartistScanner() {
   const [cHeld, setCHeld] = useState(false); // your own holdings, whatever their setup status
   const rows = useMemo(() => {
     return (entry?.rows ?? []).filter((r: any) => {
-      if (cStatus === "all750") return !cHeld || !!watchlist.held?.has(r.symbol);
+      if (cStatus === "all750") return r.in750 !== false && (!cHeld || !!watchlist.held?.has(r.symbol)); // the NSE 750 only; your other stocks are under "My stocks"
+      if (cStatus === "mine") return !!r.mine?.length && (!cHeld || !!watchlist.held?.has(r.symbol));
       if (cStatus === "setups" && !["Breakout", "Ready", "In base"].includes(r.status)) return false;
       if ((cStatus === "Breakout" || cStatus === "Ready") && r.status !== cStatus) return false;
       if (cLeg === "early" && r.phase !== "Early") return false;
@@ -190,7 +191,7 @@ export default function ChartistScanner() {
             ))}
             <span className="text-slate-300 mx-1">|</span>
             <span className="text-slate-500">Show:</span>
-            {([["all750", "All 750"], ["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
+            {([["all750", "All 750"], ["mine", "My stocks"], ["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
               <button key={k} onClick={() => setCStatus(k)} className={`px-2 py-0.5 rounded-full border ${cStatus === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
                 {lab}
               </button>

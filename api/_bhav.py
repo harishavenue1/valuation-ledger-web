@@ -2532,13 +2532,15 @@ def store_price_data(symbols, since_days=1826):
 
 # ── the single NSE-750 table (Chartist RS page) ──────────────────────────────
 
-def chartist_all(symbols, sector_map=None, budget_s=100):
+def chartist_all(symbols, sector_map=None, budget_s=100, extra=None):
     """2026-11-22 ("main requirement: read 750 stocks data, price range on 3M, 1M, 1W, 1D, ATH and 52W-high distances ... along with RS in one single page"): the Chartist RS page's data,
     computed for the NSE 750 ONLY from the stored NSE daily files (publish() does the same for ~3,500 stocks plus a dozen scans and share-count lookups, which is what made the old job heavy).
     Steps: load + split-adjust the 750's bars (a new unresolved jump is looked up once, 4 at a time; until then that symbol's history is cut at it, so a % is blank rather than wrong),
     compute_technicals on them (price, day / 1W / 1M / 3M %, distance from the 52-week and all-time high, EMAs, RSI), market cap from the share counts already cached (no fetching),
     then the Chartist scan (RS = 3M percentile among the 750, base / trigger / stop for the RS>=80 names).
-    Returns (all_rows, scan_rows, funnel, health, as_of): all_rows has one row per traded stock with the scan fields merged in where the stock is in the scan."""
+    `extra` = more symbols to carry along (your holdings, funds, watchlist, journal): they get the same technicals, and RS ranked against the 750 only (they never change anyone's rank, and the scan
+    and its funnel run on the 750 alone). Returns (all_rows, scan_rows, funnel, health, as_of, tech_rows): all_rows has one row per traded stock with the scan fields merged in where the stock is in
+    the scan and an `in750` flag; tech_rows is the full compute_technicals output for 750 + extra, published as bhav_technicals so Allocation / Journal / Watchlist keep working from current data."""
     t0 = time.monotonic()
     since = (date.today() - timedelta(days=STORE_DAYS)).isoformat()
     conn = get_conn()
@@ -2549,13 +2551,13 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         mcap = (get_meta(conn, MCAP_KEY, None) or {}).get("shares") or {}
         if ath_state.get("basis") and ath_state.get("ath"):
             since = min(since, ath_state["basis"])
-        df = load_frame(conn, since, symbols=set(symbols))
+        df = load_frame(conn, since, symbols=set(symbols) | set(extra or ()))
         actions = load_actions(conn)
     finally:
         conn.close()
     uni = set(symbols)
     if df.empty:
-        return [], [], {}, {}, None
+        return [], [], {}, {}, None, []
     jumps = find_jumps(df)
     confirm_jumps(jumps, actions, budget_s=max(10, min(60, budget_s - (time.monotonic() - t0))))
     conn = get_conn()
@@ -2587,9 +2589,10 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
     for r in rows:
         n = shares.get(r["symbol"])
         r["market_cap_cr"] = round(r["price"] * n / 1e7) if n else None
-    scan_rows, funnel, health = compute_chartist_scan(df, rows, uni)
+    rows_uni = [r for r in rows if r["symbol"] in uni]
+    scan_rows, funnel, health = compute_chartist_scan(df[df["symbol"].isin(uni)], rows_uni, uni)
     by_scan = {x["symbol"]: x for x in scan_rows}
-    sorted_3m = sorted(r["w_pct_3m"] for r in rows if r.get("w_pct_3m") is not None)
+    sorted_3m = sorted(r["w_pct_3m"] for r in rows_uni if r.get("w_pct_3m") is not None)
     # RS for EVERY stock by his rule (percentile 1-99 of the 3-month return among the NSE 750; same formula the scan uses): today's (above), 4 weeks ago (weekly closes, 13-week return, the in-progress
     # week counts as a bar like w_pct_3m), and the composite 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y percentile ("RS comp.").
     rs_ago = {}
@@ -2599,12 +2602,12 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         S = (wk / wk.shift(13) - 1) * 100
         if len(S) >= 5:
             row4 = S.iloc[-5].dropna()
-            sv = sorted(row4.tolist())
+            sv = sorted(float(v) for k_, v in row4.items() if k_ in uni)
             rs_ago = {sym_: _rs_percentile(sv, float(v), CHARTIST["min_universe"]) for sym_, v in row4.items()}
     except Exception:
         rs_ago = {}
     comp = {r["symbol"]: 0.4 * r["w_pct_3m"] + 0.3 * r["w_pct_6m"] + 0.3 * r["yearly_pct"] for r in rows if None not in (r.get("w_pct_3m"), r.get("w_pct_6m"), r.get("yearly_pct"))}
-    sorted_comp = sorted(comp.values())
+    sorted_comp = sorted(v for k_, v in comp.items() if k_ in uni)
     out = []
     for r in rows:
         sym = r["symbol"]
@@ -2616,7 +2619,7 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
             "w_pct_1w": r.get("w_pct_1w"), "w_pct_1m": r.get("w_pct_1m"), "pct_3m": r.get("w_pct_3m"), "pct_from_52w_high": r.get("pct_from_52w_high"),
             "pct_from_ath": r.get("pct_from_ath"), "ath_price": ath_px, "rs_3m": _rs, "rs_4w_ago": _ago, "rs_chg_4w": (_rs - _ago) if (_rs is not None and _ago is not None) else None,
             "rs_rating": _rs_percentile(sorted_comp, comp.get(sym), CHARTIST["min_universe"]),
-            "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": r.get("turnover_cr"), "as_of": r.get("as_of"),
+            "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": r.get("turnover_cr"), "as_of": r.get("as_of"), "in750": sym in uni,
         }
         out.append({**base, **{k: v for k, v in (by_scan.get(sym) or {}).items() if k not in ("symbol", "name", "sector")}})
     as_of = max((r.get("as_of") for r in rows if r.get("as_of")), default=None)
@@ -2634,4 +2637,4 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
             return None if x != x else round(float(x), 4)
         return x
 
-    return _py(out), _py(scan_rows), _py(funnel), _py(health), as_of
+    return _py(out), _py(scan_rows), _py(funnel), _py(health), as_of, _py(rows)

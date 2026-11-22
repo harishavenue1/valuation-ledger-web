@@ -3998,9 +3998,26 @@ def _run_chartist_rs(symbols, name_map, sector_map):
     """The Chartist RS page = the single NSE-750 table (2026-11-22): every stock's price, day / 1W / 1M / 3M %, distance from the 52-week and all-time high and 3M RS, with the Chartist setup
     fields (base, trigger, stop, leg) on the RS>=80 names. Computed here from the stored NSE daily files for the 750 only (api/_bhav.py chartist_all) — it no longer waits for the
     heavy all-stocks bhavTechnicals job. The Chartist_RS_Scanner idea is Himanshu Sharma's (@thechartist26)."""
-    from _bhav import chartist_all
+    from _bhav import TECH_KEY, chartist_all
 
-    all_rows, scan_rows, funnel, health, as_of = chartist_all(symbols, sector_map)
+    # your own stocks ride along (holdings + funds, watchlist, journal), so Allocation / Journal / Watchlist can read this one table instead of the old 3,413-stock one
+    mine = {}
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT data->'portfolioAllocation'->'rows' FROM meta WHERE key = 'momentum_screeners'")
+            row_ = cur.fetchone()
+            for r_ in (row_[0] if row_ and row_[0] else []):
+                mine.setdefault(r_.get("symbol"), set()).add("pf")
+        for t_ in (get_meta(conn, "watchlist", {}) or {}).get("tickers", []):
+            mine.setdefault(t_, set()).add("watch")
+        j_ = get_meta(conn, "journal", {}) or {}
+        for e_ in list(j_.get("entries", [])) + list(j_.get("sells", [])):
+            mine.setdefault(e_.get("symbol"), set()).add("journal")
+    finally:
+        conn.close()
+    mine.pop(None, None)
+    all_rows, scan_rows, funnel, health, as_of, tech_rows = chartist_all(symbols, sector_map, extra=set(mine))
     if not all_rows:
         return None, "no stored bars for the NSE 750 yet (run bhavStore first)"
     by_sector = {}
@@ -4017,9 +4034,21 @@ def _run_chartist_rs(symbols, name_map, sector_map):
     for r in all_rows:
         n_i = theme.get(r["symbol"])
         rows.append({**r, "sector": sector_map.get(r["symbol"], r.get("sector", "")), **({"theme_n": n_i[0], "theme_rank": n_i[1]} if n_i else {})})
+    for x in rows:
+        if x["symbol"] in mine:
+            x["mine"] = sorted(mine[x["symbol"]])
     rows.sort(key=lambda x: (-(x.get("rs_3m") or 0), -(x.get("pct_3m") or 0)))
     for i, x in enumerate(rows, 1):
         x["all_rank"] = i
+    try:  # publish the same technicals under the old key (bhav_technicals), now ~1,000 stocks and current instead of 3,413 and stale
+        from datetime import date as _d
+        conn = get_conn()
+        try:
+            set_meta(conn, TECH_KEY, {"ok": True, "as_of": as_of, "generated": _d.today().isoformat(), "stats": {"source": "nse750+mine", "rows": len(tech_rows)}, "actions": {}, "rows": tech_rows})
+        finally:
+            conn.close()
+    except Exception:
+        pass
     return {"label": "Chartist_RS_Scanner", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": as_of,
             "extra": {"funnel": funnel, "health": health or {}, "session": as_of}}, None
 
