@@ -136,6 +136,12 @@ export default function ChartistScanner() {
     });
   }, [entry, cStatus, cLeg, cLeaders, cDry, cHeld, cMatch, watchlist.held]);
 
+  // A column with no data in any row currently shown is hidden (2026-11-22, "remove columns with no data"): e.g. "Misses" in the Full-match views, or the setup columns when the rows have none.
+  const cols = useMemo(() => {
+    const has = (v: unknown) => v !== null && v !== undefined && v !== "" && !(Array.isArray(v) && v.length === 0);
+    return rows.length ? COLS.filter((c) => ["symbol", "name", "price"].includes(c.key) || rows.some((r: any) => has(r[c.key]))) : COLS;
+  }, [rows]);
+
   return (
     <div>
       <div className="flex items-center gap-2 mb-1">
@@ -213,7 +219,7 @@ export default function ChartistScanner() {
 
 
       {ready ? (
-        <GenericTable rows={rows} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={4100} />
+        <GenericTable rows={rows} cols={cols} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={4100} />
       ) : (
         <ScreenerLoading label="Chartist_RS_Scanner" />
       )}
