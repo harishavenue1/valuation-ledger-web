@@ -16,6 +16,10 @@ const COLS: Col[] = ((): Col[] => {
         { w: 10.5, key: "name", label: "Name", align: "left" },
         { w: 7.5, key: "sector", label: "Sector", align: "left" },
         { w: 4.6, key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+        { w: 4, key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
+        { w: 4.8, key: "rs_4w_ago", label: "RS 4W ago", title: "The 3M RS four weeks ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
+        { w: 4, key: "rs_chg_4w", label: "RS Δ4W", title: "Change in the 3M RS over four weeks (RS 3M minus RS 4W ago)", render: (r) => <Signed v={r.rs_chg_4w} digits={0} /> },
+        { w: 4.4, key: "rs_rating", label: "RS comp.", title: "Reference only: the composite RS Rating (0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
         { w: 3.8, key: "change_pct", label: "1D %", title: "Today's close against the previous session", render: (r) => <Signed v={r.change_pct} digits={1} /> },
         { w: 3.8, key: "w_pct_1w", label: "1W %", title: "Close against the last weekly close", render: (r) => <Signed v={r.w_pct_1w} digits={1} /> },
         { w: 3.8, key: "w_pct_1m", label: "1M %", title: "Close against 4 weekly closes back", render: (r) => <Signed v={r.w_pct_1m} digits={1} /> },
@@ -58,9 +62,6 @@ const COLS: Col[] = ((): Col[] => {
           title: "Filters of the scan this RS 80+ stock does not meet (empty = full match): 200 DMA, 30-day turnover ₹10 Cr, market cap ₹500 Cr, price ₹10",
           render: (r) => (r.misses?.length ? <span className="text-orange-700" title={r.misses.join(" · ")}>{r.misses.join(" · ")}</span> : <span className="text-emerald-600">full match</span>),
         },
-        { w: 4, key: "rs_3m", label: "RS 3M", title: "His RS: percentile (1-99) of the 3-month return among the NSE 750", render: (r) => <span className={`font-semibold ${rsTone(r.rs_3m)}`}>{r.rs_3m}</span> },
-        { w: 4.8, key: "rs_4w_ago", label: "RS 4W ago", title: "The 3M RS four weeks ago", render: (r) => (r.rs_4w_ago == null ? "—" : r.rs_4w_ago) },
-        { w: 4.4, key: "rs_rating", label: "RS comp.", title: "Reference only: the composite RS Rating (0.4 x 3M + 0.3 x 6M + 0.3 x 1Y) shown on All Technicals and Portfolio Allocation", render: (r) => (r.rs_rating == null ? "—" : r.rs_rating) },
         { w: 4.4, key: "rs_weeks", label: "Wks ≥ 80", title: "Weeks the 3M RS has stayed at 80 or more (a + means it was already above 80 at the start of the history we hold)", render: (r) => (r.rs_weeks == null ? "—" : `${r.rs_weeks}${r.rs_weeks_capped ? "+" : ""}`) },
         { w: 5, key: "move_since_rs80_pct", label: "Since 80 %", title: "Price move since the 3M RS last went from below 80 to 80+", render: (r) => <Signed v={r.move_since_rs80_pct} digits={0} /> },
         { w: 5, key: "base_days", label: "Base/tight", title: "Sessions in the long base / sessions in the tight zone on its right side", render: (r) => (r.base_days ? `${r.base_days} / ${r.tight_days || 0}` : "—") },
@@ -214,7 +215,7 @@ export default function ChartistScanner() {
 
 
       {ready ? (
-        <GenericTable rows={rows} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={3900} />
+        <GenericTable rows={rows} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={4100} />
       ) : (
         <ScreenerLoading label="Chartist_RS_Scanner" />
       )}

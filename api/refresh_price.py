@@ -24,6 +24,8 @@ cookie."""
 import os
 import sys
 import time
+
+import psycopg2.extras
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, urlparse
 
@@ -36,6 +38,52 @@ from _cron_auth import is_authed_cron_or_cookie
 from _db import get_all_json, get_conn, get_json, get_meta, set_meta, upsert_json
 from _http import read_json_body, require_auth, send_json
 from _screener_fetch import fetch_price_only
+
+
+def _refresh_from_store(conn, stocks, tickers):
+    """2026-11-22 ("switch price refresh to NSE file"): update every ledger stock's price from the daily NSE file already stored by bhavStore, instead of visiting each company's Screener page
+    (264 s on Render for 51 of 190 stocks). current_price = the latest stored close; market cap and P/E move in proportion (shares and trailing EPS do not change between results);
+    the 52-week high is raised if a newer high was made. A move outside [0.75, 1.33] in one go may be a split or bonus (stored prices are raw): that stock is left alone and listed under `check`.
+    Returns the result dict (same shape as the Screener sweep, plus source / as_of / check / not_in_store)."""
+    from datetime import date, timedelta
+
+    from _bhav import load_frame
+
+    df = load_frame(conn, (date.today() - timedelta(days=21)).isoformat(), symbols=set(tickers))
+    if df.empty:
+        return None
+    last = df.sort_values(["symbol", "date"]).groupby("symbol", sort=False).tail(1).set_index("symbol")
+    hi = df.groupby("symbol", sort=False)["h"].max()
+    as_of = df["date"].max().date().isoformat()
+    ok, check, missing, updates = 0, [], [], []
+    for t in tickers:
+        st = stocks.get(t) or {}
+        if t not in last.index:
+            missing.append(t)
+            continue
+        new, old = float(last.at[t, "c"]), st.get("current_price")
+        if not new > 0:
+            continue
+        if old and not 0.75 <= new / old <= 1.33:
+            check.append({"ticker": t, "old": old, "new": round(new, 2)})
+            continue
+        r = (new / old) if old else None
+        upd = {**st, "current_price": round(new, 2), "price_as_of": str(last.at[t, "date"].date())}
+        if r and st.get("market_cap_cr"):
+            upd["market_cap_cr"] = round(st["market_cap_cr"] * r)
+        if r and st.get("pe_ratio"):
+            upd["pe_ratio"] = round(st["pe_ratio"] * r, 1)
+        if t in hi.index and (st.get("week52_high") is None or float(hi[t]) > st["week52_high"]):
+            upd["week52_high"] = round(float(hi[t]), 2)
+        updates.append((t, psycopg2.extras.Json(upd)))
+        ok += 1
+    if updates:  # ONE statement for all rows (a round trip per stock cost ~0.5 s each against the hosted database)
+        with conn.cursor() as cur:
+            psycopg2.extras.execute_values(
+                cur, "INSERT INTO stocks (ticker, data, updated_at) VALUES %s ON CONFLICT (ticker) DO UPDATE SET data = EXCLUDED.data, updated_at = now()",
+                updates, template="(%s, %s, now())")
+        conn.commit()
+    return {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "source": "nse_store", "as_of": as_of, "total": len(tickers), "ok": ok, "failed": [], "skipped": [], "check": check, "not_in_store": missing}
 
 CRON_DELAY_SECONDS = 1.5  # gap between tickers on the full-ledger cron sweep — the "slowly" part
 CRON_TIME_BUDGET_SECONDS = 260  # stop with headroom under the 300s function cap
@@ -84,6 +132,13 @@ class handler(BaseHTTPRequestHandler):
             if limit:
                 tickers = tickers[:limit]
             total = len(tickers)
+
+            if (query.get("source") or ["store"])[0] != "screener":  # default: the stored NSE file; ?source=screener = the old per-company Screener sweep
+                res = _refresh_from_store(conn, stocks, tickers)
+                if res is not None:
+                    set_meta(conn, "last_refresh", {**get_meta(conn, "last_refresh", {}), "prices": res})
+                    send_json(self, 200, {"ok": True, **res})
+                    return
 
             ok, failed, skipped = 0, [], []
             for i, ticker in enumerate(tickers):

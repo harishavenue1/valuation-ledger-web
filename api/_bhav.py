@@ -2569,6 +2569,19 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         known_ex = {(s_, ex) for s_, rws in actions.items() for ex, _f_, src in rws if src != "nodata"}
         cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}
         ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
+    # Memory (a 512 MB host): the older half of the window only matters for the all-time high, so fold its highest high into ath_extra and drop those bars; keep ~560 days
+    # (52-week high, 200D EMA warm-up, 33W EMA, 13-week RS over the RS history); prices as float32 (7 digits is plenty for a 2-decimal price and a % move).
+    cut = df["date"].max() - pd.Timedelta(days=560)
+    old_part = df[df["date"] < cut]
+    if not old_part.empty:
+        old_hi = old_part.groupby("symbol", sort=False)["h"].max()
+        ath_extra = {**(ath_extra or {})}
+        for sym_, v in old_hi.items():
+            ath_extra[sym_] = max(float(v), float(ath_extra.get(sym_, 0.0)))
+        df = df[df["date"] >= cut].reset_index(drop=True)
+    del old_part
+    for c_ in ("o", "h", "l", "c", "v", "dp"):
+        df[c_] = df[c_].astype("float32")
     rows = compute_technicals(df, names, ath_extra=ath_extra)
     shares, _cap_stats = refresh_shares([r["symbol"] for r in rows], budget_s=max(0, min(30, budget_s - (time.monotonic() - t0) - 20)))  # only symbols never fetched / stale: a few calls a day
     for r in rows:
@@ -2577,16 +2590,48 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
     scan_rows, funnel, health = compute_chartist_scan(df, rows, uni)
     by_scan = {x["symbol"]: x for x in scan_rows}
     sorted_3m = sorted(r["w_pct_3m"] for r in rows if r.get("w_pct_3m") is not None)
+    # RS for EVERY stock by his rule (percentile 1-99 of the 3-month return among the NSE 750; same formula the scan uses): today's (above), 4 weeks ago (weekly closes, 13-week return, the in-progress
+    # week counts as a bar like w_pct_3m), and the composite 0.4 x 3M + 0.3 x 6M + 0.3 x 1Y percentile ("RS comp.").
+    rs_ago = {}
+    try:
+        d_ = df[["symbol", "date", "c"]]
+        wk = d_.assign(wk=d_["date"].dt.to_period("W-FRI")).groupby(["symbol", "wk"], sort=True)["c"].last().unstack(0)
+        S = (wk / wk.shift(13) - 1) * 100
+        if len(S) >= 5:
+            row4 = S.iloc[-5].dropna()
+            sv = sorted(row4.tolist())
+            rs_ago = {sym_: _rs_percentile(sv, float(v), CHARTIST["min_universe"]) for sym_, v in row4.items()}
+    except Exception:
+        rs_ago = {}
+    comp = {r["symbol"]: 0.4 * r["w_pct_3m"] + 0.3 * r["w_pct_6m"] + 0.3 * r["yearly_pct"] for r in rows if None not in (r.get("w_pct_3m"), r.get("w_pct_6m"), r.get("yearly_pct"))}
+    sorted_comp = sorted(comp.values())
     out = []
     for r in rows:
         sym = r["symbol"]
+        _rs = _rs_percentile(sorted_3m, r.get("w_pct_3m"), CHARTIST["min_universe"])
+        _ago = rs_ago.get(sym)
         ath_px = round(r["price"] / (1 + r["pct_from_ath"] / 100), 2) if r.get("pct_from_ath") is not None else None
         base = {
             "symbol": sym, "name": r.get("name") or sym, "sector": (sector_map or {}).get(sym, ""), "price": r["price"], "change_pct": r.get("change_pct"),
             "w_pct_1w": r.get("w_pct_1w"), "w_pct_1m": r.get("w_pct_1m"), "pct_3m": r.get("w_pct_3m"), "pct_from_52w_high": r.get("pct_from_52w_high"),
-            "pct_from_ath": r.get("pct_from_ath"), "ath_price": ath_px, "rs_3m": _rs_percentile(sorted_3m, r.get("w_pct_3m"), CHARTIST["min_universe"]),
+            "pct_from_ath": r.get("pct_from_ath"), "ath_price": ath_px, "rs_3m": _rs, "rs_4w_ago": _ago, "rs_chg_4w": (_rs - _ago) if (_rs is not None and _ago is not None) else None,
+            "rs_rating": _rs_percentile(sorted_comp, comp.get(sym), CHARTIST["min_universe"]),
             "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": r.get("turnover_cr"), "as_of": r.get("as_of"),
         }
         out.append({**base, **{k: v for k, v in (by_scan.get(sym) or {}).items() if k not in ("symbol", "name", "sector")}})
     as_of = max((r.get("as_of") for r in rows if r.get("as_of")), default=None)
-    return out, scan_rows, funnel, health, as_of
+
+    def _py(x):  # float32 columns leave numpy scalars in the rows, which json cannot write
+        if isinstance(x, dict):
+            return {k: _py(v) for k, v in x.items()}
+        if isinstance(x, (list, tuple)):
+            return [_py(v) for v in x]
+        if isinstance(x, np.bool_):
+            return bool(x)
+        if isinstance(x, np.integer):
+            return int(x)
+        if isinstance(x, np.floating):
+            return None if x != x else round(float(x), 4)
+        return x
+
+    return _py(out), _py(scan_rows), _py(funnel), _py(health), as_of
