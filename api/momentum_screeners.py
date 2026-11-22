@@ -3995,28 +3995,33 @@ def _run_gap_hold(symbols, name_map, sector_map):
 
 
 def _run_chartist_rs(symbols, name_map, sector_map):
-    """The "Chartist_RS_Scanner" tab (Himanshu Sharma, @thechartist26): reads what bhavTechnicals computed for the latest
-    session (api/_bhav.py compute_chartist_scan) and adds the theme view — how many scan names share the sector and where this
-    one ranks in it by RS (his "first and second name of a strong theme")."""
-    conn = get_conn()
-    try:
-        scan = get_meta(conn, "bhav_scan_chartist", None)
-    finally:
-        conn.close()
-    if not scan:
-        return None, "the Chartist RS scan has not been published yet (bhavTechnicals computes it each evening)"
-    rows = [{**r, "sector": sector_map.get(r["symbol"], "")} for r in (scan.get("rows") or [])]
+    """The Chartist RS page = the single NSE-750 table (2026-11-22): every stock's price, day / 1W / 1M / 3M %, distance from the 52-week and all-time high and 3M RS, with the Chartist setup
+    fields (base, trigger, stop, leg) on the RS>=80 names. Computed here from the stored NSE daily files for the 750 only (api/_bhav.py chartist_all) — it no longer waits for the
+    heavy all-stocks bhavTechnicals job. The Chartist_RS_Scanner idea is Himanshu Sharma's (@thechartist26)."""
+    from _bhav import chartist_all
+
+    all_rows, scan_rows, funnel, health, as_of = chartist_all(symbols, sector_map)
+    if not all_rows:
+        return None, "no stored bars for the NSE 750 yet (run bhavStore first)"
     by_sector = {}
-    for r in rows:
-        if r["sector"] and not r.get("misses"):  # theme = the full matches only, so a thin or short-history name does not inflate a sector's count
-            by_sector.setdefault(r["sector"], []).append(r)
+    for r in scan_rows:
+        sec = sector_map.get(r["symbol"], "")
+        if sec and not r.get("misses"):  # theme = the full matches only, so a thin or short-history name does not inflate a sector's count
+            by_sector.setdefault(sec, []).append(r)
+    theme = {}
     for members in by_sector.values():
         members.sort(key=lambda x: (-(x.get("rs_3m") or 0), -(x.get("pct_3m") or 0)))
         for i, m in enumerate(members, 1):
-            m["theme_n"], m["theme_rank"] = len(members), i
-    funnel = scan.get("funnel") or {}
-    return {"label": "Chartist_RS_Scanner", "push_rows": rows, "scanned": funnel.get("universe", len(rows)), "skipped": 0, "as_of": scan.get("as_of"),
-            "extra": {"funnel": funnel, "health": scan.get("health") or {}, "session": scan.get("as_of")}}, None
+            theme[m["symbol"]] = (len(members), i)
+    rows = []
+    for r in all_rows:
+        n_i = theme.get(r["symbol"])
+        rows.append({**r, "sector": sector_map.get(r["symbol"], r.get("sector", "")), **({"theme_n": n_i[0], "theme_rank": n_i[1]} if n_i else {})})
+    rows.sort(key=lambda x: (-(x.get("rs_3m") or 0), -(x.get("pct_3m") or 0)))
+    for i, x in enumerate(rows, 1):
+        x["all_rank"] = i
+    return {"label": "Chartist_RS_Scanner", "push_rows": rows, "scanned": len(rows), "skipped": 0, "as_of": as_of,
+            "extra": {"funnel": funnel, "health": health or {}, "session": as_of}}, None
 
 
 def _run_fno_flow(symbols, name_map, sector_map):

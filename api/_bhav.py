@@ -2522,3 +2522,65 @@ def store_price_data(symbols, since_days=1826):
         v = [int(x) if x == x else None for x in g["v"].tolist()]
         out[sym] = [list(r) for r in zip(dates, o, h, l, c, v)]
     return out
+
+
+# ── the single NSE-750 table (Chartist RS page) ──────────────────────────────
+
+def chartist_all(symbols, sector_map=None, budget_s=100):
+    """2026-11-22 ("main requirement: read 750 stocks data, price range on 3M, 1M, 1W, 1D, ATH and 52W-high distances ... along with RS in one single page"): the Chartist RS page's data,
+    computed for the NSE 750 ONLY from the stored NSE daily files (publish() does the same for ~3,500 stocks plus a dozen scans and share-count lookups, which is what made the old job heavy).
+    Steps: load + split-adjust the 750's bars (a new unresolved jump is looked up once, 4 at a time; until then that symbol's history is cut at it, so a % is blank rather than wrong),
+    compute_technicals on them (price, day / 1W / 1M / 3M %, distance from the 52-week and all-time high, EMAs, RSI), market cap from the share counts already cached (no fetching),
+    then the Chartist scan (RS = 3M percentile among the 750, base / trigger / stop for the RS>=80 names).
+    Returns (all_rows, scan_rows, funnel, health, as_of): all_rows has one row per traded stock with the scan fields merged in where the stock is in the scan."""
+    t0 = time.monotonic()
+    since = (date.today() - timedelta(days=STORE_DAYS)).isoformat()
+    conn = get_conn()
+    try:
+        ensure_tables(conn)
+        ath_state = get_meta(conn, ATH_KEY, None) or {}
+        names = (get_meta(conn, STATE_KEY, None) or {}).get("names") or {}
+        mcap = (get_meta(conn, MCAP_KEY, None) or {}).get("shares") or {}
+        if ath_state.get("basis") and ath_state.get("ath"):
+            since = min(since, ath_state["basis"])
+        df = load_frame(conn, since)
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    uni = set(symbols)
+    df = df[df["symbol"].isin(uni)]
+    if df.empty:
+        return [], [], {}, {}, None
+    jumps = find_jumps(df)
+    confirm_jumps(jumps, actions, budget_s=max(10, min(60, budget_s - (time.monotonic() - t0))))
+    conn = get_conn()
+    try:
+        actions = load_actions(conn)
+    finally:
+        conn.close()
+    df = adjust_frame(df, actions, jumps)
+    ath_extra = None
+    if ath_state.get("ath"):
+        known_ex = {(s_, ex) for s_, rws in actions.items() for ex, _f_, src in rws if src != "nodata"}
+        cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}
+        ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
+    rows = compute_technicals(df, names, ath_extra=ath_extra)
+    for r in rows:
+        n = (mcap.get(r["symbol"]) or [None])[0]
+        r["market_cap_cr"] = round(r["price"] * n / 1e7) if n else None
+    scan_rows, funnel, health = compute_chartist_scan(df, rows, uni)
+    by_scan = {x["symbol"]: x for x in scan_rows}
+    sorted_3m = sorted(r["w_pct_3m"] for r in rows if r.get("w_pct_3m") is not None)
+    out = []
+    for r in rows:
+        sym = r["symbol"]
+        ath_px = round(r["price"] / (1 + r["pct_from_ath"] / 100), 2) if r.get("pct_from_ath") is not None else None
+        base = {
+            "symbol": sym, "name": r.get("name") or sym, "sector": (sector_map or {}).get(sym, ""), "price": r["price"], "change_pct": r.get("change_pct"),
+            "w_pct_1w": r.get("w_pct_1w"), "w_pct_1m": r.get("w_pct_1m"), "pct_3m": r.get("w_pct_3m"), "pct_from_52w_high": r.get("pct_from_52w_high"),
+            "pct_from_ath": r.get("pct_from_ath"), "ath_price": ath_px, "rs_3m": _rs_percentile(sorted_3m, r.get("w_pct_3m"), CHARTIST["min_universe"]),
+            "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": r.get("turnover_cr"), "as_of": r.get("as_of"),
+        }
+        out.append({**base, **{k: v for k, v in (by_scan.get(sym) or {}).items() if k not in ("symbol", "name", "sector")}})
+    as_of = max((r.get("as_of") for r in rows if r.get("as_of")), default=None)
+    return out, scan_rows, funnel, health, as_of
