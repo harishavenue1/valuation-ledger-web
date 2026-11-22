@@ -42,14 +42,6 @@
       "schedule": "15 10 * * *"
     },
     {
-      "path": "/api/momentum_screeners?screener=nse750PriceCache",
-      "schedule": "5 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750TechDaily",
-      "schedule": "15 10 * * *"
-    },
-    {
       "path": "/api/momentum_screeners?screener=benchmarkNse500",
       "schedule": "18 10 * * *"
     },
@@ -120,58 +112,6 @@
     {
       "path": "/api/momentum_screeners?screener=nse750WeeklyMaxSummary",
       "schedule": "45 10 * * *"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=0&limit=60",
-      "schedule": "4 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=60&limit=60",
-      "schedule": "10 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=120&limit=60",
-      "schedule": "16 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=180&limit=60",
-      "schedule": "22 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=240&limit=60",
-      "schedule": "28 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=300&limit=60",
-      "schedule": "34 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=360&limit=60",
-      "schedule": "40 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=420&limit=60",
-      "schedule": "46 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=480&limit=60",
-      "schedule": "52 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=540&limit=60",
-      "schedule": "58 10 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=600&limit=60",
-      "schedule": "4 11 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=660&limit=60",
-      "schedule": "10 11 * * 0"
-    },
-    {
-      "path": "/api/momentum_screeners?screener=nse750Technicals&offset=720&limit=60",
-      "schedule": "16 11 * * 0"
     },
     {
       "path": "/api/momentum_screeners?screener=fiiSectorTrend",
