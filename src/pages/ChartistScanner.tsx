@@ -16,13 +16,19 @@ const COLS: Col[] = ((): Col[] => {
         { w: 10.5, key: "name", label: "Name", align: "left" },
         { w: 7.5, key: "sector", label: "Sector", align: "left" },
         { w: 4.6, key: "price", label: "Price", render: (r) => <PriceLink symbol={r.symbol} value={r.price} /> },
+        { w: 3.8, key: "change_pct", label: "1D %", title: "Today's close against the previous session", render: (r) => <Signed v={r.change_pct} digits={1} /> },
+        { w: 3.8, key: "w_pct_1w", label: "1W %", title: "Close against the last weekly close", render: (r) => <Signed v={r.w_pct_1w} digits={1} /> },
+        { w: 3.8, key: "w_pct_1m", label: "1M %", title: "Close against 4 weekly closes back", render: (r) => <Signed v={r.w_pct_1m} digits={1} /> },
+        { w: 3.8, key: "pct_3m", label: "3M %", title: "Close against 13 weekly closes back (the window his RS uses)", render: (r) => <Signed v={r.pct_3m} digits={1} /> },
+        { w: 4.4, key: "pct_from_ath", label: "vs ATH %", title: "Distance from the all-time high", render: (r) => <Signed v={r.pct_from_ath} digits={1} /> },
+        { w: 4.4, key: "ath_price", label: "ATH ₹", title: "All-time high (split-adjusted)", render: (r) => fmtNum(r.ath_price, 1) },
         {
           w: 6.6,
           key: "status",
           label: "Setup",
           align: "left",
           title: "Breakout = closed above the tight zone's high (within 5%); Ready = within 3% below it; In base = inside the zone; Extended = already more than 5% above it; Below base = closed under its low; No base = no 1-month base with a tight right side",
-          render: (r) => (
+          render: (r) => !r.status ? <span className="text-slate-300">—</span> : (
             <span
               className={`text-[11px] font-medium px-2 py-0.5 rounded-full border whitespace-nowrap ${
                 r.status === "Breakout"
@@ -109,7 +115,7 @@ export default function ChartistScanner() {
   const { ready } = useScreeners(["chartistRs", "portfolioAllocation"]);
   const entry = bundle.momentum_screeners.chartistRs;
   // chips (filter the rows in the browser; the scan itself is the same for everyone)
-  const [cStatus, setCStatus] = useState<"all" | "setups" | "Breakout" | "Ready">("setups");
+  const [cStatus, setCStatus] = useState<"all750" | "all" | "setups" | "Breakout" | "Ready">("all750"); // all750 = every NSE-750 stock (the single page); the rest = the RS 80+ scan views
   const [cLeg, setCLeg] = useState<"all" | "early" | "earlymid">("all");
   const [cLeaders, setCLeaders] = useState(false);
   const [cDry, setCDry] = useState(false);
@@ -117,6 +123,7 @@ export default function ChartistScanner() {
   const [cHeld, setCHeld] = useState(false); // your own holdings, whatever their setup status
   const rows = useMemo(() => {
     return (entry?.rows ?? []).filter((r: any) => {
+      if (cStatus === "all750") return !cHeld || !!watchlist.held?.has(r.symbol);
       if (cStatus === "setups" && !["Breakout", "Ready", "In base"].includes(r.status)) return false;
       if ((cStatus === "Breakout" || cStatus === "Ready") && r.status !== cStatus) return false;
       if (cLeg === "early" && r.phase !== "Early") return false;
@@ -134,7 +141,7 @@ export default function ChartistScanner() {
     <div>
       <div className="flex items-center gap-2 mb-1">
         <h1 className="text-xl font-semibold">🔭 Chartist_RS_Scanner</h1>
-        <span className="text-slate-500 text-sm">Himanshu Sharma (@thechartist26) · every NSE stock, 3-month RS</span>
+        <span className="text-slate-500 text-sm">Himanshu Sharma (@thechartist26) · the NSE 750: price, 1D / 1W / 1M / 3M, distance from the 52-week and all-time high, 3-month RS and setups</span>
       </div>
       <div className="flex items-center gap-2 mb-3">
         {entry?.as_of && <span className="text-xs text-slate-400">as of {entry.as_of}</span>}
@@ -178,7 +185,7 @@ export default function ChartistScanner() {
             ))}
             <span className="text-slate-300 mx-1">|</span>
             <span className="text-slate-500">Show:</span>
-            {([["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
+            {([["all750", "All 750"], ["setups", "Setups"], ["Breakout", "Breakout"], ["Ready", "Ready"], ["all", "All RS 80+"]] as const).map(([k, lab]) => (
               <button key={k} onClick={() => setCStatus(k)} className={`px-2 py-0.5 rounded-full border ${cStatus === k ? "bg-indigo-600 text-white border-indigo-600" : "border-slate-300 text-slate-600 hover:border-slate-400"}`}>
                 {lab}
               </button>
@@ -207,7 +214,7 @@ export default function ChartistScanner() {
 
 
       {ready ? (
-        <GenericTable rows={rows} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={3300} />
+        <GenericTable rows={rows} cols={COLS} navigate={(t) => navigate(`/company/${t}`)} watchlist={watchlist} minWidth={3900} />
       ) : (
         <ScreenerLoading label="Chartist_RS_Scanner" />
       )}

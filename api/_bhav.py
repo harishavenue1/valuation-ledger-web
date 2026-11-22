@@ -2565,8 +2565,9 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         cut_syms = {sym for sym, ex, _r in jumps if (sym, ex) not in known_ex}
         ath_extra = {k: v for k, v in ath_adjustments(actions, ath_state["basis"], ath_state["ath"]).items() if k not in cut_syms}
     rows = compute_technicals(df, names, ath_extra=ath_extra)
+    shares, _cap_stats = refresh_shares([r["symbol"] for r in rows], budget_s=max(0, min(30, budget_s - (time.monotonic() - t0) - 20)))  # only symbols never fetched / stale: a few calls a day
     for r in rows:
-        n = (mcap.get(r["symbol"]) or [None])[0]
+        n = shares.get(r["symbol"])
         r["market_cap_cr"] = round(r["price"] * n / 1e7) if n else None
     scan_rows, funnel, health = compute_chartist_scan(df, rows, uni)
     by_scan = {x["symbol"]: x for x in scan_rows}
