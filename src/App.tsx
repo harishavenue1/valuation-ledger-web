@@ -9,7 +9,6 @@ const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
 const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
 const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
-const Directory = lazy(() => import("./pages/Directory"));
 import { JournalNavBadge } from "./lib/journal";
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
@@ -204,9 +203,6 @@ export default function App() {
               <NavLink to="/concall-summary" className={({ isActive }) => navClass(isActive)}>
                 📞 Concall Summary
               </NavLink>
-              <NavLink to="/sector-directory" className={({ isActive }) => navClass(isActive)}>
-                📚 Directory
-              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -237,7 +233,7 @@ export default function App() {
             <Route path="/all-technicals" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/market-pulse" element={<Navigate to="/" replace />} />
-            <Route path="/sector-directory" element={<Directory />} />
+            <Route path="/sector-directory" element={<Navigate to="/chartist-rs-scanner" replace />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/settings" element={<Settings />} />

@@ -2605,23 +2605,6 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         rs_ago = {}
     comp = {r["symbol"]: 0.4 * r["w_pct_3m"] + 0.3 * r["w_pct_6m"] + 0.3 * r["yearly_pct"] for r in rows if None not in (r.get("w_pct_3m"), r.get("w_pct_6m"), r.get("yearly_pct"))}
     sorted_comp = sorted(comp.values())
-    # index membership (Nifty Midcap 150 / Smallcap 250 / Microcap 250; NSE's own constituent files, cached weekly) and the momentum score + rank within Smallcap / Microcap, so the Directory
-    # page reads this one table instead of its own jobs (2026-11-22, "move Directory onto the Technical page data")
-    by_row_all = {r["symbol"]: r for r in rows}
-    idx_info = {}
-    try:
-        for index_name, (ikey, iurls, imin) in INDEX_DIR_LISTS.items():
-            members = load_index_universe(ikey, iurls, imin)
-            mom = {}
-            if index_name in ("Smallcap 250", "Microcap 250"):
-                mom = momentum_scores(df, by_row_all, [m_ for m_ in members if m_ in by_row_all])
-                for i_, sym_ in enumerate(sorted(mom, key=lambda k: -mom[k]["score"]), 1):
-                    mom[sym_]["rank"] = i_
-            for sym_, industry in members.items():
-                if sym_ in by_row_all:
-                    idx_info[sym_] = {"index": index_name, "industry": industry, "mom_score": (mom.get(sym_) or {}).get("score"), "mom_rank": (mom.get(sym_) or {}).get("rank"), "vol3m": (mom.get(sym_) or {}).get("vol3m")}
-    except Exception:
-        idx_info = {}
     out = []
     for r in rows:
         sym = r["symbol"]
@@ -2634,10 +2617,6 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
             "pct_from_ath": r.get("pct_from_ath"), "ath_price": ath_px, "rs_3m": _rs, "rs_4w_ago": _ago, "rs_chg_4w": (_rs - _ago) if (_rs is not None and _ago is not None) else None,
             "rs_rating": _rs_percentile(sorted_comp, comp.get(sym), CHARTIST["min_universe"]),
             "market_cap_cr": r.get("market_cap_cr"), "turnover_30d_cr": r.get("turnover_cr"), "as_of": r.get("as_of"),
-            # what the Directory tabs (Sectors, index lists, Themes) read
-            "weekly_pct": r.get("weekly_pct"), "monthly_pct": r.get("monthly_pct"), "three_month_pct": r.get("three_month_pct"), "six_month_pct": r.get("w_pct_6m"), "yearly_pct": r.get("yearly_pct"),
-            "pct_200d_ema": r.get("pct_200d_ema"), "pct_33w_ema": r.get("pct_33w_ema"), "rsi_w": r.get("rsi_w"),
-            **(idx_info.get(sym) or {}),
         }
         out.append({**base, **{k: v for k, v in (by_scan.get(sym) or {}).items() if k not in ("symbol", "name", "sector")}})
     as_of = max((r.get("as_of") for r in rows if r.get("as_of")), default=None)
