@@ -255,11 +255,15 @@ def flush_days(conn, days):
     return written
 
 
-def load_frame(conn, since_iso):
-    """All stored bars on/after since_iso as one DataFrame (raw prices)."""
+def load_frame(conn, since_iso, symbols=None):
+    """All stored bars on/after since_iso as one DataFrame (raw prices). `symbols` limits the read to those symbols IN THE DATABASE (2026-11-22: the NSE-750 job loaded all ~3,500 symbols
+    and peaked at ~650 MB, which a 512 MB host cannot hold)."""
     first_q = quarter_of(since_iso)
     with conn.cursor() as cur:
-        cur.execute("SELECT symbol, q, data FROM bhav_chunks WHERE q >= %s", (first_q,))
+        if symbols:
+            cur.execute("SELECT symbol, q, data FROM bhav_chunks WHERE q >= %s AND symbol = ANY(%s)", (first_q, list(symbols)))
+        else:
+            cur.execute("SELECT symbol, q, data FROM bhav_chunks WHERE q >= %s", (first_q,))
         sym, dts, cols = [], [], {k: [] for k in ("o", "h", "l", "c", "v", "dp")}
         for symbol, _q, ch in cur:
             n = len(ch["d"])
@@ -2543,12 +2547,11 @@ def chartist_all(symbols, sector_map=None, budget_s=100):
         mcap = (get_meta(conn, MCAP_KEY, None) or {}).get("shares") or {}
         if ath_state.get("basis") and ath_state.get("ath"):
             since = min(since, ath_state["basis"])
-        df = load_frame(conn, since)
+        df = load_frame(conn, since, symbols=set(symbols))
         actions = load_actions(conn)
     finally:
         conn.close()
     uni = set(symbols)
-    df = df[df["symbol"].isin(uni)]
     if df.empty:
         return [], [], {}, {}, None
     jumps = find_jumps(df)
