@@ -1,0 +1,9 @@
+node_modules
+.venv
+dist
+.git
+.vercel
+.env
+.env.local
+*.tsbuildinfo
+**/__pycache__

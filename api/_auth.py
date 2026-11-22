@@ -50,7 +50,7 @@ def _secure_attr() -> str:
     # `vercel dev`/testing over http://localhost, where the cookie would
     # never come back and every request looked unauthenticated. Only
     # require it when actually deployed.
-    return "; Secure" if os.environ.get("VERCEL") else ""
+    return "; Secure" if (os.environ.get("VERCEL") or os.environ.get("RENDER")) else ""  # Render sets RENDER=true
 
 
 def set_cookie_header() -> str:

@@ -1,0 +1,23 @@
+# Render Blueprint (2026-11-22). Create it with: Render dashboard -> New -> Blueprint -> pick this GitHub repo -> branch main.
+# Secrets are NOT in this file: Render asks for them (sync: false) the first time, or set them under the service's Environment tab.
+services:
+  - type: web
+    name: valuation-ledger
+    runtime: docker
+    plan: free
+    branch: main
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL        # direct Postgres connection string (postgres://...), from the database provider
+        sync: false
+      - key: APP_PASSWORD        # the password you log in to the app with
+        sync: false
+      - key: CRON_SECRET         # any long random string; the outside scheduler sends it as "Authorization: Bearer <CRON_SECRET>"
+        sync: false
+      - key: HOURLY_PING_KEY
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
