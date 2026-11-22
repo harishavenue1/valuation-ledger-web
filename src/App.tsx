@@ -9,10 +9,7 @@ const ChartistScanner = lazy(() => import("./pages/ChartistScanner"));
 const ConcallSummary = lazy(() => import("./pages/ConcallSummary"));
 const GuidanceValuation = lazy(() => import("./pages/GuidanceValuation"));
 const PortfolioAllocation = lazy(() => import("./pages/PortfolioAllocation"));
-const MarketPulse = lazy(() => import("./pages/MarketPulse"));
 const Directory = lazy(() => import("./pages/Directory"));
-const Business = lazy(() => import("./pages/Business"));
-import { BusinessNavBadge } from "./lib/businessAlerts";
 import { JournalNavBadge } from "./lib/journal";
 const TradeJournal = lazy(() => import("./pages/TradeJournal"));
 const Watchlist = lazy(() => import("./pages/Watchlist"));
@@ -185,9 +182,6 @@ export default function App() {
                 direct links. Every route is unchanged; only the header
                 changed. A group lights up when any page inside it is open. */}
             <nav className="flex items-center gap-3 text-xs whitespace-nowrap">
-              <NavLink to="/" end className={({ isActive }) => navClass(isActive)}>
-                📟 Pulse
-              </NavLink>
               <NavLink to="/summary" className={({ isActive }) => navClass(isActive)}>
                 Summary
               </NavLink>
@@ -213,10 +207,6 @@ export default function App() {
               <NavLink to="/sector-directory" className={({ isActive }) => navClass(isActive)}>
                 📚 Directory
               </NavLink>
-              <NavLink to="/business-radar" className={({ isActive }) => navClass(isActive)}>
-                🧭 Business
-                <BusinessNavBadge />
-              </NavLink>
               <NavLink to="/settings" className={({ isActive }) => navClass(isActive)}>
                 Settings
               </NavLink>
@@ -236,7 +226,7 @@ export default function App() {
           {/* every page except the landing one is its own chunk (2026-10-04): the first load no longer pays for the charting library, the 20+ other pages... */}
           <Suspense fallback={<div className="text-sm text-slate-400 text-center py-16">Loading…</div>}>
           <Routes>
-            <Route path="/" element={<MarketPulse />} />
+            <Route path="/" element={<Navigate to="/summary" replace />} />
             <Route path="/summary" element={<Summary />} />
             <Route path="/company/:ticker" element={<Detail />} />
             <Route path="/momentum-screeners" element={<Navigate to="/chartist-rs-scanner" replace />} />
@@ -248,7 +238,6 @@ export default function App() {
             <Route path="/portfolio-allocation" element={<PortfolioAllocation />} />
             <Route path="/market-pulse" element={<Navigate to="/" replace />} />
             <Route path="/sector-directory" element={<Directory />} />
-            <Route path="/business-radar" element={<Business />} />
             <Route path="/trade-journal" element={<TradeJournal />} />
             <Route path="/watchlist" element={<Watchlist />} />
             <Route path="/settings" element={<Settings />} />
