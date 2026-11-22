@@ -787,69 +787,6 @@ export default function PortfolioAllocation() {
         },
       },
       {
-        // 2026-11-01 ("add WeeklyRSI value"): weekly RSI(14) from the technicals store; green when it is above the 66 bar of the weekly-RSI rule. "—" for a fund without a series.
-        key: "rsi_w",
-        label: "RSI (W)",
-        align: "center",
-        width: 3.2,
-        render: (r) => {
-          const v = r.rsi_w as number | null | undefined;
-          if (typeof v !== "number") return <span className="text-slate-300" title="no weekly RSI for this holding">—</span>;
-          return (
-            <span className={v > 66 ? "text-emerald-600 font-semibold" : "text-slate-700"} title={`Weekly RSI(14) ${v.toFixed(1)}${v > 66 ? " — above your 66 bar" : " — at or below your 66 bar"}`}>
-              {v.toFixed(1)}
-            </span>
-          );
-        },
-      },
-      {
-        // 2026-10-29 ("instead of sector name, we can have a latest qtr eps growth") — the Sector column is replaced by the latest reported
-        // quarter's YoY EPS growth the PortfolioAllocation skill pushes (qtr_eps_growth_pct; read off Screener.in's Quarterly Results). "T" =
-        // the year-ago quarter was a loss, so no honest %; "—" for a fund/ETF or a company with no quarterly figures yet. The sector is still on
-        // each row (the donut, the sector filter and the Portfolio Breakdown use it), just not shown as a column.
-        key: "qtr_eps_sort", // numeric twin of qtr_eps_growth_pct (a turnaround "T" sorts as the highest), so the header sort works
-        label: "EPS %", // short on purpose (2026-10-30, "EPS & MCAP header overlap"): the long labels collided in the header row
-        align: "center",
-        width: 3.5,
-        render: (r) => {
-          const v = r.qtr_eps_growth_pct as number | "T" | null | undefined;
-          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Turned profitable — the year-ago quarter was a loss, so no % is meaningful">T</span>;
-          if (v == null) return <span className="text-slate-300" title="a fund/ETF, or no quarterly results on Screener.in yet">—</span>;
-          return <Signed v={v} digits={1} />;
-        },
-      },
-      {
-        // 2026-11-01 ("we dont need Profit % ... instead put OPM% Delta YoY & QoQ Delta (Avg)") — replaces the Profit % column. Change in OPERATING MARGIN
-        // (Operating Profit / Sales), in percentage points, from the shared nse750Fundamentals cache's last six quarters: latest quarter vs a year earlier
-        // (YoY), vs the quarter before (QoQ), and the plain average of the two. "—" for a fund/ETF, a financial company (no operating profit row) or a stock
-        // outside the NSE 750 cache until the PF update itself carries the series.
-        key: "opmYoy",
-        label: "OPM YoY Δ",
-        align: "center",
-        width: 3.8,
-        render: (r) => <OpmDelta v={r.opmYoy} what="a year ago" now={r.opmNow} />,
-      },
-      {
-        key: "opmQoq",
-        label: "OPM QoQ Δ",
-        align: "center",
-        width: 3.8,
-        render: (r) => <OpmDelta v={r.opmQoq} what="last quarter" now={r.opmNow} />,
-      },
-      {
-        // 2026-11-01 ("remove OPM Δ Avg and include EBITDA growth YoY") — EBITDA = Operating Profit, latest quarter against the same quarter a year ago; "T" = turned profitable
-        key: "ebitdaSort", // numeric twin so the header sort works ("T" sorts highest)
-        label: "EBITDA YoY %",
-        align: "center",
-        width: 3.8,
-        render: (r) => {
-          const v = r.ebitdaYoy as number | "T" | null | undefined;
-          if (v === "T") return <span className="text-emerald-600 font-semibold" title="Operating profit turned from a loss to a profit, so no % is meaningful">T</span>;
-          if (v == null) return <span className="text-slate-300" title="no operating profit: a fund/ETF or a financial company, or a loss in the year-ago quarter">—</span>;
-          return <span title="latest quarter's operating profit (EBITDA) against the same quarter a year ago"><Signed v={v} digits={1} /></span>;
-        },
-      },
-      {
         // 2026-09-22 ("add a column for market cap (cr)") — ₹ Cr, same
         // top-ratios list every other field on this row's fetch already
         // reads from (see fetch_sector_and_fundamentals's own comment).
@@ -1127,7 +1064,7 @@ export default function PortfolioAllocation() {
       <MethodologyNote>
         <b>% of Portfolio</b> = each holding's current value (quantity × last price) ÷ total portfolio value — the whole point of this page
         is the allocation weight, not the underlying rupee amounts. <b>P&amp;L %</b> = unrealized gain/loss vs. Kite's own average buy price.{" "}
-        <b>Qtr Sales Growth %</b>/<b>EPS %</b> are the latest reported quarter's YoY growth, read straight off Screener.in's
+        <b>Qtr Sales Growth %</b> is the latest reported quarter's YoY growth, read straight off Screener.in's
         Quarterly Results table (same technique momentumPersonal already uses) — pushed by the PortfolioAllocation skill itself, not a live
         join against another tab. "Turned profitable" means the year-ago quarter was a loss, so no percentage would be honest against a
         negative base. Shows "—" for a fund/ETF/commodity (no quarterly results to speak of) or a stock Screener.in has no numbers for yet
