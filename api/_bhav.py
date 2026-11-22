@@ -257,25 +257,27 @@ def flush_days(conn, days):
 
 def load_frame(conn, since_iso, symbols=None):
     """All stored bars on/after since_iso as one DataFrame (raw prices). `symbols` limits the read to those symbols IN THE DATABASE (2026-11-22: the NSE-750 job loaded all ~3,500 symbols
-    and peaked at ~650 MB, which a 512 MB host cannot hold)."""
+    and peaked at ~650 MB, which a 512 MB host cannot hold). Columns are built as numpy arrays per stored chunk, not by extending Python lists of floats (that alone cost ~240 MB for 375k bars)."""
     first_q = quarter_of(since_iso)
+    cols = ("o", "h", "l", "c", "v", "dp")
+    names, counts, dts, parts = [], [], [], {k: [] for k in cols}
     with conn.cursor() as cur:
         if symbols:
             cur.execute("SELECT symbol, q, data FROM bhav_chunks WHERE q >= %s AND symbol = ANY(%s)", (first_q, list(symbols)))
         else:
             cur.execute("SELECT symbol, q, data FROM bhav_chunks WHERE q >= %s", (first_q,))
-        sym, dts, cols = [], [], {k: [] for k in ("o", "h", "l", "c", "v", "dp")}
         for symbol, _q, ch in cur:
             n = len(ch["d"])
-            sym.extend([symbol] * n)
+            names.append(symbol)
+            counts.append(n)
             dts.extend(ch["d"])
             for k in cols:
-                cols[k].extend(ch[k])
-    if not sym:
+                parts[k].append(np.asarray(ch[k], dtype="float64"))  # None -> nan
+    if not names:
         return pd.DataFrame(columns=["symbol", "date", "o", "h", "l", "c", "v", "dp"])
-    # every numeric column as float64: volume arrives as int64 when no bar is
-    # missing it, and split-adjusting it (v / factor) then raises in pandas
-    df = pd.DataFrame({"symbol": sym, "date": pd.to_datetime(dts), **{k: pd.to_numeric(pd.Series(v), errors="coerce").astype("float64") for k, v in cols.items()}})
+    sym = np.repeat(np.array(names, dtype=object), counts)  # a symbol appears once per stored quarter
+    df = pd.DataFrame({"symbol": sym, "date": pd.to_datetime(dts), **{k: np.concatenate(parts[k]) for k in cols}})
+    del parts, dts
     df = df[df["date"] >= pd.Timestamp(since_iso)]
     return df.sort_values(["symbol", "date"]).reset_index(drop=True)
 
